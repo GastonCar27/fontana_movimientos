@@ -65,6 +65,11 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Sirve los archivos estáticos propios del proyecto (CSS/JS), comprimidos.
+    # Hace falta porque en producción corremos con waitress, que a diferencia
+    # de "manage.py runserver" en desarrollo no sirve estáticos por su
+    # cuenta. Va justo después de SecurityMiddleware, como pide whitenoise.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -158,6 +163,19 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [ os.path.join(BASE_DIR,'static') ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'assets')
+
+# Almacenamiento que usa whitenoise para los estáticos: los sirve
+# comprimidos (gzip), pero sin renombrarlos con hash (a diferencia de
+# "ManifestStaticFilesStorage"), para no romper el "?v=4" a mano que ya se
+# usa en base.html para forzar la actualización de caché del navegador.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
 
 
 # Default primary key field type

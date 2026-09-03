@@ -48,7 +48,9 @@ sqlparse==0.5.4
 tk==0.1.0
 tzdata==2024.2
 urllib3==2.2.3
+waitress==3.0.2
 whichcraft==0.6.1
+whitenoise==6.8.2
 xlrd==2.0.1
 XlsxWriter==3.2.0
 zope.event==5.0
