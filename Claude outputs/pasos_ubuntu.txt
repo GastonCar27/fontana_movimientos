@@ -1,0 +1,25 @@
+# Pegar UNA sola linea por vez en la terminal de Ubuntu, apretando Enter
+# despues de cada una. No copiar ni pegar varias lineas juntas, porque a
+# veces se pegan de corrido y se rompe el comando.
+
+cd ~
+
+mv fontana_movimientos fontana_movimientos_viejo
+
+git clone https://github.com/GastonCar27/fontana_movimientos.git
+
+cp fontana_movimientos_viejo/.env fontana_movimientos/.env
+
+cd fontana_movimientos
+
+python3.12 -m venv venv
+
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+python manage.py migrate
+
+python manage.py collectstatic --noinput
+
+sudo systemctl restart fontana

@@ -21,7 +21,7 @@ FORMSET_PREFIX = 'renglones'
 # ---------------------------------------------------------------------------
 
 def solicitud_list(request):
-    solicitudes = SolicitudCompra.objects.select_related('entidad', 'solicitante', 'responsable_retiro')
+    solicitudes = SolicitudCompra.objects.select_related('entidad', 'solicitante', 'responsable_retiro', 'creado_por')
 
     q_entidad = request.GET.get('entidad', '').strip()
     q_id = request.GET.get('id', '').strip()
@@ -73,7 +73,13 @@ def solicitud_form(request, pk=None):
             request.POST, instance=solicitud or SolicitudCompra(), prefix=FORMSET_PREFIX,
         )
         if form.is_valid() and formset.is_valid():
-            solicitud = form.save()
+            es_nueva = solicitud is None  # antes de guardar: sin pk todavía en el alta
+            solicitud = form.save(commit=False)
+            if es_nueva:
+                # Usuario que crea la solicitud, tomado del login de Django
+                # (no se pisa en ediciones posteriores).
+                solicitud.creado_por = request.user
+            solicitud.save()
             formset.instance = solicitud
             formset.save()
             messages.success(request, f'Solicitud {solicitud.numero} guardada correctamente.')

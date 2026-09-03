@@ -21,3 +21,54 @@ def entorno_bd(request):
         'bd_host': host or 'localhost',
         'bd_nombre': nombre_bd,
     }
+
+
+# Secciones del menú de navegación (navbar.html) que están restringidas por
+# grupo de usuario. "Ingreso", "Salida" y "Reportes" NO están acá a propósito:
+# esas quedan visibles para cualquier usuario logueado, sin restricción.
+# Cada nombre de acá tiene que coincidir EXACTO con el nombre del grupo de
+# Django (ver entidades/migrations/0002_grupos_menu.py, que los crea solos).
+GRUPOS_MENU = [
+    'Movimientos de Productos',
+    'Movimientos de Caja',
+    'Comprobantes',
+    'Liquidaciones',
+    'Retenciones',
+    'Tipos',
+    'Solicitudes de Compra',
+    'Empleados',
+    'Otros',
+]
+
+
+def permisos_menu(request):
+    """Context processor global: expone en navbar.html, para el usuario
+    logueado, qué secciones del menú puede ver.
+
+    Un superusuario, o quien esté en el grupo "Administrador", ve todas las
+    secciones de la lista de arriba sin necesidad de estar además en cada
+    grupo puntual. Cualquier otro usuario solo ve una sección si está en el
+    grupo con ese mismo nombre (asignable desde /admin/, en la ficha del
+    usuario, campo "Groups").
+    """
+    user = request.user
+    if not user.is_authenticated:
+        return {}
+
+    nombres_grupos = set(user.groups.values_list('name', flat=True))
+    ve_todo = user.is_superuser or 'Administrador' in nombres_grupos
+
+    def puede_ver(nombre_grupo):
+        return ve_todo or nombre_grupo in nombres_grupos
+
+    return {
+        'puede_ver_movimientos_productos': puede_ver('Movimientos de Productos'),
+        'puede_ver_movimientos_caja': puede_ver('Movimientos de Caja'),
+        'puede_ver_comprobantes': puede_ver('Comprobantes'),
+        'puede_ver_liquidaciones': puede_ver('Liquidaciones'),
+        'puede_ver_retenciones': puede_ver('Retenciones'),
+        'puede_ver_tipos': puede_ver('Tipos'),
+        'puede_ver_solicitudes_compra': puede_ver('Solicitudes de Compra'),
+        'puede_ver_empleados': puede_ver('Empleados'),
+        'puede_ver_otros': puede_ver('Otros'),
+    }

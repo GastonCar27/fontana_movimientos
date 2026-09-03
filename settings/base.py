@@ -102,6 +102,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'fontana_movimientos.context_processors.entorno_bd',
+                'fontana_movimientos.context_processors.permisos_menu',
                 'tipos.context_processors.tipos_menu',
             ],
         },

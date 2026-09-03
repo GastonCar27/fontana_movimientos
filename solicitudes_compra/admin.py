@@ -10,9 +10,13 @@ class SolicitudCompraRenglonInline(admin.TabularInline):
 
 @admin.register(SolicitudCompra)
 class SolicitudCompraAdmin(admin.ModelAdmin):
-    list_display = ('id', 'numero', 'fecha', 'entidad', 'solicitante', 'responsable_retiro', 'estado')
+    list_display = (
+        'id', 'numero', 'fecha', 'entidad', 'solicitante', 'responsable_retiro', 'estado',
+        'creado_por', 'creado', 'modificado',
+    )
     list_filter = ('estado',)
     search_fields = ('numero', 'entidad__nombre')
+    readonly_fields = ('creado', 'modificado', 'creado_por')
     inlines = [SolicitudCompraRenglonInline]
 
 

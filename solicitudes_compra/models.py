@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -41,6 +42,16 @@ class SolicitudCompra(models.Model):
     observaciones = models.TextField(blank=True)
     creado = models.DateTimeField(auto_now_add=True)
     modificado = models.DateTimeField(auto_now=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='solicitudes_compra_creadas', verbose_name='Creado por',
+        # No se expone en SolicitudCompraForm: lo completa solo la vista
+        # (solicitud_form, en views.py) con request.user al crear la
+        # solicitud, tomando el usuario logueado (login de Django). Queda
+        # null=True porque las solicitudes cargadas antes de este cambio no
+        # tienen ese dato, y por si alguna vez se crea una sin usuario en
+        # sesión (no debería pasar, el sitio exige login para todo).
+    )
 
     class Meta:
         db_table = 'solicitud_compra'
