@@ -1,0 +1,252 @@
+{% url 'login' as login %}
+{% url 'registro' as registro %}
+{% url 'logout' as logout %}
+{% url 'recepciones:recepcion' as recepcion %}
+{% url 'liquidaciones:listado' as inicio %}
+{% url 'register' as alta_usuario %}
+
+{% if es_bd_local %}
+<div id="aviso-bd-desarrollo" style="position:sticky; top:0; z-index:1051; background:#ffc107; color:#000; text-align:center; padding:4px 8px; font-weight:bold; font-size:0.85rem; letter-spacing:0.03em;">
+    BD DE DESARROLLO ({{ bd_host }}{% if bd_nombre %} / {{ bd_nombre }}{% endif %})
+</div>
+{% endif %}
+
+{% if user.is_authenticated %}
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+  <a class="navbar-brand" href="#">Menú</a>
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+    <ul class="navbar-nav mr-auto">
+               <li class="nav-item active {% if request.path == inicio %}active{% endif %}">
+                    <a class="nav-link" href="{{ inicio }}">Inicio</a>
+                </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Ingreso
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+                    <a class="dropdown-item" href="#">H.V. Té</a>
+                    <a class="dropdown-item" href="#">Otros</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:buscar_movimiento_2' %}">Buscar</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="#">Something else here</a>
+                </div>
+             </li>
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Salida
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+                    <a class="dropdown-item" href="{% url 'movimientos:salida' %}">Salida en Kgs.</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:salida_canchada' %}">Y.M. Canchada</a>
+                    <a class="dropdown-item" href="#">Y.M. Elaborada</a>
+                    <a class="dropdown-item" href="#">Y.M. Elaborada</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:buscar_movimiento_2' %}">Buscar</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="#">Something else here</a>
+                </div>
+             </li>
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Reportes
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+                    <a class="dropdown-item" href="{% url 'movimientos:buscar_saldo_producto_en_comprobantes' %}">Saldo por Producto en Movimientos y Comprobantes</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:buscar_saldo_producto_en_comprobantes_por_entidad' %}">Saldo por Producto y Entidad en Movimientos y Comprobantes</a>
+                    <a class="dropdown-item" href="{% url 'comprobantes:buscar_comprobantes_por_entidad' %}">Comprobantes por Entidad</a>
+                    <div class="dropdown-divider"></div>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMovimientosProductos" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Movimientos de Productos
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownMovimientosProductos">
+                    <a class="dropdown-item" href="{% url 'movimientos:movimiento_alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:movimiento_modificar' %}">Modificación</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:movimiento_reportes' %}">Reportes</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:movimiento_ranking_productores' %}">Rankings</a>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownIngresoHvYerbaMate">Ingreso H.V. de Yerba Mate</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownIngresoHvYerbaMate">
+                            <a class="dropdown-item" href="{% url 'movimientos:recepcion_hv_yerba_mate' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'movimientos:listado_recepcion_hv_yerba_mate' %}">Modificación</a>
+                            <a class="dropdown-item" href="{% url 'movimientos:reporte_hv_yerba_mate' %}">Reportes</a>
+                        </div>
+                    </div>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMovimientosCaja" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Movimientos de Caja
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownMovimientosCaja">
+                    <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_modificar' %}">Modificación</a>
+                    <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_reportes' %}">Reportes</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_libro_modificar' %}">Modificar en libro</a>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownComprobantes" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Comprobantes
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownComprobantes">
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_modificar' %}">Modificar</a>
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_reportes' %}">Reportes</a>
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_ranking_entidades' %}">Rankings</a>
+                    <div class="dropdown-divider"></div>
+                    <h6 class="dropdown-header">Comprobante Renglones</h6>
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_renglon_alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_renglon_modificar' %}">Modificar</a>
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_renglon_reportes' %}">Reportes</a>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownLiquidaciones" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Liquidaciones
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownLiquidaciones">
+                    <a class="dropdown-item" href="{% url 'liquidaciones:listado' %}">Listado</a>
+                    <a class="dropdown-item" href="{% url 'liquidaciones:alta' %}">Nueva liquidación</a>
+                    <a class="dropdown-item" href="{% url 'liquidaciones:reporte' %}">Reportes</a>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownSinLiquidar">Sin Liquidar</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownSinLiquidar">
+                            <a class="dropdown-item" href="{% url 'liquidaciones:sin_liquidar_comprobantes' %}">Comprobantes</a>
+                            <a class="dropdown-item" href="{% url 'liquidaciones:sin_liquidar_movimientos_caja' %}">Movimientos de Caja</a>
+                            <a class="dropdown-item" href="{% url 'liquidaciones:sin_liquidar_retenciones' %}">Retenciones</a>
+                            <a class="dropdown-item" href="{% url 'liquidaciones:sin_liquidar_retenciones_inym' %}">Retenciones Inym</a>
+                        </div>
+                    </div>
+                    <a class="dropdown-item" href="{% url 'liquidaciones:diferencias' %}">Diferencias</a>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownRetenciones" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Retenciones
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownRetenciones">
+                    <a class="dropdown-item" href="{% url 'retenciones:alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'retenciones:listado' %}">Modificación</a>
+                    <a class="dropdown-item" href="{% url 'retenciones:listado' %}">Listado</a>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownRetImpuestos">Ret. Impuestos</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownRetImpuestos">
+                            <a class="dropdown-item" href="{% url 'retenciones:tipo_impuesto_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'retenciones:tipo_impuesto_listado' %}">Modificación</a>
+                            <a class="dropdown-item" href="{% url 'retenciones:tipo_impuesto_listado' %}">Listado</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownRetRegimenes">Ret. Regimenes</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownRetRegimenes">
+                            <a class="dropdown-item" href="{% url 'retenciones:tipo_regimen_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'retenciones:tipo_regimen_listado' %}">Modificación</a>
+                            <a class="dropdown-item" href="{% url 'retenciones:tipo_regimen_listado' %}">Listado</a>
+                        </div>
+                    </div>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownTipos" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Tipos
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownTipos">
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownTipoProductos">Productos</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownTipoProductos">
+                            <a class="dropdown-item" href="{% url 'productos:producto_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'productos:producto_modificar' %}">Modificación</a>
+                            <a class="dropdown-item" href="{% url 'productos:producto_reportes' %}">Reportes</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    {% for caso in tipos_menu %}
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownTipo{{ forloop.counter }}">{{ caso.nombre_plural }}</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownTipo{{ forloop.counter }}">
+                            <a class="dropdown-item" href="{% url 'tipos:alta' slug=caso.slug %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'tipos:listado' slug=caso.slug %}">Modificación</a>
+                            <a class="dropdown-item" href="{% url 'tipos:listado' slug=caso.slug %}">Listado</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+             </li>
+            
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownSolicitudesCompra" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Solicitudes de Compra
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownSolicitudesCompra">
+                    <a class="dropdown-item" href="{% url 'solicitudes_compra:alta' %}">Nueva solicitud</a>
+                    <a class="dropdown-item" href="{% url 'solicitudes_compra:listado' %}">Listado</a>   
+                </div>
+             </li>
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownEmpleados" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Empleados
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownEmpleados">
+                    <a class="dropdown-item" href="{% url 'empleados:alta' %}">Nuevo empleado</a>
+                    <a class="dropdown-item" href="{% url 'empleados:listado' %}">Listado</a>
+                </div>
+             </li>
+
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownOtros" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Otros
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownOtros">
+                    <a class="dropdown-item" href="{% url 'respaldo:backup' %}">Backup de base de datos</a>
+                    <a class="dropdown-item" href="{{ alta_usuario }}">Nuevo usuario</a>
+                </div>
+             </li>
+
+             <li class="nav-item">
+                 <span class="nav-link disabled">{{ user.username }}</span>
+             </li>
+             <li class="nav-item">
+                 <a class="nav-link" href="{{ logout }}">Cerrar sesión</a>
+             </li>
+
+    </ul>
+
+        </ul>
+    </div>
+</nav>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.dropdown-submenu > a.dropdown-toggle').forEach(function (toggle) {
+        toggle.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var submenu = toggle.parentElement; // .dropdown-submenu
+            var abierto = submenu.classList.contains('show');
+            // cierra otros submenús hermanos que hayan quedado abiertos
+            var padre = submenu.parentElement;
+            padre.querySelectorAll(':scope > .dropdown-submenu.show').forEach(function (otro) {
+                if (otro !== submenu) { otro.classList.remove('show'); }
+            });
+            submenu.classList.toggle('show', !abierto);
+        });
+    });
+});
+</script>

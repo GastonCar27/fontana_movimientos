@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar {{ config.nombre_singular|lower }}</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar {{ config.nombre_singular|lower }} <strong>{{ objeto.id }}</strong>
+        - <strong>{{ objeto }}</strong>?
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'tipos:listado' slug=config.slug %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

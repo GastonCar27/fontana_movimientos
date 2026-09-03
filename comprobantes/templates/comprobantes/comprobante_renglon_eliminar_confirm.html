@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar renglón de comprobante</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar el renglón <strong>{{ renglon.id }}</strong>
+        del comprobante <strong>{{ renglon.comprobante_id }}</strong>
+        {% if renglon.producto %}, producto <strong>{{ renglon.producto }}</strong>{% endif %}
+        y un total de <strong>{{ renglon.total|separador_miles }}</strong>?
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'comprobantes:comprobante_renglon_modificar' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,69 @@
+# =============================================================================
+# .gitignore de fontana_movimientos
+#
+# Este archivo le dice a git qué archivos y carpetas NO debe versionar
+# (no los sube a los commits, aunque existan en la carpeta del proyecto).
+# Sirve para no llenar el repositorio de basura (cachés, archivos que se
+# regeneran solos) y, sobre todo, para no subir por error credenciales o
+# datos reales de producción a git. Si algún archivo ya estaba trackeado
+# ANTES de agregar esta regla, git lo sigue versionando igual: para
+# sacarlo hay que hacer "git rm --cached <archivo>" una vez.
+# =============================================================================
+
+# --- Credenciales / configuración de entorno ---
+# El .env tiene la clave secreta de Django y el usuario/contraseña de la
+# base de datos. Nunca se sube: cada máquina (o cada persona) tiene el
+# suyo propio, local, hecho a mano o con los .bat de abajo.
+.env
+.env.*
+
+# Los .bat que arman el .env de producción/pruebas también tienen el
+# usuario y la contraseña de la base de datos escritos en texto plano
+# (son los que arman "un botón" para cambiar de base). Misma razón que
+# el .env: no van al repo.
+usar_bd_produccion.bat
+usar_bd_pruebas.bat
+
+# --- Python / entorno virtual ---
+# Carpetas y archivos que Python genera solo al ejecutar el proyecto;
+# se recrean automáticamente, no aportan nada versionados.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Django ---
+# Estáticos que junta "collectstatic" en STATIC_ROOT (carpeta "assets"
+# según settings/base.py): se regeneran con el comando, no hace falta
+# guardarlos en git.
+/assets/
+staticfiles/
+
+# Por si alguna vez se prueba con SQLite en lugar de MySQL.
+db.sqlite3
+
+# Archivos subidos por usuarios, si en algún momento se usa MEDIA_ROOT.
+media/
+
+# Logs de la aplicación.
+*.log
+
+# --- Backups y dumps de la base de datos ---
+# La carpeta de respaldos y los dumps .sql pesan mucho, cambian todo el
+# tiempo y pueden tener datos reales de clientes/movimientos: no
+# corresponden en el historial de git. Si alguno de estos .sql en
+# realidad es un script de referencia que sí querés versionar, borrá esa
+# línea de acá abajo.
+/backups/
+comprobantes.sql
+comprobante_renglon_detalle.sql
+solo_movimientos.sql
+solomovimientos.sql
+
+# --- Editor / sistema operativo ---
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

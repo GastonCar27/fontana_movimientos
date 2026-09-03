@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<head>
+<h2>Recepción de H.V. de Yerba Mate</h2>
+     <script src="{% static '/js/buscador_inym_operador.js' %}"></script>
+</head>
+  <body>
+        {% if messages %}
+        <ul class="messages">
+        {% for message in messages %}
+          <li {% if message.tags %}
+              class="{{ message.tags }}"
+              {% endif %}>{{ message }}</li>
+        {% endfor %}
+        </ul>
+{% endif %}
+    <form action="" method="post">
+        {% csrf_token %}
+        {% for field in form_movimiento %}
+            <div class="field-wrapper">
+                {% if  field.label != 'Total' %}
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {% if field.errors %}
+                            {{ field.errors }}
+                    {% endif %}
+                    
+                {% endif %}
+        {% endfor %}
+            </div>
+        {% for field in form %}
+
+                {% if  field.label == 'Inym operador' %}
+
+                         <div class="field-wrapper">
+                             {{ field.label_tag }}
+                             <input type="text" id="buscador_emisor"  name="buscador_emisor" placeholder="Buscar emisor..."/>                            {{ field }}
+                         </div>
+
+                {% else %}
+                     <div class="field-wrapper">
+                        {{ field.label_tag }}
+                        {{ field }}
+                        {% if field.errors %}
+                                {{ field.errors }}
+                        {% endif %}
+
+                     </div>
+                {% endif %}
+
+        {% endfor %}
+        {% for field in form_pesaje %}
+            <div class="field-wrapper">
+                {{ field.label_tag }}
+                {{ field }}
+                {% if field.errors %}
+                        {{ field.errors }}
+                {% endif %}
+
+            </div>
+        {% endfor %}
+        <div class="field-wrapper">
+                {{ form_movimiento.total.label_tag }}
+                {{ form_movimiento.total }}
+                {% if form_movimiento.total.errors %}
+                        {{ form_movimiento.total.errors }}
+                {% endif %}
+
+        </div>
+        {% if modificar %}
+            <input type="submit" value="Modificar" />
+        {% else %}
+            <input type="submit" value="Agregar" />
+        {% endif %}
+    </form>
+
+     <script src="{% static '/js/calculo_total_con_btd.js' %}" ></script>
+  </body>
+{% endblock %}

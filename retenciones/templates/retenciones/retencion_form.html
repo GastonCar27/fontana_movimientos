@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">
+        {% if modo == 'modificar' %}
+            Modificar retención {{ anio }}-{{ numero|stringformat:"04d" }}
+        {% else %}
+            Nueva retención
+        {% endif %}
+    </h4>
+
+    <form method="post" id="form-retencion">
+        {% csrf_token %}
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="form-row">
+                    <div class="form-group col-md-4 position-relative">
+                        <label>{{ header_form.entidad_nombre.label }}</label>
+                        {{ header_form.entidad_nombre }}
+                        {{ header_form.entidad }}
+                        <div id="entidad-resultados" class="entidad-resultados"></div>
+                        {% if header_form.entidad_nombre.errors %}
+                            <div class="text-danger small">{{ header_form.entidad_nombre.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ header_form.id_impuesto.label }}</label>
+                        {{ header_form.id_impuesto }}
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label>{{ header_form.id_regimen.label }}</label>
+                        {{ header_form.id_regimen }}
+                    </div>
+                    <div class="form-group col-md-1">
+                        <label>{{ header_form.año.label }}</label>
+                        {{ header_form.año }}
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ header_form.numero.label }}</label>
+                        {{ header_form.numero }}
+                    </div>
+                </div>
+                {% if header_form.non_field_errors %}
+                    <div class="text-danger small">{{ header_form.non_field_errors|join:", " }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        {{ regimen_impuesto_map|json_script:"regimen-impuesto-map" }}
+
+        <h5>Detalle de las operaciones</h5>
+        {{ formset.management_form }}
+        {% if formset.non_form_errors %}
+            <div class="alert alert-danger">{{ formset.non_form_errors|join:", " }}</div>
+        {% endif %}
+
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle" id="tabla-renglones">
+                <thead class="thead-light">
+                    <tr>
+                        <th style="min-width:160px;">Tipo de factura</th>
+                        <th style="min-width:110px;">Punto de venta</th>
+                        <th style="min-width:110px;">Número</th>
+                        <th style="min-width:150px;">Fecha</th>
+                        <th style="min-width:130px;">Importe</th>
+                        <th style="min-width:110px;">Porcentaje</th>
+                        <th style="min-width:130px;">Retención</th>
+                        <th style="width:60px;" class="text-center">Quitar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for form in formset %}
+                    <tr class="renglon-row">
+                        <td>{{ form.tipo_comp_origen }}</td>
+                        <td>{{ form.punto_venta }}</td>
+                        <td>{{ form.numero_comprobante }}</td>
+                        <td>{{ form.fecha_comp_origen }}</td>
+                        <td>{{ form.subtotal }}</td>
+                        <td>{{ form.porcentaje }}</td>
+                        <td>{{ form.total }}</td>
+                        <td class="text-center">{{ form.DELETE }}</td>
+                        {% if form.non_field_errors %}
+                        <td colspan="8" class="text-danger small">{{ form.non_field_errors|join:", " }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- fila plantilla oculta, usada por JS para agregar renglones nuevos -->
+        <table style="display:none;"><tbody>
+            <tr id="fila-plantilla">
+                <td>{{ formset.empty_form.tipo_comp_origen }}</td>
+                <td>{{ formset.empty_form.punto_venta }}</td>
+                <td>{{ formset.empty_form.numero_comprobante }}</td>
+                <td>{{ formset.empty_form.fecha_comp_origen }}</td>
+                <td>{{ formset.empty_form.subtotal }}</td>
+                <td>{{ formset.empty_form.porcentaje }}</td>
+                <td>{{ formset.empty_form.total }}</td>
+                <td>{{ formset.empty_form.DELETE }}</td>
+            </tr>
+        </tbody></table>
+
+        <button type="button" id="btn-agregar-renglon" class="btn btn-sm btn-outline-secondary mb-3">+ Agregar renglón</button>
+
+        <div class="mt-4">
+            <button type="submit" name="accion" value="pdf" class="btn btn-primary">Guardar e imprimir en PDF</button>
+            <button type="submit" name="accion" value="excel" class="btn btn-success">Guardar e imprimir en Excel</button>
+            <button type="submit" name="accion" value="guardar" class="btn btn-outline-secondary">Guardar</button>
+        </div>
+    </form>
+</div>
+
+<style>
+.entidad-resultados {
+    position: absolute;
+    top: 100%;
+    left: 15px;
+    right: 15px;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+.entidad-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.entidad-resultados div:hover {
+    background: #f0f0f0;
+}
+</style>
+
+<script>
+(function () {
+    // --- Buscador de entidad con autocompletado (Proveedor) ---
+    const input = document.getElementById('entidad-buscador');
+    const hidden = document.getElementById('id_entidad');
+    const resultados = document.getElementById('entidad-resultados');
+    let timeoutId = null;
+
+    if (input) {
+        input.addEventListener('input', function () {
+            hidden.value = '';
+            const q = input.value.trim();
+
+            clearTimeout(timeoutId);
+            if (q.length < 2) {
+                resultados.style.display = 'none';
+                resultados.innerHTML = '';
+                return;
+            }
+
+            timeoutId = setTimeout(function () {
+                fetch(`{% url 'liquidaciones:entidad_buscar' %}?q=${encodeURIComponent(q)}`)
+                    .then(resp => resp.json())
+                    .then(data => {
+                        resultados.innerHTML = '';
+                        if (data.resultados.length === 0) {
+                            resultados.style.display = 'none';
+                            return;
+                        }
+                        data.resultados.forEach(function (item) {
+                            const div = document.createElement('div');
+                            div.textContent = item.text;
+                            div.addEventListener('click', function () {
+                                input.value = item.text;
+                                hidden.value = item.id;
+                                resultados.style.display = 'none';
+                            });
+                            resultados.appendChild(div);
+                        });
+                        resultados.style.display = 'block';
+                    });
+            }, 250);
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!resultados.contains(e.target) && e.target !== input) {
+                resultados.style.display = 'none';
+            }
+        });
+    }
+
+    // --- Impuesto/Régimen condicionados entre sí: elegir uno restringe las
+    // opciones del otro a solo las vinculadas. ---
+    const mapaRegimenImpuesto = JSON.parse(document.getElementById('regimen-impuesto-map').textContent);
+    const selectImpuesto = document.getElementById('id_id_impuesto');
+    const selectRegimen = document.getElementById('id_id_regimen');
+
+    if (selectImpuesto && selectRegimen) {
+        // Copias completas de las opciones originales de ambos combos, antes
+        // de aplicar cualquier filtro. Al combo de Régimen se le marca en
+        // cada <option> a qué impuesto pertenece.
+        const opcionesImpuesto = Array.from(selectImpuesto.options).map(function (opt) {
+            return opt.cloneNode(true);
+        });
+        const opcionesRegimen = Array.from(selectRegimen.options).map(function (opt) {
+            const clon = opt.cloneNode(true);
+            if (clon.value && mapaRegimenImpuesto[clon.value] !== undefined && mapaRegimenImpuesto[clon.value] !== null) {
+                clon.dataset.impuesto = String(mapaRegimenImpuesto[clon.value]);
+            }
+            return clon;
+        });
+
+        function filtrarRegimenes() {
+            const impuestoSeleccionado = selectImpuesto.value;
+            const valorActual = selectRegimen.value;
+            selectRegimen.innerHTML = '';
+            opcionesRegimen.forEach(function (opt) {
+                if (!opt.value || !impuestoSeleccionado || opt.dataset.impuesto === impuestoSeleccionado) {
+                    selectRegimen.appendChild(opt.cloneNode(true));
+                }
+            });
+            if (Array.from(selectRegimen.options).some(function (o) { return o.value === valorActual; })) {
+                selectRegimen.value = valorActual;
+            }
+        }
+
+        function filtrarImpuestos() {
+            const regimenSeleccionado = selectRegimen.value;
+            const valorActual = selectImpuesto.value;
+            let impuestoVinculado = '';
+            if (regimenSeleccionado) {
+                const opcionRegimen = opcionesRegimen.find(function (o) { return o.value === regimenSeleccionado; });
+                impuestoVinculado = opcionRegimen ? (opcionRegimen.dataset.impuesto || '') : '';
+            }
+            selectImpuesto.innerHTML = '';
+            opcionesImpuesto.forEach(function (opt) {
+                if (!opt.value || !regimenSeleccionado || opt.value === impuestoVinculado) {
+                    selectImpuesto.appendChild(opt.cloneNode(true));
+                }
+            });
+            if (regimenSeleccionado && impuestoVinculado) {
+                selectImpuesto.value = impuestoVinculado;
+            } else if (Array.from(selectImpuesto.options).some(function (o) { return o.value === valorActual; })) {
+                selectImpuesto.value = valorActual;
+            }
+        }
+
+        selectImpuesto.addEventListener('change', filtrarRegimenes);
+        selectRegimen.addEventListener('change', filtrarImpuestos);
+
+        // Al cargar la página (por ejemplo en Modificación, ya con datos
+        // guardados) aplica el filtro en ambos sentidos.
+        filtrarRegimenes();
+        filtrarImpuestos();
+    }
+
+    // --- Cálculo automático de la retención (importe x porcentaje / 100) ---
+    function recalcularFila(fila) {
+        const importe = fila.querySelector('.importe-input');
+        const porcentaje = fila.querySelector('.porcentaje-input');
+        const total = fila.querySelector('.total-input');
+        if (!importe || !porcentaje || !total) return;
+        const valImporte = parseFloat(importe.value);
+        const valPorcentaje = parseFloat(porcentaje.value);
+        if (!isNaN(valImporte) && !isNaN(valPorcentaje)) {
+            total.value = (valImporte * valPorcentaje / 100).toFixed(2);
+        }
+    }
+
+    function conectarFila(fila) {
+        fila.querySelectorAll('.importe-input, .porcentaje-input').forEach(function (el) {
+            el.addEventListener('input', function () { recalcularFila(fila); });
+        });
+    }
+
+    document.querySelectorAll('#tabla-renglones tbody tr.renglon-row').forEach(conectarFila);
+
+    // --- Agregar renglón dinámicamente ---
+    const totalFormsInput = document.getElementById('id_form-TOTAL_FORMS');
+    const tbody = document.querySelector('#tabla-renglones tbody');
+    const plantilla = document.getElementById('fila-plantilla');
+
+    document.getElementById('btn-agregar-renglon').addEventListener('click', function () {
+        const indice = parseInt(totalFormsInput.value, 10);
+        const nuevaFila = document.createElement('tr');
+        nuevaFila.className = 'renglon-row';
+        nuevaFila.innerHTML = plantilla.innerHTML.replace(/__prefix__/g, indice);
+        tbody.appendChild(nuevaFila);
+        conectarFila(nuevaFila);
+        totalFormsInput.value = indice + 1;
+    });
+})();
+</script>
+{% endblock %}

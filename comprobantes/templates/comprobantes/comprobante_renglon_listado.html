@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "comprobantes/menu.html" %}
+
+    <h4 class="mb-3">Renglones de comprobantes</h4>
+
+    <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label for="id_id" class="mb-1 small text-muted">ID renglón</label>
+            <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}">
+        </div>
+        <div class="col-auto">
+            <label for="id_comprobante" class="mb-1 small text-muted">ID comprobante</label>
+            <input type="text" id="id_comprobante" name="comprobante" class="form-control form-control-sm" value="{{ q_comprobante }}">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
+            <a href="{% url 'comprobantes:comprobante_renglon_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'id' 'ID' %}</th>
+                    <th>{% sort_th 'comprobante' 'Comprobante' %}</th>
+                    <th>{% sort_th 'fecha' 'Fecha' %}</th>
+                    <th>{% sort_th 'producto' 'Producto' %}</th>
+                    <th class="text-end">{% sort_th 'total' 'Total' %}</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in renglones %}
+                <tr>
+                    <td>{{ r.id }}</td>
+                    <td>{{ r.comprobante_id }}</td>
+                    <td>{{ r.comprobante.fecha }}</td>
+                    <td>{{ r.producto }}</td>
+                    <td class="text-end">{{ r.total|separador_miles }}</td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_renglon_editar' r.pk %}">Editar</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_renglon_eliminar' r.pk %}">Eliminar</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">No hay renglones cargados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,6 @@
+<form action="{% url 'comprobantes:renglon_comprobante_remove' %}" method="post">
+  {% csrf_token %}
+  <input type="hidden" name="renglon_comprobante_id" value="{{ renglon_comprobante.id }}" style="width: 50%;">
+  <button type="submit" class="btn btn-link text-danger" onclick="return confirm('¿Estás seguro de que deseas eliminar el registro con id {{ renglon_comprobante.id_renglon_comprobante}}?');"
+   style='padding:0px'>Eliminar</button>
+</form>

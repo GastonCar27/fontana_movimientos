@@ -1,0 +1,513 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+{% include "liquidaciones/menu.html" %}
+
+<h1>{% if liquidacion %}Editar liquidación {{ liquidacion.numero }}{% else %}Nueva liquidación{% endif %}</h1>
+
+{% if messages %}
+<ul>
+  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<!-- Paso 1: solo entidad. Al elegir un resultado del buscador, se recarga la página (GET) con sus ítems -->
+<form method="get" id="form-seleccion">
+    <label>Entidad:
+        <div class="entidad-buscador-wrapper">
+            <input type="text" id="entidad-buscador" autocomplete="off"
+                   placeholder="Buscar por nombre o CUIT..."
+                   value="{{ entidad_texto }}">
+            <input type="hidden" name="entidad" id="entidad-id" value="{{ entidad.pk|default:'' }}">
+            <div id="entidad-resultados" class="entidad-resultados"></div>
+        </div>
+    </label>
+</form>
+
+<style>
+.entidad-buscador-wrapper {
+    position: relative;
+    display: inline-block;
+}
+.entidad-buscador-wrapper input[type="text"] {
+    min-width: 280px;
+}
+.entidad-resultados {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+.entidad-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.entidad-resultados div:hover {
+    background: #f0f0f0;
+}
+.otro-item-buscador-wrapper {
+    position: relative;
+    display: inline-block;
+}
+.otro-item-buscador-wrapper input[type="text"] {
+    min-width: 420px;
+}
+.btn-quitar-otro {
+    color: #dc3545;
+    background: none;
+    border: 1px solid #dc3545;
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 2px 8px;
+}
+.btn-quitar-otro:hover {
+    background: #dc3545;
+    color: #fff;
+}
+</style>
+
+{% if entidad %}
+<!-- Paso 2: fecha + selección de ítems, ya con la entidad elegida -->
+<form method="post" id="form-items">
+    {% csrf_token %}
+    <input type="hidden" name="entidad" value="{{ entidad.pk }}">
+
+    <label>Fecha:
+        <input type="date" name="fecha" value="{{ fecha|date:'Y-m-d'|default:'' }}" required>
+    </label>
+
+    <h2>Movimientos de caja</h2>
+    <table border="1" cellpadding="5" class="tabla-items">
+        <thead><tr><th>Sel.</th><th>ID</th><th>Fecha</th><th>Tipo</th><th>Número</th><th>Concepto</th><th>Monto</th><th>Debe/Haber</th></tr></thead>
+        <tbody>
+        {% for m in items.movimientos %}
+            <tr>
+                <td><input type="checkbox" name="mov_selected" value="{{ m.pk }}" class="chk-item"
+                           data-monto="{{ m.monto_mostrar }}" {% if m.seleccionado %}checked{% endif %}></td>
+                <td>{{ m.id }}</td>
+                <td>{{ m.emision }}</td>
+                <td>{{ m.tipo|default:"-" }}</td>
+                <td>{{ m.numero|default:"-" }}</td>
+                <td>{{ m.concepto|default:"" }}</td>
+                <td>{{ m.monto_mostrar|separador_miles }}</td>
+                <td>
+                    <select name="mov_tipo_{{ m.pk }}" class="sel-tipo">
+                        <option value="debe" {% if m.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if m.tipo_actual == "haber" or not m.tipo_actual %}selected{% endif %}>Haber</option>
+                    </select>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="8">No hay movimientos de caja pendientes para esta entidad.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Comprobantes</h2>
+    <table border="1" cellpadding="5" class="tabla-items">
+        <thead><tr><th>Sel.</th><th>Fecha</th><th>ID</th><th>Tipo Comprobante</th><th>Punto de Venta</th><th>Número</th><th>Total</th><th>Debe/Haber</th></tr></thead>
+        <tbody>
+        {% for c in items.comprobantes %}
+            <tr>
+                <td><input type="checkbox" name="comp_selected" value="{{ c.pk }}" class="chk-item"
+                           data-monto="{{ c.monto_mostrar }}" {% if c.seleccionado %}checked{% endif %}></td>
+                <td>{{ c.fecha }}</td>
+                <td>{{ c.comprobante_string|default:c.pk }}</td>
+                <td>{{ c.tipo_comprobante|default:"-" }}</td>
+                <td>{{ c.punto_de_venta|default:"-" }}</td>
+                <td>{{ c.numero|default:"-" }}</td>
+                <td>{{ c.monto_mostrar|separador_miles }}</td>
+                <td>
+                    <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
+                        <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if c.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
+                    </select>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="8">No hay comprobantes pendientes para esta entidad.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Retenciones</h2>
+    <table border="1" cellpadding="5" class="tabla-items">
+        <thead><tr><th>Sel.</th><th>Fecha</th><th>ID</th><th>Año</th><th>Número</th><th>Régimen</th><th>Impuesto</th><th>Total</th><th>Debe/Haber</th></tr></thead>
+        <tbody>
+        {% for r in items.retenciones %}
+            <tr>
+                <td><input type="checkbox" name="ret_selected" value="{{ r.pk }}" class="chk-item"
+                           data-monto="{{ r.monto_mostrar }}" {% if r.seleccionado %}checked{% endif %}></td>
+                <td>{{ r.fecha }}</td>
+                <td>{{ r.comprobante_string|default:r.pk }}</td>
+                <td>{{ r.año|default:"-" }}</td>
+                <td>{{ r.numero|default:"-" }}</td>
+                <td>{{ r.id_regimen|default:"-" }}</td>
+                <td>{{ r.id_impuesto|default:"-" }}</td>
+                <td>{{ r.monto_mostrar|separador_miles }}</td>
+                <td>
+                    <select name="ret_tipo_{{ r.pk }}" class="sel-tipo">
+                        <option value="debe" {% if r.tipo_actual == "debe" or not r.tipo_actual %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if r.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
+                    </select>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="9">No hay retenciones pendientes para esta entidad.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Retenciones INYM</h2>
+    <table border="1" cellpadding="5" class="tabla-items">
+        <thead><tr><th>Sel.</th><th>Fecha</th><th>Kgs</th><th>Total</th><th>Debe/Haber</th></tr></thead>
+        <tbody>
+        {% for ri in items.retenciones_inym %}
+            <tr>
+                <td><input type="checkbox" name="retinym_selected" value="{{ ri.pk }}" class="chk-item"
+                           data-monto="{{ ri.monto_mostrar }}" {% if ri.seleccionado %}checked{% endif %}></td>
+                <td>{{ ri.fecha }}</td>
+                <td>{{ ri.kgs|separador_miles }}</td>
+                <td>{{ ri.monto_mostrar|separador_miles }}</td>
+                <td>
+                    <select name="retinym_tipo_{{ ri.pk }}" class="sel-tipo">
+                        <option value="debe" {% if ri.tipo_actual == "debe" or not ri.tipo_actual %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if ri.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
+                    </select>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5">No hay retenciones INYM pendientes para esta entidad.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Otros movimientos / comprobantes (de otra entidad)</h2>
+    <p style="margin:4px 0 8px; color:#555;">
+        Buscá acá un movimiento de caja o un comprobante que <strong>no</strong>
+        pertenezca a {{ entidad_texto|default:"la entidad seleccionada" }} pero
+        que quieras agregar igual a esta liquidación (por ejemplo, un
+        cheque recibido de un tercero que todavía no se usó en ninguna
+        liquidación).
+    </p>
+    <div class="otro-item-buscador-wrapper">
+        <input type="text" id="otro-item-buscador" autocomplete="off"
+               placeholder="Buscar por entidad, número, concepto o tipo de comprobante...">
+        <div id="otro-item-resultados" class="entidad-resultados"></div>
+    </div>
+
+    <table border="1" cellpadding="5" class="tabla-items" id="tabla-otros-items" style="margin-top:10px;">
+        <thead><tr><th>Sel.</th><th>Tipo</th><th>Entidad</th><th>Fecha</th><th>Detalle</th><th>Monto</th><th>Debe/Haber</th><th></th></tr></thead>
+        <tbody id="tbody-otros-items">
+        {% for m in items.movimientos_otros %}
+            <tr>
+                <td><input type="checkbox" name="mov_selected" value="{{ m.pk }}" class="chk-item"
+                           data-monto="{{ m.monto_mostrar }}" checked></td>
+                <td>Movimiento</td>
+                <td>{{ m.receptor|default:"-" }}</td>
+                <td>{{ m.emision }}</td>
+                <td>{{ m.tipo|default:"" }} {{ m.numero|default:"" }} {{ m.concepto|default:"" }}</td>
+                <td>{{ m.monto_mostrar|separador_miles }}</td>
+                <td>
+                    <select name="mov_tipo_{{ m.pk }}" class="sel-tipo">
+                        <option value="debe" {% if m.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if m.tipo_actual == "haber" or not m.tipo_actual %}selected{% endif %}>Haber</option>
+                    </select>
+                </td>
+                <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales();">Quitar</button></td>
+            </tr>
+        {% endfor %}
+        {% for c in items.comprobantes_otros %}
+            <tr>
+                <td><input type="checkbox" name="comp_selected" value="{{ c.pk }}" class="chk-item"
+                           data-monto="{{ c.monto_mostrar }}" checked></td>
+                <td>Comprobante</td>
+                <td>{{ c.entidad_emisor|default:c.entidad_nombre }}</td>
+                <td>{{ c.fecha }}</td>
+                <td>{{ c.tipo_comprobante|default:"" }} {{ c.comprobante_string|default:"" }}</td>
+                <td>{{ c.monto_mostrar|separador_miles }}</td>
+                <td>
+                    <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
+                        <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if c.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
+                    </select>
+                </td>
+                <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales();">Quitar</button></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div id="resumen-totales" style="margin-top:20px; font-weight:bold;">
+        Debe: <span id="total-debe">0,00</span> —
+        Haber: <span id="total-haber">0,00</span> —
+        Diferencia: <span id="total-diferencia">0,00</span>
+    </div>
+
+    <button type="submit" style="margin-top:15px;">Guardar liquidación</button>
+</form>
+
+<!-- Ventana modal de confirmación cuando debe y haber no coinciden -->
+<div class="modal fade" id="modalConfirmarDiferencia" tabindex="-1" role="dialog" aria-labelledby="modalConfirmarDiferenciaLabel">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalConfirmarDiferenciaLabel">Hay diferencia entre Debe y Haber</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      </div>
+      <div class="modal-body">
+        <p>El Debe y el Haber de esta liquidación no coinciden.</p>
+        <p>Diferencia: <strong id="modal-diferencia">0,00</strong></p>
+        <p>¿Igualmente querés guardar la liquidación?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btn-confirmar-diferencia">Aceptar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+// --- Buscador de entidad con autocompletado ---
+(function () {
+    const input = document.getElementById('entidad-buscador');
+    const hidden = document.getElementById('entidad-id');
+    const resultados = document.getElementById('entidad-resultados');
+    let timeoutId = null;
+
+    input.addEventListener('input', function () {
+        hidden.value = '';  // si el usuario vuelve a escribir, invalidamos la selección anterior
+        const q = input.value.trim();
+
+        clearTimeout(timeoutId);
+        if (q.length < 2) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+
+        timeoutId = setTimeout(function () {
+            fetch(`{% url 'liquidaciones:entidad_buscar' %}?q=${encodeURIComponent(q)}`)
+                .then(resp => resp.json())
+                .then(data => {
+                    resultados.innerHTML = '';
+                    if (data.resultados.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    data.resultados.forEach(function (item) {
+                        const div = document.createElement('div');
+                        div.textContent = item.text;
+                        div.addEventListener('click', function () {
+                            input.value = item.text;
+                            hidden.value = item.id;
+                            resultados.style.display = 'none';
+                            document.getElementById('form-seleccion').submit();
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+})();
+
+// --- Agrega una fila a la tabla de "Otros movimientos / comprobantes" ---
+// Si el ítem ya estaba agregado (mismo tipo + id, ya sea en esta tabla o en
+// las de arriba), simplemente lo vuelve a tildar en vez de duplicar la fila.
+function agregarOtroItem(item) {
+    const nombreSel = item.tipo === 'mov' ? 'mov_selected' : 'comp_selected';
+    const yaExiste = document.querySelector(`input[name="${nombreSel}"][value="${item.id}"]`);
+    if (yaExiste) {
+        yaExiste.checked = true;
+        recalcularTotales();
+        return;
+    }
+
+    const nombreTipoSel = (item.tipo === 'mov' ? 'mov_tipo_' : 'comp_tipo_') + item.id;
+    const etiquetaTipo = item.tipo === 'mov' ? 'Movimiento' : 'Comprobante';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input type="checkbox" name="${nombreSel}" value="${item.id}" class="chk-item" data-monto="${item.monto}" checked></td>
+        <td>${etiquetaTipo}</td>
+        <td>${item.entidad}</td>
+        <td>${item.fecha}</td>
+        <td>${item.detalle}</td>
+        <td>${formatearMiles(item.monto)}</td>
+        <td>
+            <select name="${nombreTipoSel}" class="sel-tipo">
+                <option value="debe">Debe</option>
+                <option value="haber" selected>Haber</option>
+            </select>
+        </td>
+        <td><button type="button" class="btn-quitar-otro">Quitar</button></td>
+    `;
+    document.getElementById('tbody-otros-items').appendChild(tr);
+
+    tr.querySelector('.btn-quitar-otro').addEventListener('click', function () {
+        tr.remove();
+        recalcularTotales();
+    });
+    tr.querySelector('.chk-item').addEventListener('change', recalcularTotales);
+    tr.querySelector('.sel-tipo').addEventListener('change', recalcularTotales);
+    recalcularTotales();
+}
+
+// --- Buscador de "Otros movimientos / comprobantes" (de otra entidad) ---
+(function () {
+    const input = document.getElementById('otro-item-buscador');
+    const resultados = document.getElementById('otro-item-resultados');
+    const entidadIdInput = document.getElementById('entidad-id');
+    let timeoutId = null;
+
+    if (!input) {
+        return;
+    }
+
+    input.addEventListener('input', function () {
+        const q = input.value.trim();
+
+        clearTimeout(timeoutId);
+        if (q.length < 2) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+
+        timeoutId = setTimeout(function () {
+            const entidadExcluir = entidadIdInput ? entidadIdInput.value : '';
+            fetch(`{% url 'liquidaciones:item_sin_liquidar_buscar' %}?q=${encodeURIComponent(q)}&entidad_excluir=${encodeURIComponent(entidadExcluir)}`)
+                .then(resp => resp.json())
+                .then(data => {
+                    resultados.innerHTML = '';
+                    if (data.resultados.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    data.resultados.forEach(function (item) {
+                        const div = document.createElement('div');
+                        const etiquetaTipo = item.tipo === 'mov' ? 'Movimiento' : 'Comprobante';
+                        div.textContent = `[${etiquetaTipo}] ${item.entidad} — ${item.fecha} — ${item.detalle} — $${formatearMiles(item.monto)}`;
+                        div.addEventListener('click', function () {
+                            agregarOtroItem(item);
+                            input.value = '';
+                            resultados.style.display = 'none';
+                            resultados.innerHTML = '';
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+})();
+
+// --- Formato de números: punto para miles, coma para decimales (formato argentino) ---
+function formatearMiles(numero, decimales) {
+    decimales = decimales === undefined ? 2 : decimales;
+    const signo = numero < 0 ? '-' : '';
+    const valorAbs = Math.abs(numero).toFixed(decimales);
+    const partes = valorAbs.split('.');
+    partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return signo + partes.join(',');
+}
+
+// --- Cálculo de totales debe/haber/diferencia ---
+let ultimoTotalDebe = 0;
+let ultimoTotalHaber = 0;
+
+// Diferencia = Haber - Debe: queda NEGATIVA (roja) cuando el Haber es menor
+// que el Debe, y POSITIVA (verde) cuando el Haber es mayor o igual al Debe.
+function calcularDiferencia() {
+    return ultimoTotalHaber - ultimoTotalDebe;
+}
+
+function recalcularTotales() {
+    let totalDebe = 0;
+    let totalHaber = 0;
+
+    document.querySelectorAll('.chk-item:checked').forEach(function (chk) {
+        const fila = chk.closest('tr');
+        const monto = parseFloat(chk.dataset.monto) || 0;
+        const select = fila.querySelector('.sel-tipo');
+        const tipo = select ? select.value : 'debe';
+
+        if (tipo === 'debe') {
+            totalDebe += monto;
+        } else {
+            totalHaber += monto;
+        }
+    });
+
+    ultimoTotalDebe = totalDebe;
+    ultimoTotalHaber = totalHaber;
+
+    document.getElementById('total-debe').textContent = formatearMiles(totalDebe);
+    document.getElementById('total-haber').textContent = formatearMiles(totalHaber);
+
+    const diferencia = calcularDiferencia();
+    const spanDiferencia = document.getElementById('total-diferencia');
+    spanDiferencia.textContent = formatearMiles(diferencia);
+    spanDiferencia.style.color = diferencia < 0 ? '#dc3545' : '#198754';
+}
+
+document.querySelectorAll('.chk-item, .sel-tipo').forEach(function (el) {
+    el.addEventListener('change', recalcularTotales);
+});
+
+recalcularTotales();
+
+// --- Confirmación al guardar si hay diferencia entre Debe y Haber ---
+(function () {
+    const formItems = document.getElementById('form-items');
+    if (!formItems) {
+        return;
+    }
+    const modalDiferencia = document.getElementById('modalConfirmarDiferencia');
+    const btnConfirmar = document.getElementById('btn-confirmar-diferencia');
+    let guardarConfirmado = false;
+
+    formItems.addEventListener('submit', function (evento) {
+        if (guardarConfirmado) {
+            return; // ya se confirmó desde el cartel: se deja continuar el envío
+        }
+        // Tolerancia chica para evitar falsos positivos por redondeo binario.
+        const diferencia = Math.round(calcularDiferencia() * 100) / 100;
+        if (Math.abs(diferencia) > 0.001) {
+            evento.preventDefault();
+            const spanModalDiferencia = document.getElementById('modal-diferencia');
+            spanModalDiferencia.textContent = formatearMiles(diferencia);
+            spanModalDiferencia.style.color = diferencia < 0 ? '#dc3545' : '#198754';
+            $(modalDiferencia).modal('show');
+        }
+    });
+
+    btnConfirmar.addEventListener('click', function () {
+        guardarConfirmado = true;
+        $(modalDiferencia).modal('hide');
+        formItems.submit();
+    });
+})();
+</script>
+{% endblock %}

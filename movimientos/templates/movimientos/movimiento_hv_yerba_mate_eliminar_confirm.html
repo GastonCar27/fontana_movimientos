@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar movimiento</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar el movimiento número <strong>{{ movimiento.numero }}</strong>
+        con id <strong>{{ movimiento.pk }}</strong>
+        {% if movimiento.fecha %}de fecha <strong>{{ movimiento.fecha }}</strong>{% endif %}
+        {% if movimiento.entidad_emisor %}, productor <strong>{{ movimiento.entidad_emisor }}</strong>{% endif %}?
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'movimientos:listado_recepcion_hv_yerba_mate' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

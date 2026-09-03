@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="col">
+    {% include 'snippets/buscador_comprobante_renglon.html' with query=query %}
+    <hr>
+    <p> Resultados para: {{ query }}</p>
+    {% for object in list %}
+        <div class="col-3 mt-5">
+            {% include 'movimientos/snippets/movimiento.html' with movimiento=object %}
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

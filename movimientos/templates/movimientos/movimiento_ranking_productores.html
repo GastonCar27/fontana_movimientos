@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos/menu_gestion.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Ranking de productores por total entregado</h4>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-success" href="{% url 'movimientos:movimiento_ranking_productores_excel' %}?{{ request.GET.urlencode }}">
+                Exportar a Excel
+            </a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos:movimiento_ranking_productores_pdf' %}?{{ request.GET.urlencode }}">
+                Exportar a PDF
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha_desde.label_tag }}
+                    {{ form.fecha_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha_hasta.label_tag }}
+                    {{ form.fecha_hasta }}
+                </div>
+                <div class="col-12 col-md-4 col-lg-3">
+                    {{ form.producto.label_tag }}
+                    {{ form.producto }}
+                </div>
+                <div class="col-12 col-lg-3 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
+                    {% if filtros_activos %}
+                    <a href="{% url 'movimientos:movimiento_ranking_productores' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                    {% endif %}
+                </div>
+
+                {% if form.non_field_errors %}
+                <div class="col-12">
+                    {% for error in form.non_field_errors %}
+                    <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width:4rem;">{% sort_th 'posicion' '#' %}</th>
+                    <th>{% sort_th 'productor' 'Productor' %}</th>
+                    <th class="text-center">{% sort_th 'cantidad' 'Entregas' %}</th>
+                    <th class="text-end">{% sort_th 'total' 'Total entregado' %}</th>
+                    <th style="width:30%;">{% sort_th 'porcentaje' 'Participación' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in ranking %}
+                <tr>
+                    <td class="text-center">
+                        {% if fila.posicion <= 3 %}
+                        <span class="badge {% if fila.posicion == 1 %}bg-warning text-dark{% elif fila.posicion == 2 %}bg-secondary{% else %}bg-danger-subtle text-danger-emphasis{% endif %}">
+                            {{ fila.posicion }}
+                        </span>
+                        {% else %}
+                        {{ fila.posicion }}
+                        {% endif %}
+                    </td>
+                    <td>{{ fila.entidad_emisor__nombre|default:"Sin nombre" }}</td>
+                    <td class="text-center">{{ fila.cantidad }}</td>
+                    <td class="text-end fw-semibold">{{ fila.total_entregado|separador_miles }}</td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="progress flex-grow-1" style="height:8px;">
+                                <div class="progress-bar" role="progressbar" style="width: {{ fila.porcentaje|floatformat:1 }}%;"></div>
+                            </div>
+                            <span class="text-muted small" style="min-width:3.5rem;">{{ fila.porcentaje|floatformat:1 }}%</span>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">No hay movimientos para el filtro seleccionado.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td colspan="3" class="text-end">Total general</td>
+                    <td class="text-end">{{ total_general|separador_miles }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+
+{% load static %}
+<link rel="stylesheet" href="{% static '/css/busqueda_y_resultados.css' %}">
+<body>
+    <div>
+        <h3>Búsqueda de movimientos</h3>
+            <form method="post"  class="horizontal-form" style="width: 50%;">
+                {% csrf_token %}
+                {% for field in form %}
+                    {% if 'Selecciona' not in field.label_tag and 'Emisor' not in field.label_tag %}
+                       <p> 
+                        {{ field.label_tag }}
+                    {% endif %}
+                
+                {{ field }}
+                </p>
+                {% endfor %}
+                <div class="radio-group">
+                 <input type="radio" id="emisor_inym" name="agrupar" value="por_emisor_inym">
+                 <label for="emisor_inym">Agrupar por Emisor Op. Inym</label>
+                </div>       
+                <input type="submit">
+            </form>      
+    </div>
+</body>
+
+<script src="{% static '/js/buscador_generico.js' %}"></script>
+<script src="{% static '/js/buscador_emisor.js' %}"></script>
+<script src="{% static '/js/buscador_receptor.js' %}"></script>
+<script src="{% static '/js/buscador_producto.js' %}"></script>
+
+

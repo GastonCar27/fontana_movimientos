@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col-md-6">
+    {% include "productos/menu.html" %}
+
+    <h4 class="mb-3">
+        {% if modo == 'alta' %}Nuevo producto{% else %}Editar producto{% endif %}
+    </h4>
+
+    {% if producto %}<p class="text-muted">ID: {{ producto.id }}</p>{% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="form-group mb-3">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
+            {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        <a href="{% url 'productos:producto_modificar' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

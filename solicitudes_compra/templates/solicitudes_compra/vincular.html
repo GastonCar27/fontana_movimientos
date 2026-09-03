@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    {% include "solicitudes_compra/menu.html" %}
+
+    <h4 class="mb-1">Vincular renglones de factura — Solicitud {{ solicitud.numero }}</h4>
+    <p class="text-muted">
+        Proveedor: {{ solicitud.entidad }} — Fecha de la solicitud: {{ solicitud.fecha }}
+    </p>
+
+    <h6 class="mt-4">Renglones de la solicitud</h6>
+    <div class="table-responsive mb-4">
+        <table class="table table-sm table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Cantidad</th>
+                    <th>Formato</th>
+                    <th>Descripción</th>
+                    <th>Vinculado con (factura)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for renglon in renglones %}
+                <tr>
+                    <td>{{ renglon.cantidad }}</td>
+                    <td>{{ renglon.unidad_medida }}</td>
+                    <td>{{ renglon.descripcion }}</td>
+                    <td>
+                        {% for vinculo in renglon.vinculos.all %}
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span class="badge bg-secondary">
+                                Comprobante {{ vinculo.comprobante_renglon.comprobante.comprobante_string|default:vinculo.comprobante_renglon.comprobante_id }}
+                                — {{ vinculo.comprobante_renglon.producto }}
+                            </span>
+                            <form method="post" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="desvincular">
+                                <input type="hidden" name="vinculo_id" value="{{ vinculo.id }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1">×</button>
+                            </form>
+                        </div>
+                        {% empty %}
+                        <span class="text-muted small">Sin vincular todavía</span>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h6>Buscar renglones de factura de {{ solicitud.entidad }}</h6>
+    <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="mb-1 small text-muted">Producto (tal como lo facturó el proveedor)</label>
+            <input type="text" name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Ej: X-10">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Comprobante</th>
+                    <th>Fecha</th>
+                    <th>Producto facturado</th>
+                    <th>Cantidad</th>
+                    <th>Vincular a renglón de la solicitud</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for candidato in candidatos %}
+                <tr>
+                    <td>{{ candidato.comprobante.comprobante_string|default:candidato.comprobante_id }}</td>
+                    <td>{{ candidato.comprobante.fecha }}</td>
+                    <td>{{ candidato.producto }}</td>
+                    <td>{{ candidato.renglon_detalle_comprobante.cantidad|default:"-" }}</td>
+                    <td>
+                        {% if renglones %}
+                        <form method="post" class="d-flex gap-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="accion" value="vincular">
+                            <input type="hidden" name="comprobante_renglon" value="{{ candidato.id }}">
+                            <select name="solicitud_renglon" class="form-select form-select-sm">
+                                {% for renglon in renglones %}
+                                <option value="{{ renglon.id }}">{{ renglon.descripcion }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Vincular</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted small">La solicitud no tiene renglones.</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">
+                        {% if q %}No hay renglones de factura que coincidan con esa búsqueda.{% else %}Este proveedor todavía no tiene renglones de factura cargados.{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <a href="{% url 'solicitudes_compra:listado' %}" class="btn btn-outline-secondary btn-sm mt-3">Volver al listado</a>
+</div>
+{% endblock %}

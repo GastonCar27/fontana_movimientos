@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+<form method="post">
+    {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+            {% endfor %}
+            </div>
+        {% endif %}
+        {% for field in form %}
+            {% if  field.label == 'Entidad receptor' %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    <input type="text" id="buscador_receptor"  name="buscador_receptor" placeholder="Buscar receptor..."/> {{ field }}
+                </div>
+            {% elif  field.label == 'Producto' %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    <input type="text" id="buscador_producto"  name="buscador_producto" placeholder="Buscar receptor..."/> {{ field }}
+                </div>
+            {% else %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    {{ field }}
+                </div>
+            {% endif %}
+        {% endfor %}
+        <input type="submit" value="Agregar" />
+</form>
+
+<script src="{% static '/js/buscador_generico.js' %}"></script>
+<script>
+
+    let selectReceptor = document.querySelector('[name="entidad_receptor"]')
+    let receptor_buscador = document.getElementById('buscador_receptor')
+    let timeout_2 = null;
+    receptor_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,receptor_buscador,selectReceptor,timeout_2);
+    })
+    let selectProducto = document.querySelector('[name="producto"]')
+    let producto_buscador = document.getElementById('buscador_producto')
+    let timeout_3 = null;
+    producto_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,producto_buscador,selectProducto,timeout_3);
+    })
+</script>
+
+{% endblock %}

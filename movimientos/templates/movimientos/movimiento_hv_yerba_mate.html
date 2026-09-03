@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Movimiento: {{ movimiento.id_movimiento }}</h2>
+<p>Número: {{ movimiento.numero }}</p>
+<p>Fecha: {{ movimiento.fecha|date:"d/m/Y" }}</p>
+<p>Emisor: {{ movimiento.entidad_emisor }}</p>
+<p>Inym Emisor: {{ movimiento.inym_operador_origen.id }} : {{ movimiento.inym_operador_origen.tipo_operador }}</p>
+<p>Receptor: {{ movimiento.entidad_receptor }} : {{ movimiento.inym_operador_destino.tipo_operador }}</p>
+<p>Inym Receptor: {{ movimiento.inym_operador_destino.id }} : {{ movimiento.inym_operador_destino.tipo_operador }}</p>
+
+<p>Total: {{ movimiento.total }}</p>
+
+<p>{% include 'movimientos/snippets/modificar.html' %}</p>
+<p>{% include 'movimientos/snippets/eliminar.html' %}</p>
+
+{% endblock %}

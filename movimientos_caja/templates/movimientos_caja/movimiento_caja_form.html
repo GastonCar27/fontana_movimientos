@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% load static movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos_caja/menu.html" %}
+
+    <h4 class="mb-3">{% if movimiento %}Editar movimiento de caja {{ movimiento.id }}{% else %}Nuevo movimiento de caja{% endif %}</h4>
+
+    {% if messages %}
+    <ul class="list-unstyled">
+      {% for message in messages %}<li class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <form method="post" class="row gy-3">
+        {% csrf_token %}
+
+        <h6 class="text-muted mt-2 mb-0">Datos del movimiento</h6>
+
+        <div class="col-sm-3">
+            {{ form.caja.label_tag }}
+            {{ form.caja }}
+            {% if form.caja.errors %}<div class="text-danger small">{{ form.caja.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-3">
+            {{ form.tipo.label_tag }}
+            {{ form.tipo }}
+            {% if form.tipo.errors %}<div class="text-danger small">{{ form.tipo.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-3">
+            {{ form.emision.label_tag }}
+            {{ form.emision }}
+            {% if form.emision.errors %}<div class="text-danger small">{{ form.emision.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-3">
+            {{ form.monto.label_tag }}
+            {{ form.monto }}
+            {% if form.monto.errors %}<div class="text-danger small">{{ form.monto.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-sm-3">
+            {{ form.efectivizacion.label_tag }}
+            {{ form.efectivizacion }}
+            {% if form.efectivizacion.errors %}<div class="text-danger small">{{ form.efectivizacion.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-5">
+            <label class="form-label">Receptor</label>
+            <input type="text" name="buscador_receptor" class="form-control form-control-sm mb-1" placeholder="Buscar por ID o nombre...">
+            {{ form.receptor }}
+            {% if form.receptor.errors %}<div class="text-danger small">{{ form.receptor.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-4">
+            <label for="id_cuenta_bancaria_entidad" class="form-label">Cuenta bancaria del receptor</label>
+            {{ form_rel.cuenta_bancaria_entidad }}
+            {% if form_rel.cuenta_bancaria_entidad.errors %}<div class="text-danger small">{{ form_rel.cuenta_bancaria_entidad.errors }}</div>{% endif %}
+            <div class="form-text">Opcional. Se completa según las cuentas registradas del receptor elegido.</div>
+        </div>
+
+        <hr class="mt-2">
+        <h6 class="text-muted mb-0">Libro / hoja / renglón</h6>
+
+        <div class="col-sm-4">
+            <label for="id_libro" class="form-label">Libro de caja</label>
+            <select name="libro" id="id_libro" class="form-select form-select-sm">
+                <option value="">---------</option>
+                {% for libro in libros %}
+                <option value="{{ libro.id }}" data-caja="{{ libro.caja_id }}" {% if form_rel.libro.value|stringformat:"s" == libro.id|stringformat:"s" %}selected{% endif %}>{{ libro }}</option>
+                {% endfor %}
+            </select>
+            {% if form_rel.libro.errors %}<div class="text-danger small">{{ form_rel.libro.errors }}</div>{% endif %}
+            <div class="form-text">Se filtra por la cuenta de banco elegida arriba; por defecto queda el de mayor ID.</div>
+        </div>
+        <div class="col-sm-2">
+            {{ form_rel.hoja.label_tag }}
+            {{ form_rel.hoja }}
+            {% if form_rel.hoja.errors %}<div class="text-danger small">{{ form_rel.hoja.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-2">
+            {{ form_rel.renglon.label_tag }}
+            {{ form_rel.renglon }}
+            {% if form_rel.renglon.errors %}<div class="text-danger small">{{ form_rel.renglon.errors }}</div>{% endif %}
+        </div>
+
+        <hr class="mt-2">
+        <h6 class="text-muted mb-0">Otros datos</h6>
+
+        <div class="col-sm-3">
+            {{ form_rel.diferido.label_tag }}
+            {{ form_rel.diferido }}
+            {% if form_rel.diferido.errors %}<div class="text-danger small">{{ form_rel.diferido.errors }}</div>{% endif %}
+        </div>
+        <div class="col-sm-5">
+            <label class="form-label">Concepto</label>
+            <input type="text" name="buscador_concepto" class="form-control form-control-sm mb-1" placeholder="Buscar concepto...">
+            {{ form_rel.concepto_tipo }}
+            {% if form_rel.concepto_tipo.errors %}<div class="text-danger small">{{ form_rel.concepto_tipo.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+            <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script src="{% static 'js/buscador_generico.js' %}"></script>
+<script src="{% static 'js/buscador_receptor.js' %}"></script>
+<script>
+(function () {
+    var URL_CUENTAS_BANCARIAS = "{% url 'movimientos_caja:movimiento_caja_entidad_cuentas_bancarias' entidad_id=0 %}";
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // --- Buscador de concepto (mismo mecanismo que el de receptor) ---
+        var selectConcepto = document.querySelector('[name="concepto_tipo"]');
+        var conceptoBuscador = document.querySelector('[name="buscador_concepto"]');
+        var timeoutConcepto = null;
+        if (selectConcepto && conceptoBuscador) {
+            conceptoBuscador.addEventListener('input', function (evento) {
+                buscar_en_input(evento, conceptoBuscador, selectConcepto, timeoutConcepto);
+            });
+        }
+
+        // --- Libro filtrado por la cuenta de banco, con default = mayor ID ---
+        var cajaSelect = document.getElementById('id_caja');
+        var libroSelect = document.getElementById('id_libro');
+
+        function filtrarLibroPorCaja() {
+            if (!cajaSelect || !libroSelect) return;
+            var cajaId = cajaSelect.value;
+            var mejorId = null;
+            var seleccionValida = false;
+
+            Array.from(libroSelect.options).forEach(function (opt) {
+                if (!opt.value) { opt.hidden = false; return; }
+                var coincide = !cajaId || opt.dataset.caja === cajaId;
+                opt.hidden = !coincide;
+                if (coincide && cajaId) {
+                    if (opt.value === libroSelect.value) seleccionValida = true;
+                    if (mejorId === null || parseInt(opt.value, 10) > parseInt(mejorId, 10)) {
+                        mejorId = opt.value;
+                    }
+                }
+            });
+
+            if (cajaId && !seleccionValida && mejorId !== null) {
+                libroSelect.value = mejorId;
+            }
+        }
+
+        if (cajaSelect && libroSelect) {
+            cajaSelect.addEventListener('change', filtrarLibroPorCaja);
+            filtrarLibroPorCaja();
+        }
+
+        // --- Cuentas bancarias del receptor, cargadas por AJAX al elegirlo ---
+        var selectReceptor = document.querySelector('[name="receptor"]');
+        var selectCuenta = document.getElementById('id_cuenta_bancaria_entidad');
+        var cuentaInicial = selectCuenta ? selectCuenta.value : '';
+
+        function cargarCuentasBancarias(mantenerSeleccion) {
+            if (!selectReceptor || !selectCuenta) return;
+            var receptorId = selectReceptor.value;
+            selectCuenta.innerHTML = '';
+            selectCuenta.appendChild(new Option('---------', ''));
+            if (!receptorId) return;
+
+            var url = URL_CUENTAS_BANCARIAS.replace('/0/', '/' + receptorId + '/');
+            fetch(url)
+                .then(function (resp) { return resp.ok ? resp.json() : { cuentas: [] }; })
+                .then(function (data) {
+                    (data.cuentas || []).forEach(function (cuenta) {
+                        selectCuenta.appendChild(new Option(cuenta.label, cuenta.id));
+                    });
+                    if (mantenerSeleccion && cuentaInicial) {
+                        selectCuenta.value = cuentaInicial;
+                    }
+                })
+                .catch(function () {});
+        }
+
+        if (selectReceptor && selectCuenta) {
+            cargarCuentasBancarias(true);
+            selectReceptor.addEventListener('change', function () { cargarCuentasBancarias(false); });
+        }
+    });
+})();
+</script>
+{% endblock %}

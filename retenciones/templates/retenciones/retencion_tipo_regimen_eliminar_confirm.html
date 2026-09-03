@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar régimen</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar el régimen <strong>{{ regimen.id }}</strong>
+        - <strong>{{ regimen.nombre }}</strong>
+        {% if regimen.impuesto %}(impuesto: <strong>{{ regimen.impuesto.nombre }}</strong>){% endif %}?
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'retenciones:tipo_regimen_listado' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

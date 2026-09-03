@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "comprobantes/menu.html" %}
+
+<h1>{% if comprobante %}Editar comprobante {{ comprobante.id }}{% else %}Nuevo comprobante{% endif %}</h1>
+
+{% if messages %}
+<ul>
+  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <p>
+        <label>Entidad emisora:</label><br>
+        <div class="entidad-buscador-wrapper">
+            <input type="text" id="entidad-buscador" autocomplete="off"
+                   placeholder="Buscar por nombre, CUIT o ID..."
+                   value="{{ entidad_texto }}">
+            {{ form.entidad_emisor }}
+            <div id="entidad-resultados" class="entidad-resultados"></div>
+        </div>
+        {% if form.entidad_emisor.errors %}
+            <span style="color:red;">{{ form.entidad_emisor.errors }}</span>
+        {% endif %}
+    </p>
+
+    {% for field in form %}
+        {% if field.name != 'entidad_emisor' %}
+        <p>
+            {{ field.label_tag }}<br>
+            {{ field }}
+            {% if field.errors %}<span style="color:red;">{{ field.errors }}</span>{% endif %}
+        </p>
+        {% endif %}
+    {% endfor %}
+
+    <button type="submit">Guardar</button>
+</form>
+
+<style>
+.entidad-buscador-wrapper {
+    position: relative;
+    display: inline-block;
+}
+.entidad-buscador-wrapper input[type="text"] {
+    min-width: 320px;
+}
+.entidad-resultados {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+.entidad-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.entidad-resultados div:hover {
+    background: #f0f0f0;
+}
+</style>
+
+<script>
+(function () {
+    const input = document.getElementById('entidad-buscador');
+    const hidden = document.getElementById('id_entidad_emisor');
+    const resultados = document.getElementById('entidad-resultados');
+    let timeoutId = null;
+
+    input.addEventListener('input', function () {
+        hidden.value = '';  // si el usuario vuelve a escribir, invalidamos la selección anterior
+        const q = input.value.trim();
+
+        clearTimeout(timeoutId);
+        if (q.length < 2) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+
+        timeoutId = setTimeout(function () {
+            fetch(`{% url 'comprobantes:entidad_buscar' %}?q=${encodeURIComponent(q)}`)
+                .then(resp => resp.json())
+                .then(data => {
+                    resultados.innerHTML = '';
+                    if (data.resultados.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    data.resultados.forEach(function (item) {
+                        const div = document.createElement('div');
+                        div.textContent = item.text;
+                        div.addEventListener('click', function () {
+                            input.value = item.text;
+                            hidden.value = item.id;
+                            resultados.style.display = 'none';
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+})();
+</script>
+{% endblock %}

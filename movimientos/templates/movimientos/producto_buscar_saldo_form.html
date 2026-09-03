@@ -1,0 +1,11 @@
+{% csrf_token %}
+    {% for field in form %}
+        {% if 'Selecciona' not in field.label_tag and 'Emisor' not in field.label_tag %}
+        <p> 
+            {{ field.label_tag }}
+        {% endif %}
+            {{ field }}
+        </p>
+    {% endfor %}
+<input type="submit" name="accion" value="Buscar" />
+<input type="submit" name ="accion" value="Generar Excel" />

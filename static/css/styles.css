@@ -1,0 +1,57 @@
+h2{
+color:black
+}
+
+/* Submenú anidado (hover o click) dentro de un dropdown, ej: Ingreso H.V. de
+   Yerba Mate. Se abre hacia la derecha, flotando al costado del ítem.
+   Bootstrap fuerza `.navbar-nav .dropdown-menu { position: static }` por
+   debajo de los 992px de ancho (y sólo la vuelve absoluta arriba de eso), así
+   que forzamos `position: absolute` con !important para que el submenú
+   flote siempre, sin importar el ancho de la ventana. */
+.dropdown-submenu {
+    position: relative;
+}
+.dropdown-submenu > .dropdown-menu {
+    display: none;
+    position: absolute !important;
+    top: 0;
+    left: 100%;
+    margin: 0 0 0 1px;
+    width: auto;
+}
+.dropdown-submenu:hover > .dropdown-menu,
+.dropdown-submenu.show > .dropdown-menu {
+    display: block;
+}
+.dropdown-submenu > a.dropdown-toggle::after {
+    transform: rotate(-90deg);
+}
+
+/* Buscador con autocompletado (ver static/js/buscador_ajax.js): input de
+   texto + resultados flotando debajo, usado en varias pantallas de
+   alta/edición y de reportes para no cargar selects con miles de opciones. */
+.buscador-wrapper {
+    position: relative;
+}
+.buscador-wrapper input[type="text"] {
+    width: 100%;
+}
+.buscador-resultados {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+.buscador-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.buscador-resultados div:hover {
+    background: #f0f0f0;
+}

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+<div class="formulario">
+    <h3>Búsqueda de movimientos</h3>
+    <form method="post"  class="horizontal-form" style="width: 50%;">
+         {% include 'movimientos/producto_buscar_saldo_form.html' with form=form %}
+    </form>
+</div>
+<script src="{% static '/js/buscador_generico.js' %}"></script>
+<script src="{% static '/js/buscador_emisor.js' %}"></script>
+<script src="{% static '/js/buscador_receptor.js' %}"></script>
+<script src="{% static '/js/buscador_producto.js' %}"></script>
+{% endblock %}

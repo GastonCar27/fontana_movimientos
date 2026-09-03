@@ -1,0 +1,45 @@
+
+{% load static %}
+<link rel="stylesheet" href="{% static '/css/busqueda_y_resultados.css' %}">
+<body>
+    <div>
+        <h3>Búsqueda de Renglones de Comprobantes</h3>
+            <form method="post"  class="horizontal-form" style="width: 50%;">
+                {% csrf_token %}
+                {% for field in form %}
+                    {% if 'Selecciona' not in field.label_tag and 'Emisor' not in field.label_tag %}
+                       <p> 
+                        {{ field.label_tag }}
+                    {% endif %}
+                
+                {{ field }}
+                </p>
+                {% endfor %}
+                
+                <input type="submit">
+            </form>      
+    </div>
+</body>
+<script src="{% static '/js/buscador_generico.js' %}"></script>
+<script>
+    let selectEmisor = document.querySelector('[name="emisor"]')
+    let emisor_buscador = document.querySelector('[name="buscador_emisor"]')
+    let timeout = null;
+    emisor_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,emisor_buscador,selectEmisor,timeout);
+    })
+    <!--
+    let selectReceptor = document.querySelector('[name="receptor"]')
+    let receptor_buscador = document.querySelector('[name="buscador_receptor"]')
+    let timeout_2 = null;
+    receptor_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,receptor_buscador,selectReceptor,timeout_2);
+    })
+    -->
+    let selectProducto = document.querySelector('[name="producto"]')
+    let producto_buscador = document.querySelector('[name="buscador_producto"]')
+    let timeout_3 = null;
+    producto_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,producto_buscador,selectProducto,timeout_3);
+    })
+</script>

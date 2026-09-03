@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+        <div class="col">
+            <h4 class="text-center">{{message}}</h4>
+            {% include 'roles/snippets/search.html' %}
+            <ul class="list-group">
+                {% for rol in rol_list %}
+                    <li class="list-group-item">{{rol.id}}-{{rol.nombre}}-{{rol.slug}}</li>
+                {% endfor %}
+            </ul>
+        </div>
+{% endblock %}

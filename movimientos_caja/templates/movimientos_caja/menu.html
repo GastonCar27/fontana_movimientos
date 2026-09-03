@@ -1,0 +1,16 @@
+<nav class="mb-3">
+    <div class="btn-group btn-group-sm" role="group">
+        <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_caja_alta' %}active{% endif %}"
+           href="{% url 'movimientos_caja:movimiento_caja_alta' %}">Alta</a>
+        <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_caja_modificar' %}active{% endif %}"
+           href="{% url 'movimientos_caja:movimiento_caja_modificar' %}">Modificación</a>
+        <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_caja_reportes' %}active{% endif %}"
+           href="{% url 'movimientos_caja:movimiento_caja_reportes' %}">Reportes</a>
+        <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_caja_ranking_entidades' %}active{% endif %}"
+           href="{% url 'movimientos_caja:movimiento_caja_ranking_entidades' %}">Ranking de entidades</a>
+    </div>
+    <div class="btn-group btn-group-sm mt-2" role="group">
+        <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_caja_libro_modificar' or request.resolver_match.url_name == 'movimiento_caja_libro_editar' %}active{% endif %}"
+           href="{% url 'movimientos_caja:movimiento_caja_libro_modificar' %}">Modificar en libro</a>
+    </div>
+</nav>

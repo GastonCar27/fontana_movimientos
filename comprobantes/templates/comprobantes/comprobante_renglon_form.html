@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+{% include "comprobantes/menu.html" %}
+
+<h1>{% if renglon %}Editar renglón de comprobante {{ renglon.id }}{% else %}Nuevo renglón de comprobante{% endif %}</h1>
+
+{% if messages %}
+<ul>
+  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{{ categorias_con_detalle|json_script:"categorias-con-detalle" }}
+
+{% if form.non_field_errors or detalle_form.non_field_errors %}
+<ul style="color:red;">
+  {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+  {% for error in detalle_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <p>
+        <label>Comprobante:</label><br>
+        <div class="buscador-wrapper">
+            <input type="text" id="comprobante-buscador" autocomplete="off"
+                   placeholder="Buscar por número, punto de venta o ID de comprobante..."
+                   value="{{ comprobante_texto }}">
+            {{ form.comprobante }}
+            <div id="comprobante-resultados" class="buscador-resultados"></div>
+        </div>
+        {% if form.comprobante.errors %}
+            <span style="color:red;">{{ form.comprobante.errors }}</span>
+        {% endif %}
+        {% if not renglon and not comprobante_texto %}
+            <br><small class="text-muted">Elegí un comprobante para poder cargarle un renglón.</small>
+        {% endif %}
+    </p>
+
+    {% if comprobante_seleccionado %}
+    <div class="comprobante-resumen">
+        <strong>{{ comprobante_seleccionado.tipo_comprobante }}</strong>
+        {{ comprobante_seleccionado.punto_de_venta|stringformat:"04d" }}-{{ comprobante_seleccionado.numero|stringformat:"08d" }}
+        &middot; {{ comprobante_seleccionado.fecha }}
+        &middot; {{ comprobante_seleccionado.entidad_emisor }}
+        &middot; Total {{ comprobante_seleccionado.total|separador_miles }}
+        <span class="comprobante-resumen-acciones">
+            <a href="{% url 'comprobantes:comprobante_exportar_excel' comprobante_seleccionado.pk %}" target="_blank">Excel</a>
+            &middot;
+            <a href="{% url 'comprobantes:comprobante_exportar_pdf' comprobante_seleccionado.pk %}" target="_blank">PDF</a>
+            (para puntear contra la factura real)
+        </span>
+    </div>
+
+    {% if comparacion_totales %}
+    <div class="comparacion-totales">
+        <h3>Cabecera vs. renglones cargados</h3>
+        <table>
+            <thead>
+                <tr><th>Concepto</th><th>Cargado en cabecera</th><th>Suma de renglones</th><th>Diferencia</th></tr>
+            </thead>
+            <tbody>
+                {% for fila in comparacion_totales %}
+                <tr class="{% if fila.diferencia %}fila-con-diferencia{% endif %}">
+                    <td>{{ fila.etiqueta }}</td>
+                    <td>{{ fila.cargado|separador_miles }}</td>
+                    <td>{{ fila.calculado|separador_miles }}</td>
+                    <td>{{ fila.diferencia|separador_miles }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if renglones_del_comprobante %}
+    <div class="renglones-existentes">
+        <h3>Renglones ya cargados de este comprobante</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th><th>Producto</th><th>Cantidad</th><th>U. Medida</th>
+                    <th>Precio Unit.</th><th>Bonificación</th><th>Total</th>
+                    <th>Cuenta Cont.</th><th>Asiento Cont.</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in renglones_del_comprobante %}
+                <tr>
+                    <td>{{ r.id }}</td>
+                    <td>{{ r.producto }}</td>
+                    <td>{{ r.renglon_detalle_comprobante.cantidad|default:"—" }}</td>
+                    <td>{{ r.renglon_detalle_comprobante.unidad_de_medida.nombre|default:"—" }}</td>
+                    <td>{{ r.renglon_detalle_comprobante.precio_unitario|default:"—" }}</td>
+                    <td>{{ r.renglon_detalle_comprobante.bonificacion|default:"—" }}</td>
+                    <td>{{ r.total|separador_miles }}</td>
+                    <td>{{ r.id_cuenta_contable|default:"—" }}</td>
+                    <td>{{ r.id_asiento_contable|default:"—" }}</td>
+                    <td>
+                        <a href="{% url 'comprobantes:comprobante_renglon_editar' r.pk %}">Editar</a>
+                        <a href="{% url 'comprobantes:comprobante_renglon_eliminar' r.pk %}">Eliminar</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div id="resto-del-formulario" style="{% if not comprobante_texto %}display:none;{% endif %}">
+        <p>
+            <label>Producto:</label><br>
+            <div class="buscador-wrapper">
+                <input type="text" id="producto-buscador" autocomplete="off"
+                       placeholder="Buscar por ID o nombre..."
+                       value="{{ producto_texto }}">
+                {{ form.producto }}
+                <div id="producto-resultados" class="buscador-resultados"></div>
+            </div>
+            {% if form.producto.errors %}
+                <span style="color:red;">{{ form.producto.errors }}</span>
+            {% endif %}
+            <button type="button" id="producto-crear-toggle">+ Crear producto nuevo</button>
+        </p>
+
+        <div id="producto-crear-wrapper" class="producto-crear-wrapper" style="display:none;">
+            <h3>Nuevo producto</h3>
+            <p>
+                {{ producto_crear_form.nombre.label_tag }}<br>
+                {{ producto_crear_form.nombre }}
+            </p>
+            <p>
+                {{ producto_crear_form.item_tipo.label_tag }}<br>
+                {{ producto_crear_form.item_tipo }}
+            </p>
+            <div id="producto-crear-errores" style="color:red;"></div>
+            <button type="button" id="producto-crear-guardar">Crear y seleccionar</button>
+            <button type="button" id="producto-crear-cancelar">Cancelar</button>
+        </div>
+
+        {% for field in form %}
+            {% if field.name != 'comprobante' and field.name != 'producto' %}
+            <p>
+                {{ field.label_tag }}<br>
+                {{ field }}
+                {% if field.errors %}<span style="color:red;">{{ field.errors }}</span>{% endif %}
+            </p>
+            {% endif %}
+        {% endfor %}
+
+        <div id="detalle-renglon-wrapper" style="display:none;">
+            <h2>Detalle del renglón</h2>
+            {{ detalle_form.as_p }}
+        </div>
+
+        <button type="submit">Guardar</button>
+    </div>
+</form>
+
+<style>
+.buscador-wrapper {
+    position: relative;
+    display: inline-block;
+}
+.buscador-wrapper input[type="text"] {
+    min-width: 320px;
+}
+.buscador-resultados {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+.buscador-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.buscador-resultados div:hover {
+    background: #f0f0f0;
+}
+.producto-crear-wrapper {
+    border: 1px solid #ccc;
+    padding: 10px 14px;
+    margin: 6px 0 14px;
+    max-width: 420px;
+    background: #fafafa;
+}
+.comprobante-resumen {
+    background: #eef6ff;
+    border: 1px solid #bcdcff;
+    padding: 8px 12px;
+    margin: 6px 0 16px;
+    border-radius: 4px;
+}
+.comprobante-resumen-acciones {
+    float: right;
+}
+.renglones-existentes {
+    margin: 0 0 20px;
+}
+.renglones-existentes table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.renglones-existentes th, .renglones-existentes td {
+    border: 1px solid #ddd;
+    padding: 4px 8px;
+    text-align: left;
+    font-size: 0.9em;
+}
+.renglones-existentes th {
+    background: #f2f2f2;
+}
+.comparacion-totales {
+    margin: 0 0 20px;
+}
+.comparacion-totales table {
+    width: 100%;
+    max-width: 640px;
+    border-collapse: collapse;
+}
+.comparacion-totales th, .comparacion-totales td {
+    border: 1px solid #ddd;
+    padding: 4px 8px;
+    text-align: right;
+    font-size: 0.9em;
+}
+.comparacion-totales th:first-child, .comparacion-totales td:first-child {
+    text-align: left;
+}
+.comparacion-totales th {
+    background: #f2f2f2;
+}
+.fila-con-diferencia td {
+    background: #ffe0e0;
+    color: #a30000;
+    font-weight: bold;
+}
+</style>
+
+<script>
+function inicializarBuscador(inputId, hiddenId, resultadosId, urlBusqueda, onSeleccionar) {
+    const input = document.getElementById(inputId);
+    const hidden = document.getElementById(hiddenId);
+    const resultados = document.getElementById(resultadosId);
+    let timeoutId = null;
+
+    input.addEventListener('input', function () {
+        hidden.value = '';  // si el usuario vuelve a escribir, invalidamos la selección anterior
+        const q = input.value.trim();
+
+        clearTimeout(timeoutId);
+        if (q.length < 1) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+
+        timeoutId = setTimeout(function () {
+            fetch(`${urlBusqueda}?q=${encodeURIComponent(q)}`)
+                .then(resp => resp.json())
+                .then(data => {
+                    resultados.innerHTML = '';
+                    if (data.resultados.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    data.resultados.forEach(function (item) {
+                        const div = document.createElement('div');
+                        div.textContent = item.text;
+                        div.addEventListener('click', function () {
+                            input.value = item.text;
+                            hidden.value = item.id;
+                            resultados.style.display = 'none';
+                            if (onSeleccionar) {
+                                onSeleccionar(item);
+                            }
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const categoriasElement = document.getElementById('categorias-con-detalle');
+    const categorias = categoriasElement ? JSON.parse(categoriasElement.textContent) : [];
+    const wrapperDetalle = document.getElementById('detalle-renglon-wrapper');
+
+    function actualizarVisibilidadDetalle(categoria) {
+        wrapperDetalle.style.display = (categoria && categorias.indexOf(categoria) !== -1) ? '' : 'none';
+    }
+
+    const wrapperResto = document.getElementById('resto-del-formulario');
+    const esAlta = {{ renglon|yesno:"false,true" }};  // en edición no recargamos al elegir otro comprobante
+
+    inicializarBuscador(
+        'comprobante-buscador', '{{ form.comprobante.id_for_label }}', 'comprobante-resultados',
+        '{% url "comprobantes:comprobante_renglon_comprobante_buscar" %}',
+        function (item) {
+            if (esAlta) {
+                // En el alta, elegir un comprobante es el primer paso: se
+                // recarga la página con ese comprobante ya cargado, para
+                // mostrar de una los renglones que ya tiene y habilitar el
+                // resto del formulario.
+                window.location.href = '{% url "comprobantes:comprobante_renglon_alta" %}?comprobante=' + encodeURIComponent(item.id);
+            } else if (wrapperResto) {
+                wrapperResto.style.display = '';
+            }
+        }
+    );
+    inicializarBuscador(
+        'producto-buscador', '{{ form.producto.id_for_label }}', 'producto-resultados',
+        '{% url "comprobantes:comprobante_renglon_producto_buscar" %}',
+        function (item) { actualizarVisibilidadDetalle(item.categoria); }
+    );
+
+    // Estado inicial (modo edición): mostrar el detalle si el producto ya
+    // cargado corresponde a una categoría con detalle.
+    actualizarVisibilidadDetalle('{{ producto_categoria_inicial|default:"" }}');
+
+    // --- Precio unitario = total del renglón / cantidad (automático) ---
+    const totalInput = document.getElementById('{{ form.total.id_for_label }}');
+    const cantidadInput = document.getElementById('{{ detalle_form.cantidad.id_for_label }}');
+    const precioUnitarioInput = document.getElementById('{{ detalle_form.precio_unitario.id_for_label }}');
+
+    function calcularPrecioUnitario() {
+        const total = parseFloat(totalInput.value);
+        const cantidad = parseFloat(cantidadInput.value);
+        if (!isNaN(total) && !isNaN(cantidad) && cantidad !== 0) {
+            precioUnitarioInput.value = (total / cantidad).toFixed(2);
+        } else {
+            precioUnitarioInput.value = '';
+        }
+    }
+
+    if (totalInput && cantidadInput && precioUnitarioInput) {
+        totalInput.addEventListener('input', calcularPrecioUnitario);
+        cantidadInput.addEventListener('input', calcularPrecioUnitario);
+        calcularPrecioUnitario();  // estado inicial (modo edición)
+    }
+
+    // --- Alta rápida de producto, cuando el buscado no existe ---
+    const productoBuscadorInput = document.getElementById('producto-buscador');
+    const productoHidden = document.getElementById('{{ form.producto.id_for_label }}');
+    const productoCrearToggle = document.getElementById('producto-crear-toggle');
+    const productoCrearWrapper = document.getElementById('producto-crear-wrapper');
+    const productoCrearNombre = document.getElementById('{{ producto_crear_form.nombre.id_for_label }}');
+    const productoCrearItemTipo = document.getElementById('{{ producto_crear_form.item_tipo.id_for_label }}');
+    const productoCrearErrores = document.getElementById('producto-crear-errores');
+    const productoCrearGuardar = document.getElementById('producto-crear-guardar');
+    const productoCrearCancelar = document.getElementById('producto-crear-cancelar');
+
+    productoCrearToggle.addEventListener('click', function () {
+        productoCrearNombre.value = productoBuscadorInput.value.trim();
+        productoCrearErrores.textContent = '';
+        productoCrearWrapper.style.display = '';
+    });
+
+    productoCrearCancelar.addEventListener('click', function () {
+        productoCrearWrapper.style.display = 'none';
+        productoCrearErrores.textContent = '';
+    });
+
+    productoCrearGuardar.addEventListener('click', function () {
+        productoCrearErrores.textContent = '';
+        const datos = new URLSearchParams();
+        datos.append('nombre', productoCrearNombre.value.trim());
+        datos.append('item_tipo', productoCrearItemTipo.value);
+        datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        fetch('{% url "comprobantes:comprobante_renglon_producto_crear" %}', {
+            method: 'POST',
+            body: datos,
+        })
+            .then(function (resp) {
+                return resp.json().then(function (data) {
+                    return { status: resp.status, data: data };
+                });
+            })
+            .then(function (resultado) {
+                if (resultado.status !== 200) {
+                    const detalles = Object.values(resultado.data.errores || {}).flat();
+                    const mensajes = detalles.map(function (e) { return e.message; }).join(' ');
+                    productoCrearErrores.textContent = mensajes || 'No se pudo crear el producto.';
+                    return;
+                }
+                const item = resultado.data;
+                productoBuscadorInput.value = item.text;
+                productoHidden.value = item.id;
+                actualizarVisibilidadDetalle(item.categoria);
+                productoCrearWrapper.style.display = 'none';
+            });
+    });
+});
+</script>
+{% endblock %}

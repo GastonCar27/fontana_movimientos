@@ -1,0 +1,47 @@
+
+/* Reseteamos márgenes para ocupar toda la pantalla */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Contenedor principal: ocupa toda la altura de la pantalla y usa Flexbox */
+.contenedor { 
+   
+    height: 100vh;
+}
+
+.form-busqueda{
+    width: 50%; 
+}
+
+/* Forces each form group block inline */
+.horizontal-form p {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+}
+
+/* Columna de Resultados: ocupa el 70% restante del ancho */
+.resultados {
+    width: 70%;
+    background-color: #ffffff;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* Estilo responsivo: en pantallas pequeñas, se apilan verticalmente */
+@media (max-width: 768px) {
+    .contenedor {
+        flex-direction: column;
+    }
+    .busqueda, .resultados {
+        width: 100%;
+        height: 50vh; /* Ocupan la mitad de la pantalla cada uno */
+    }
+    .busqueda {
+        border-right: none;
+        border-bottom: 2px solid #ccc;
+    }
+}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    {% include "solicitudes_compra/menu.html" %}
+
+    <h4 class="mt-3 mb-3">Eliminar solicitud {{ solicitud.numero }}</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar la solicitud <strong>{{ solicitud.numero }}</strong> de fecha {{ solicitud.fecha }}
+        para <strong>{{ solicitud.entidad }}</strong>? Esta acción no se puede deshacer (se eliminan también sus
+        renglones y los vínculos con renglones de factura que tuviera cargados).
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger btn-sm">Sí, eliminar</button>
+        <a href="{% url 'solicitudes_compra:listado' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

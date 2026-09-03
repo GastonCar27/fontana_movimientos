@@ -1,0 +1,27 @@
+<nav class="mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <div class="btn-group btn-group-sm" role="group">
+            <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'listado' %}active{% endif %}"
+               href="{% url 'liquidaciones:listado' %}">Listado</a>
+            <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'alta' %}active{% endif %}"
+               href="{% url 'liquidaciones:alta' %}">Nueva liquidación</a>
+            <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'reporte' %}active{% endif %}"
+               href="{% url 'liquidaciones:reporte' %}">Reportes</a>
+            <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'diferencias' %}active{% endif %}"
+               href="{% url 'liquidaciones:diferencias' %}">Diferencias</a>
+        </div>
+        <div>
+            <span class="text-muted small text-uppercase fw-semibold me-2">Sin liquidar</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'sin_liquidar_comprobantes' %}active{% endif %}"
+                   href="{% url 'liquidaciones:sin_liquidar_comprobantes' %}">Comprobantes</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'sin_liquidar_movimientos_caja' %}active{% endif %}"
+                   href="{% url 'liquidaciones:sin_liquidar_movimientos_caja' %}">Movimientos de Caja</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'sin_liquidar_retenciones' %}active{% endif %}"
+                   href="{% url 'liquidaciones:sin_liquidar_retenciones' %}">Retenciones</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'sin_liquidar_retenciones_inym' %}active{% endif %}"
+                   href="{% url 'liquidaciones:sin_liquidar_retenciones_inym' %}">Retenciones Inym</a>
+            </div>
+        </div>
+    </div>
+</nav>

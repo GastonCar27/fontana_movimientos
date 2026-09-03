@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos_caja/menu.html" %}
+
+    <h4 class="mb-3">Modificar en libro — Movimiento {{ movimiento.id }}</h4>
+
+    {% if messages %}
+    <ul class="list-unstyled">
+      {% for message in messages %}<li class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">ID Movimiento</dt>
+                <dd class="col-sm-9">{{ movimiento.id }}</dd>
+
+                <dt class="col-sm-3">Fecha de emisión</dt>
+                <dd class="col-sm-9">{{ movimiento.emision|default:"S/A" }}</dd>
+
+                <dt class="col-sm-3">Receptor</dt>
+                <dd class="col-sm-9">{{ movimiento.receptor|default:"S/A" }}</dd>
+
+                <dt class="col-sm-3">Número</dt>
+                <dd class="col-sm-9">{{ movimiento.numero|default:"S/A" }}</dd>
+
+                <dt class="col-sm-3">Monto</dt>
+                <dd class="col-sm-9">{{ movimiento.monto|separador_miles }}</dd>
+
+                <dt class="col-sm-3">Cuenta de banco</dt>
+                <dd class="col-sm-9">{{ movimiento.caja }}</dd>
+            </dl>
+        </div>
+    </div>
+
+    <form method="post" class="row">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+
+        {% for field in form %}
+        <div class="mb-3 col-sm-4">
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="col-12">
+            <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
+            <a href="{% if next %}{{ next }}{% else %}{% url 'movimientos_caja:movimiento_caja_libro_modificar' %}{% endif %}" class="btn btn-sm btn-outline-secondary">Cancelar</a>
+            <a href="{% url 'movimientos_caja:movimiento_caja_eliminar' movimiento.pk %}?next={{ next|urlencode }}" class="btn btn-sm btn-outline-danger float-end">Eliminar movimiento</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

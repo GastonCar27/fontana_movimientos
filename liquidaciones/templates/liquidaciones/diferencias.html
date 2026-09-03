@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "liquidaciones/menu.html" %}
+
+    <h4 class="mb-3">Diferencias entre debe/haber guardado y calculado</h4>
+
+    {% if filas %}
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'id' 'ID' %}</th>
+                    <th>{% sort_th 'numero' 'Número' %}</th>
+                    <th>{% sort_th 'fecha' 'Fecha' %}</th>
+                    <th>{% sort_th 'entidad' 'Entidad' %}</th>
+                    <th class="text-end">{% sort_th 'debe_guardado' 'Debe guardado' %}</th>
+                    <th class="text-end">{% sort_th 'debe_calculado' 'Debe calculado' %}</th>
+                    <th class="text-end">{% sort_th 'diferencia_debe' 'Dif. Debe' %}</th>
+                    <th class="text-end">{% sort_th 'haber_guardado' 'Haber guardado' %}</th>
+                    <th class="text-end">{% sort_th 'haber_calculado' 'Haber calculado' %}</th>
+                    <th class="text-end">{% sort_th 'diferencia_haber' 'Dif. Haber' %}</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in filas %}
+                <tr>
+                    <td>{{ fila.liquidacion.id }}</td>
+                    <td>{{ fila.liquidacion.numero }}</td>
+                    <td>{{ fila.liquidacion.fecha }}</td>
+                    <td>{{ fila.liquidacion.entidad }}</td>
+                    <td class="text-end">{{ fila.debe_guardado|separador_miles }}</td>
+                    <td class="text-end">{{ fila.debe_calculado|separador_miles }}</td>
+                    <td class="text-end text-danger fw-semibold">{{ fila.diferencia_debe|separador_miles }}</td>
+                    <td class="text-end">{{ fila.haber_guardado|separador_miles }}</td>
+                    <td class="text-end">{{ fila.haber_calculado|separador_miles }}</td>
+                    <td class="text-end text-danger fw-semibold">{{ fila.diferencia_haber|separador_miles }}</td>
+                    <td class="text-center text-nowrap">
+                        <form method="post" action="{% url 'liquidaciones:recalcular' fila.liquidacion.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-warning">Recalcular</button>
+                        </form>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'liquidaciones:editar' fila.liquidacion.pk %}">Editar</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No hay diferencias: todas las liquidaciones coinciden con sus ítems relacionados.</p>
+    {% endif %}
+</div>
+{% endblock %}

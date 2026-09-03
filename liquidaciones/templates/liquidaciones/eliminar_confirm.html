@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "liquidaciones/menu.html" %}
+
+<h1>Eliminar liquidación {{ liquidacion.numero }}</h1>
+<p>
+    ¿Confirma que desea eliminar la liquidación {{ liquidacion.numero }} de fecha {{ liquidacion.fecha }}
+    correspondiente a {{ liquidacion.entidad }}? Esta acción no se puede deshacer.
+</p>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit">Sí, eliminar</button>
+    <a href="{% url 'liquidaciones:listado' %}">Cancelar</a>
+</form>
+{% endblock %}

@@ -1,0 +1,13 @@
+<form action="{% url 'products:search' %}">
+  <div class="input-group">
+    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar">
+    <div class="input-group-append">
+      <input type="submit" name="" value="Buscar" class="btn btn-primary">
+    </div>
+  </div>
+</form>
+<script>
+let selectElement = document.getElementById('miSelect');
+let listaValores = Array.from(selectElement.options).map(option => option.value);
+console.log(listaValores);
+</script>

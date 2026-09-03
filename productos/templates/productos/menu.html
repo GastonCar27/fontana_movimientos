@@ -1,0 +1,15 @@
+<nav class="mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <div>
+            <span class="text-muted small text-uppercase fw-semibold me-2">Productos</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'producto_alta' %}active{% endif %}"
+                   href="{% url 'productos:producto_alta' %}">Alta</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'producto_modificar' or request.resolver_match.url_name == 'producto_editar' %}active{% endif %}"
+                   href="{% url 'productos:producto_modificar' %}">Modificación</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'producto_reportes' %}active{% endif %}"
+                   href="{% url 'productos:producto_reportes' %}">Reportes</a>
+            </div>
+        </div>
+    </div>
+</nav>

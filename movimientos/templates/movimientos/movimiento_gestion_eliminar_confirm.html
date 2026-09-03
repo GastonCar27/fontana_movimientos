@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar movimiento de producto</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar el movimiento <strong>{{ movimiento.id_movimiento }}</strong>
+        {% if movimiento.numero %}número <strong>{{ movimiento.numero }}</strong>{% endif %}
+        {% if movimiento.fecha %}de fecha <strong>{{ movimiento.fecha }}</strong>{% endif %}
+        {% if movimiento.producto %}, producto <strong>{{ movimiento.producto }}</strong>{% endif %}
+        con un total de <strong>{{ movimiento.total|separador_miles }}</strong>?
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'movimientos:movimiento_modificar' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

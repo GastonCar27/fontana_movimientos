@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+<form method="POST">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+            {% endfor %}
+            </div>
+        {% endif %}
+        {% for field in form %}
+            {% if  field.label == 'Inym operador origen' %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    <input type="text" id="buscador_emisor"  name="buscador_emisor" placeholder="Buscar emisor..."/> 
+                    {{ field }}
+                   
+                </div>
+            {% elif  field.label == 'Inym operador destino' %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    <input type="text" id="buscador_destino"  name="buscador_destino" placeholder="Buscar destino..."/> 
+                    {{ field }}
+                    
+                </div>
+             {% elif  field.label == 'Producto' %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    <input type="text" id="buscador_producto"  name="buscador_producto" placeholder="Buscar producto..."/> 
+                    {{ field }}
+                </div>
+            {% else %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    {{ field }}
+                </div>
+            {% endif %}
+        {% endfor %}
+        <input type="submit" value="Modificar" />
+</form>
+<script src="{% static '/js/buscador_generico.js' %}"></script>
+<script>
+    let selectEmisor = document.querySelector('[name="inym_operador_origen"]')
+    let emisor_buscador = document.getElementById('buscador_emisor')
+    let timeout = null;
+    emisor_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,emisor_buscador,selectEmisor,timeout);
+    })
+    let selectReceptor = document.querySelector('[name="inym_operador_destino"]')
+    let receptor_buscador = document.getElementById('buscador_destino')
+    let timeout_2 = null;
+    receptor_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,receptor_buscador,selectReceptor,timeout_2);
+    })
+    let selectProducto = document.querySelector('[name="producto"]')
+    let producto_buscador = document.getElementById('buscador_producto')
+    let timeout_3 = null;
+    producto_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,producto_buscador,selectProducto,timeout_3);
+    })
+</script>
+
+<script src="{% static '/js/calculo_total_con_btd.js' %}"></script>
+
+{% endblock %}

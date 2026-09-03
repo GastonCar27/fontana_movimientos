@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+{% include "movimientos/menu_gestion.html" %}
+
+<h1>{% if movimiento %}Editar movimiento {{ movimiento.id_movimiento }}{% else %}Nuevo movimiento de producto{% endif %}</h1>
+
+{% if messages %}
+<ul>
+  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if form.non_field_errors or operadores_form.non_field_errors %}
+<div style="color:red;">
+    {{ form.non_field_errors }}
+    {{ operadores_form.non_field_errors }}
+</div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <p>
+        {{ form.fecha.label_tag }}<br>
+        {{ form.fecha }}
+        {% if form.fecha.errors %}<span style="color:red;">{{ form.fecha.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        {{ form.numero.label_tag }}<br>
+        {{ form.numero }}
+        {% if form.numero.errors %}<span style="color:red;">{{ form.numero.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <label for="es_yerba_mate">¿Es un movimiento de H.V. Yerba Mate?</label>
+        <input type="checkbox" id="es_yerba_mate" name="es_yerba_mate" {% if es_yerba_mate %}checked{% endif %}>
+    </p>
+
+    <p>
+        {{ form.entidad_emisor.label_tag }} (Emisor)<br>
+        <input type="text" id="buscador_entidad_emisor" placeholder="Buscar emisor por id o nombre..." autocomplete="off"><br>
+        {{ form.entidad_emisor }}
+        {% if form.entidad_emisor.errors %}<span style="color:red;">{{ form.entidad_emisor.errors }}</span>{% endif %}
+    </p>
+    <div class="bloque-operador-inym" style="margin-left:20px;">
+        <p>
+            {{ operadores_form.inym_operador_origen.label_tag }}<br>
+            <input type="text" id="buscador_inym_operador_origen" placeholder="Buscar operador INYM por id o nombre..." autocomplete="off"><br>
+            {{ operadores_form.inym_operador_origen }}
+            {% if operadores_form.inym_operador_origen.errors %}<span style="color:red;">{{ operadores_form.inym_operador_origen.errors }}</span>{% endif %}
+        </p>
+    </div>
+
+    <p>
+        {{ form.entidad_receptor.label_tag }} (Receptor)<br>
+        <input type="text" id="buscador_entidad_receptor" placeholder="Buscar receptor por id o nombre..." autocomplete="off"><br>
+        {{ form.entidad_receptor }}
+        {% if form.entidad_receptor.errors %}<span style="color:red;">{{ form.entidad_receptor.errors }}</span>{% endif %}
+    </p>
+    <div class="bloque-operador-inym" style="margin-left:20px;">
+        <p>
+            {{ operadores_form.inym_operador_destino.label_tag }}<br>
+            <input type="text" id="buscador_inym_operador_destino" placeholder="Buscar operador INYM por id o nombre..." autocomplete="off"><br>
+            {{ operadores_form.inym_operador_destino }}
+            {% if operadores_form.inym_operador_destino.errors %}<span style="color:red;">{{ operadores_form.inym_operador_destino.errors }}</span>{% endif %}
+        </p>
+    </div>
+
+    <p>
+        {{ pesaje_form.bruto.label_tag }}<br>
+        {{ pesaje_form.bruto }}
+    </p>
+    <p>
+        {{ pesaje_form.tara.label_tag }}<br>
+        {{ pesaje_form.tara }}
+    </p>
+    <p>
+        {{ pesaje_form.descuento.label_tag }}<br>
+        {{ pesaje_form.descuento }}
+    </p>
+    <p>
+        {{ form.total.label_tag }}<br>
+        {{ form.total }}
+        {% if form.total.errors %}<span style="color:red;">{{ form.total.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        {{ form.unidad_de_medida.label_tag }}<br>
+        {{ form.unidad_de_medida }}
+        {% if form.unidad_de_medida.errors %}<span style="color:red;">{{ form.unidad_de_medida.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        {{ form.producto.label_tag }}<br>
+        <input type="text" name="buscador_producto" placeholder="Buscar producto..." autocomplete="off"><br>
+        {{ form.producto }}
+        {% if form.producto.errors %}<span style="color:red;">{{ form.producto.errors }}</span>{% endif %}
+    </p>
+
+    <button type="submit">Guardar</button>
+</form>
+
+<script src="{% static 'js/buscador_generico.js' %}"></script>
+<script src="{% static 'js/buscador_producto.js' %}"></script>
+<script src="{% static 'js/calculo_total_con_btd.js' %}"></script>
+<script>
+    // Mapa {id_operador_inym: id_entidad} usado para restringir el Operador INYM
+    // emisor/receptor a los que están vinculados a la Entidad emisora/receptora
+    // ya elegida, cuando el movimiento es de H.V. Yerba Mate.
+    const operadorEntidadMap = {{ operador_entidad_map_json|safe }};
+
+    // Defaults para el producto 'HOJA VERDE DE YERBA MATE PUESTA EN SECADERO':
+    // el receptor siempre es el operador INYM de Fontana como Secadero, y el
+    // emisor por defecto es el operador de tipo 'PRODUCTORES' de la entidad
+    // emisora ya elegida. Solo se precargan si el campo todavía está vacío, así
+    // que siempre se pueden cambiar antes de guardar.
+    const PRODUCTO_HOJA_VERDE_SECADERO_ID = {{ producto_hoja_verde_secadero_id|default_if_none:"null" }};
+    const OPERADOR_FONTANA_SECADERO_ID = {{ operador_fontana_secadero_id|default_if_none:"null" }};
+    const operadoresProductoresPorEntidad = {{ operadores_productores_por_entidad_json|safe }};
+
+    // idBuscador: id del input de texto del buscador.
+    // selectorSelect: selector CSS del <select> asociado.
+    // alCambiar (opcional): callback que se ejecuta cuando cambia el valor del
+    // select, ya sea a mano (evento 'change') o eligiendo una opción por el
+    // buscador (que no dispara 'change', por eso se reintenta con un timeout
+    // apenas más largo que el debounce interno de buscar_en_input).
+    function emparejarBuscador(idBuscador, selectorSelect, alCambiar) {
+        const input = document.getElementById(idBuscador);
+        const select = document.querySelector(selectorSelect);
+        let timeoutLocal = null;
+        if (input && select) {
+            input.addEventListener('input', (evento) => {
+                buscar_en_input(evento, input, select, timeoutLocal);
+                if (alCambiar) {
+                    clearTimeout(select._filtroTimeout);
+                    select._filtroTimeout = setTimeout(alCambiar, 450);
+                }
+            });
+        }
+        if (select && alCambiar) {
+            select.addEventListener('change', alCambiar);
+        }
+        return select;
+    }
+
+    function mostrarTodasLasOpciones(select) {
+        if (!select) { return; }
+        Array.from(select.options).forEach((opcion) => { opcion.hidden = false; });
+    }
+
+    // Deja visibles en selectOperador solo las opciones cuyo operador está
+    // vinculado (vía operadorEntidadMap) a la entidad elegida en selectEntidad.
+    // Si hay una sola coincidencia, la selecciona sola; si el valor actual deja
+    // de ser válido para la nueva entidad, lo limpia.
+    function restringirOperadorPorEntidad(selectEntidad, selectOperador) {
+        if (!selectEntidad || !selectOperador) { return; }
+        const entidadId = selectEntidad.value;
+        const coincidencias = [];
+        Array.from(selectOperador.options).forEach((opcion) => {
+            if (opcion.value === '') { return; }
+            const entidadDelOperador = operadorEntidadMap[opcion.value];
+            const coincide = entidadId === '' ? true : (entidadDelOperador !== undefined && String(entidadDelOperador) === entidadId);
+            opcion.hidden = !coincide;
+            if (coincide && entidadId !== '') { coincidencias.push(opcion.value); }
+        });
+        if (entidadId !== '') {
+            if (coincidencias.length === 1) {
+                selectOperador.value = coincidencias[0];
+            } else if (!coincidencias.includes(selectOperador.value)) {
+                selectOperador.value = '';
+            }
+        }
+    }
+
+    // Deja visible en selectEntidad solo la entidad vinculada (vía
+    // operadorEntidadMap) al operador elegido en selectOperador, y la
+    // selecciona sola (cada operador está vinculado a una única entidad).
+    function restringirEntidadPorOperador(selectOperador, selectEntidad) {
+        if (!selectOperador || !selectEntidad) { return; }
+        const operadorId = selectOperador.value;
+        const entidadId = operadorId === '' ? undefined : operadorEntidadMap[operadorId];
+        Array.from(selectEntidad.options).forEach((opcion) => {
+            if (opcion.value === '') { return; }
+            const coincide = entidadId === undefined ? true : String(entidadId) === opcion.value;
+            opcion.hidden = !coincide;
+        });
+        if (entidadId !== undefined) {
+            const opcionCoincide = Array.from(selectEntidad.options).find((opcion) => opcion.value === String(entidadId));
+            if (opcionCoincide) { selectEntidad.value = String(entidadId); }
+        }
+    }
+
+    // Sincroniza un par Entidad/Operador INYM en ambos sentidos: si ya hay una
+    // entidad elegida, ella manda y filtra el operador; si todavía no hay
+    // entidad pero sí un operador, el operador manda y filtra la entidad; si
+    // no hay ninguno de los dos, se ven todas las opciones en ambos selects.
+    function sincronizarParEntidadOperador(selectEntidad, selectOperador) {
+        if (!selectEntidad || !selectOperador) { return; }
+        if (selectEntidad.value !== '') {
+            mostrarTodasLasOpciones(selectEntidad);
+            restringirOperadorPorEntidad(selectEntidad, selectOperador);
+        } else {
+            mostrarTodasLasOpciones(selectOperador);
+            restringirEntidadPorOperador(selectOperador, selectEntidad);
+        }
+    }
+
+    // Si el producto elegido es 'Hoja verde de yerba mate puesta en secadero' y
+    // el movimiento es de H.V. Yerba Mate, precarga (sin pisar lo que ya se haya
+    // elegido a mano) el operador INYM emisor con el 'PRODUCTORES' de la entidad
+    // emisora ya seleccionada, y el operador INYM receptor con el de Fontana
+    // Secadero.
+    function aplicarDefaultsSecaderoSiCorresponde() {
+        const productoSelect = document.querySelector('[name="producto"]');
+        const checkboxYerbaMate = document.getElementById('es_yerba_mate');
+        const esProductoSecadero = productoSelect && PRODUCTO_HOJA_VERDE_SECADERO_ID !== null
+            && productoSelect.value === String(PRODUCTO_HOJA_VERDE_SECADERO_ID);
+        if (!esProductoSecadero || !checkboxYerbaMate || !checkboxYerbaMate.checked) { return; }
+
+        if (OPERADOR_FONTANA_SECADERO_ID !== null && selectInymDestino && selectInymDestino.value === '' && selectEntidadReceptor) {
+            const entidadFontanaId = operadorEntidadMap[String(OPERADOR_FONTANA_SECADERO_ID)];
+            const entidadReceptorVacia = selectEntidadReceptor.value === '';
+            const entidadReceptorEsFontana = entidadFontanaId !== undefined && String(entidadFontanaId) === selectEntidadReceptor.value;
+            if (entidadReceptorVacia || entidadReceptorEsFontana) {
+                selectInymDestino.value = String(OPERADOR_FONTANA_SECADERO_ID);
+                sincronizarParEntidadOperador(selectEntidadReceptor, selectInymDestino);
+            }
+        }
+
+        if (selectEntidadEmisor && selectEntidadEmisor.value !== '' && selectInymOrigen && selectInymOrigen.value === '') {
+            const operadorProductor = operadoresProductoresPorEntidad[selectEntidadEmisor.value];
+            if (operadorProductor !== undefined) {
+                selectInymOrigen.value = String(operadorProductor);
+                sincronizarParEntidadOperador(selectEntidadEmisor, selectInymOrigen);
+            }
+        }
+    }
+
+    const selectInymOrigen = emparejarBuscador('buscador_inym_operador_origen', '[name="inym_operador_origen"]', () => {
+        sincronizarParEntidadOperador(selectEntidadEmisor, selectInymOrigen);
+        aplicarDefaultsSecaderoSiCorresponde();
+    });
+    const selectInymDestino = emparejarBuscador('buscador_inym_operador_destino', '[name="inym_operador_destino"]', () => {
+        sincronizarParEntidadOperador(selectEntidadReceptor, selectInymDestino);
+        aplicarDefaultsSecaderoSiCorresponde();
+    });
+    const selectEntidadEmisor = emparejarBuscador('buscador_entidad_emisor', '[name="entidad_emisor"]', () => {
+        sincronizarParEntidadOperador(selectEntidadEmisor, selectInymOrigen);
+        aplicarDefaultsSecaderoSiCorresponde();
+    });
+    const selectEntidadReceptor = emparejarBuscador('buscador_entidad_receptor', '[name="entidad_receptor"]', () => {
+        sincronizarParEntidadOperador(selectEntidadReceptor, selectInymDestino);
+        aplicarDefaultsSecaderoSiCorresponde();
+    });
+
+    // OJO: 'buscador_producto.js' ya declara su propia variable global
+    // 'selectProducto' (con let); por eso acá se usa otro nombre para el
+    // select de producto, para no chocar con esa declaración (redeclarar el
+    // mismo identificador con const/let en otro <script> de la misma página
+    // es un SyntaxError que invalida TODO el bloque de script).
+    const selectProductoParaDefaults = document.querySelector('[name="producto"]');
+    const buscadorProductoParaDefaults = document.querySelector('[name="buscador_producto"]');
+    if (selectProductoParaDefaults) {
+        selectProductoParaDefaults.addEventListener('change', aplicarDefaultsSecaderoSiCorresponde);
+    }
+    if (buscadorProductoParaDefaults) {
+        buscadorProductoParaDefaults.addEventListener('input', () => {
+            clearTimeout(buscadorProductoParaDefaults._defaultsTimeout);
+            buscadorProductoParaDefaults._defaultsTimeout = setTimeout(aplicarDefaultsSecaderoSiCorresponde, 450);
+        });
+    }
+
+    // Si al cargar la página el operador emisor/receptor YA tenía un valor
+    // (por ejemplo al editar un movimiento existente), se guarda acá para no
+    // tocarlo en la sincronización inicial: la sincronización general puede
+    // limpiar un operador que no coincide con la entidad actual, y no
+    // queremos que eso pise un dato que ya estaba guardado. Un campo que
+    // arranca vacío sigue sincronizándose/completándose con el default
+    // normalmente, incluso en la carga inicial.
+    const emisorOperadorYaCargado = selectInymOrigen ? selectInymOrigen.value !== '' : false;
+    const receptorOperadorYaCargado = selectInymDestino ? selectInymDestino.value !== '' : false;
+
+    function mostrarUOcultarBloquesOperador() {
+        const mostrar = document.getElementById('es_yerba_mate').checked;
+        document.querySelectorAll('.bloque-operador-inym').forEach((bloque) => {
+            bloque.style.display = mostrar ? '' : 'none';
+        });
+        return mostrar;
+    }
+
+    // esCargaInicial=true evita resincronizar (y así potencialmente limpiar)
+    // un operador emisor/receptor que ya venía cargado desde el servidor.
+    // Los defaults igual se aplican siempre, pero como solo completan campos
+    // vacíos, nunca pisan un valor ya cargado.
+    function actualizarVisibilidadOperadores(esCargaInicial) {
+        const mostrar = mostrarUOcultarBloquesOperador();
+        if (!mostrar) { return; }
+        if (!(esCargaInicial && emisorOperadorYaCargado)) {
+            sincronizarParEntidadOperador(selectEntidadEmisor, selectInymOrigen);
+        }
+        if (!(esCargaInicial && receptorOperadorYaCargado)) {
+            sincronizarParEntidadOperador(selectEntidadReceptor, selectInymDestino);
+        }
+        aplicarDefaultsSecaderoSiCorresponde();
+    }
+
+    document.getElementById('es_yerba_mate').addEventListener('change', () => actualizarVisibilidadOperadores(false));
+    actualizarVisibilidadOperadores(true);
+</script>
+{% endblock %}

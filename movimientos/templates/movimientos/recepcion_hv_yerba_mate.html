@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+<script>
+    // Asignamos la variable de Django a una variable global de JavaScript para que busque en inym_operador_origen
+    const elemento_donde_buscar = "{{ inym_operador_origen }}"; 
+</script>
+<h2>Recepción de H.V. de Yerba Mate</h2>
+  <body>
+    <form action="" method="post">
+        {% csrf_token %}
+        {% if form_movimiento_hv.non_field_errors %}
+            <div class="alert alert-danger">
+            {% for error in form_movimiento_hv.non_field_errors %}
+                <p>{{ error }}</p>
+            {% endfor %}
+            </div>
+        {% endif %}
+        {% for field in form_movimiento_hv %}
+            {% if  field.label == 'Emisor' %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    <input type="text" id="buscador_emisor"  name="buscador_emisor" placeholder="Buscar emisor..."/> {{ field }}
+                </div>
+            {% else %}
+                <div class="field-wrapper">
+                    {{ field.label_tag }}
+                    {{ field }}
+                </div>
+            {% endif %}
+        {% endfor %}
+        <input type="submit" value="Agregar" />
+    </form>
+  </body>
+<script src="{% static '/js/calculo_total_con_btd.js' %}"></script>
+<script src="{% static '/js/buscador_generico.js' %}"></script>
+<script>
+    let selectEmisor = document.querySelector('[name="inym_operador_origen"]')
+    let emisor_buscador = document.querySelector('[name="buscador_emisor"]')
+    let timeout = null;
+    emisor_buscador.addEventListener('input',(evento) => {
+    buscar_en_input(evento,emisor_buscador,selectEmisor,timeout);
+    })
+</script>
+{% endblock %}

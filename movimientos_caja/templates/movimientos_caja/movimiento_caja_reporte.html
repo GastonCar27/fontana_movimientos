@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos_caja/menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h4 class="mb-0">Reporte de movimientos de caja</h4>
+            {% if cantidad_total %}
+            <span class="badge bg-secondary-subtle text-secondary-emphasis border">
+                {{ cantidad_total }} movimiento{{ cantidad_total|pluralize }}
+            </span>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-success" href="{% url 'movimientos_caja:movimiento_caja_reporte_excel' %}?{{ request.GET.urlencode }}">
+                Exportar a Excel
+            </a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_reporte_pdf' %}?{{ request.GET.urlencode }}">
+                Exportar a PDF
+            </a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'movimientos_caja:movimiento_caja_ranking_entidades' %}">
+                Ranking de entidades
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.caja.label_tag }}
+                    {{ form.caja }}
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.tipo.label_tag }}
+                    {{ form.tipo }}
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.receptor.label_tag }}
+                    <div class="buscador-wrapper">
+                        <input type="text" id="receptor-buscador" autocomplete="off" class="form-control form-control-sm"
+                               placeholder="Buscar por nombre o CUIT..." value="{{ receptor_texto }}">
+                        {{ form.receptor }}
+                        <div id="receptor-resultados" class="buscador-resultados"></div>
+                    </div>
+                </div>
+
+                <div class="w-100 d-none d-lg-block"></div>
+
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha_desde.label_tag }}
+                    {{ form.fecha_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha_hasta.label_tag }}
+                    {{ form.fecha_hasta }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.diferido_desde.label_tag }}
+                    {{ form.diferido_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.diferido_hasta.label_tag }}
+                    {{ form.diferido_hasta }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.efectivizacion_desde.label_tag }}
+                    {{ form.efectivizacion_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.efectivizacion_hasta.label_tag }}
+                    {{ form.efectivizacion_hasta }}
+                </div>
+
+                <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top">
+                    <div class="form-check">
+                        {{ form.sin_efectivizar }}
+                        <label class="form-check-label" for="{{ form.sin_efectivizar.id_for_label }}">
+                            {{ form.sin_efectivizar.label }}
+                        </label>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
+                        {% if filtros_activos %}
+                        <a href="{% url 'movimientos_caja:movimiento_caja_reportes' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if form.non_field_errors %}
+                <div class="col-12">
+                    {% for error in form.non_field_errors %}
+                    <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'id' 'ID' %}</th>
+                    <th>{% sort_th 'caja' 'Caja' %}</th>
+                    <th>{% sort_th 'tipo' 'Tipo' %}</th>
+                    <th>{% sort_th 'emision' 'Emisión' %}</th>
+                    <th>{% sort_th 'receptor' 'Receptor' %}</th>
+                    <th class="text-end">{% sort_th 'monto' 'Monto' %}</th>
+                    <th>{% sort_th 'diferido' 'Diferido' %}</th>
+                    <th>{% sort_th 'efectivizacion' 'Efectivización' %}</th>
+                    <th>Liquidación</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in movimientos %}
+                <tr>
+                    <td>{{ m.id }}</td>
+                    <td>{{ m.caja }}</td>
+                    <td>{{ m.tipo }}</td>
+                    <td>{{ m.emision|default:"-" }}</td>
+                    <td>{{ m.receptor|default:"-" }}</td>
+                    <td class="text-end">{{ m.monto|separador_miles }}</td>
+                    <td>{{ m.movimientocajadiferido.diferido|default:"-" }}</td>
+                    <td>
+                        {% if m.efectivizacion %}
+                            {{ m.efectivizacion }}
+                        {% else %}
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Pendiente</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% for lm in m.liquidaciones.all %}
+                            {% if lm.liquidacion %}
+                            <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">Nº {{ lm.liquidacion.id }}</span>
+                            {% endif %}
+                        {% empty %}
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">Sin liquidar</span>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-4">No hay resultados para los filtros aplicados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td colspan="5" class="text-end">Total</td>
+                    <td class="text-end">{{ totales.total_monto|separador_miles }}</td>
+                    <td colspan="3"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    {% if cantidad_total > 500 %}
+    <p class="text-muted small">
+        Mostrando los primeros 500 de {{ cantidad_total }} movimientos. Ajustá los filtros para acotar la búsqueda.
+    </p>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('receptor-buscador', '{{ form.receptor.id_for_label }}', 'receptor-resultados',
+        '{% url "entidades:entidad_buscar" %}');
+});
+</script>
+{% endblock %}

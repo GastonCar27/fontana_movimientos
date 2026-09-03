@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Movimiento: {{ movimiento.id_movimiento }}</h2>
+<div class="col">
+
+    <div class="h5 font-weight-bold">
+      <p>Emisor: {{ movimiento.entidad_emisor }}</p>
+    <div class="">
+      <p>Número: {{ movimiento.numero }}</p>
+    </div>
+    <div class="">
+        <p>Producto: {{ movimiento.producto }}</p>
+    </div>
+    <div class="">
+        <p>Total: {{ movimiento.total }}</p>
+    </div>
+
+  </div>
+{% endblock %}

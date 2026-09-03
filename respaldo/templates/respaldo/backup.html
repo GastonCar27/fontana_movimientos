@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Backup de la base de datos</h1>
+
+{% if messages %}
+<ul>
+  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form method="post" style="margin-bottom: 20px;">
+    {% csrf_token %}
+    <button type="submit">Generar backup ahora</button>
+</form>
+<p>El archivo se guarda en el servidor con el nombre <code>fontana_dd-mm-aaaa_hh-mm.sql</code> y además se descarga automáticamente al generarlo.</p>
+
+<h2>Backups existentes</h2>
+{% if backups_existentes %}
+<ul>
+    {% for nombre in backups_existentes %}
+    <li><a href="{% url 'respaldo:backup_descargar' nombre %}">{{ nombre }}</a></li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>Todavía no se generó ningún backup.</p>
+{% endif %}
+{% endblock %}

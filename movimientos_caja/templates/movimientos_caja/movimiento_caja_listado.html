@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos_caja/menu.html" %}
+
+    <h4 class="mb-3">Movimientos de caja</h4>
+
+    <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label for="id_receptor" class="mb-1 small text-muted">Receptor</label>
+            <input type="text" id="id_receptor" name="receptor" class="form-control form-control-sm" value="{{ q_receptor }}" placeholder="Nombre o CUIT">
+        </div>
+        <div class="col-auto">
+            <label for="id_id" class="mb-1 small text-muted">ID</label>
+            <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" placeholder="ID de movimiento">
+        </div>
+        <div class="col-auto">
+            <label for="id_fecha" class="mb-1 small text-muted">Fecha de emisión</label>
+            <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
+            <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'id' 'ID' %}</th>
+                    <th>{% sort_th 'caja' 'Caja' %}</th>
+                    <th>{% sort_th 'tipo' 'Tipo' %}</th>
+                    <th>{% sort_th 'emision' 'Emisión' %}</th>
+                    <th>{% sort_th 'numero' 'Número' %}</th>
+                    <th>{% sort_th 'receptor' 'Receptor' %}</th>
+                    <th class="text-end">{% sort_th 'monto' 'Monto' %}</th>
+                    <th>{% sort_th 'efectivizacion' 'Efectivización' %}</th>
+                    <th>Liquidación</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in movimientos %}
+                <tr>
+                    <td>{{ m.id }}</td>
+                    <td>{{ m.caja }}</td>
+                    <td>{{ m.tipo }}</td>
+                    <td>{{ m.emision }}</td>
+                    <td>{{ m.numero|default:"-" }}</td>
+                    <td>{{ m.receptor|default:"-" }}</td>
+                    <td class="text-end">{{ m.monto|separador_miles }}</td>
+                    <td>{{ m.efectivizacion|default:"-" }}</td>
+                    <td>
+                        {% for lm in m.liquidaciones.all %}
+                            {% if lm.liquidacion %}
+                            <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">Nº {{ lm.liquidacion.id }}</span>
+                            {% endif %}
+                        {% empty %}
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">Sin liquidar</span>
+                        {% endfor %}
+                    </td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'movimientos_caja:movimiento_caja_editar' m.pk %}">Editar</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_eliminar' m.pk %}">Eliminar</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="10" class="text-center text-muted py-4">No hay movimientos de caja cargados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

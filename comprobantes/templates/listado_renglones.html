@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<body>
+    {% include 'snippets/buscador_comprobante_renglon.html' %}
+</body>
+<body>
+<div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+            <h4 class="text-center">{{message}}</h4>
+    <table class="table table-striped table-hover">
+        <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+            <tr style="font-size: 70%;">
+                <th>Id</th>
+                <th>Fecha</th>
+                <th>Emisor</th>
+                <th>Producto</th>
+                <th>Unidad de Medida</th>
+                <th>Cantidad</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Loop through the records passed by ListView -->
+            {% for renglon_comprobante in renglones_comprobantes %}
+            <tr style="font-size: 70%;">
+                <td>{{ renglon_comprobante.id }}</td>
+                <td>{{ renglon_comprobante.comprobante.fecha }}</td>
+                <td>{{ renglon_comprobante.comprobante.entidad_emisor }}</td>
+                <td>{{ renglon_comprobante.producto }}</td>
+                <td>{{ renglon_comprobante.detalle.unidad_de_medida }}</td>
+                <td>{{ renglon_comprobante.detalle.cantidad }}</td>
+                 
+
+                
+                <td>{% include 'snippets/modificar_renglon.html' %}</td>
+                <td>{% include 'snippets/eliminar_renglon.html' %}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="3">Movimiento no creado.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<form action="{% url 'comprobantes:generar_excel_completo'%}">
+  {% csrf_token %}
+  <input type="hidden" name="generar_excel_completo" style="width: 50%;">
+  <button type="submit" class="btn btn-link text-danger"  style='padding:0px'>Generar Excel Completo</button>
+</form>
+
+</body>
+</html>
+{% endblock %}

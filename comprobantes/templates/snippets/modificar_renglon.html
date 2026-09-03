@@ -1,0 +1,5 @@
+<form action="{% url 'comprobantes:renglon_comprobante_update' renglon_comprobante.id %}">
+  {% csrf_token %}
+  <input type="hidden" name="renglon_comprobante_id" value="{{ renglon_comprobante.id }}" style="width: 50%;">
+  <button type="submit" class="btn btn-link text-danger"  style='padding:0px'>Modificar</button>
+</form>

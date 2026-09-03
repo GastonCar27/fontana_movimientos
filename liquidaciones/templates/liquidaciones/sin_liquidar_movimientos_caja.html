@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "liquidaciones/menu.html" %}
+
+<h1>Movimientos de caja sin liquidar</h1>
+
+{% if messages %}
+<ul>
+  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<div style="margin-bottom:15px;">
+  <button type="button" class="btn btn-sm btn-outline-secondary" data-toggle="modal" data-target="#modalFiltro">Filtrar</button>
+  <a class="btn btn-sm btn-outline-success" href="{% url 'liquidaciones:sin_liquidar_excel' tipo='movimientos_caja' %}?{{ request.GET.urlencode }}">Exportar a Excel</a>
+  <a class="btn btn-sm btn-outline-danger" href="{% url 'liquidaciones:sin_liquidar_pdf' tipo='movimientos_caja' %}?{{ request.GET.urlencode }}">Exportar a PDF</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'liquidaciones:sin_liquidar_movimientos_caja' %}">Limpiar filtro</a>
+</div>
+
+<!-- Ventana modal de filtro -->
+<div class="modal fade" id="modalFiltro" tabindex="-1" role="dialog" aria-labelledby="modalFiltroLabel">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <form method="get">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalFiltroLabel">Filtrar movimientos de caja sin liquidar</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        </div>
+        <div class="modal-body">
+          <p>
+            {{ form.entidad.label_tag }}<br>
+            <div class="buscador-wrapper">
+              <input type="text" id="entidad-buscador" autocomplete="off" class="form-control"
+                     placeholder="Buscar por ID, nombre o CUIT..." value="{{ entidad_texto }}">
+              {{ form.entidad }}
+              <div id="entidad-resultados" class="buscador-resultados"></div>
+            </div>
+          </p>
+          <p>{{ form.fecha_desde.label_tag }}<br>{{ form.fecha_desde }}</p>
+          <p>{{ form.fecha_hasta.label_tag }}<br>{{ form.fecha_hasta }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Filtrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<table border="1" cellpadding="5">
+  <thead>
+    <tr>
+      <th>ID</th><th>Fecha emisión</th><th>Entidad emisora</th><th>Entidad receptora</th>
+      <th>Número</th><th>Caja</th><th>Libro</th><th>Libro - Hoja</th><th>Libro - Renglón</th>
+      <th>Diferido</th><th>Efectivización</th><th>Monto</th><th>Acción</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in movimientos %}
+    <tr>
+      <td>{{ m.id }}</td>
+      <td>{{ m.emision }}</td>
+      <td>{{ m.emisor|default:"-" }}</td>
+      <td>{{ m.receptor|default:"-" }}</td>
+      <td>{{ m.numero|default:"-" }}</td>
+      <td>{{ m.caja|default:"-" }}</td>
+      <td>{{ m.asiento_libro.libro|default:"-" }}</td>
+      <td>{{ m.asiento_libro.hoja|default:"-" }}</td>
+      <td>{{ m.asiento_libro.renglon|default:"-" }}</td>
+      <td>{{ m.movimientocajadiferido.diferido|default:"-" }}</td>
+      <td>{{ m.efectivizacion|default:"-" }}</td>
+      <td>{{ m.monto }}</td>
+      <td>
+        {% if m.entidad_liquidar_id %}
+          <a class="btn btn-sm btn-success" href="{% url 'liquidaciones:alta' %}?entidad={{ m.entidad_liquidar_id }}">LIQUIDAR</a>
+        {% else %}
+          <span style="color:#888;">Sin Entidad</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="13">No hay movimientos de caja sin liquidar.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    {% if abrir_modal %}
+    $('#modalFiltro').modal('show');
+    {% endif %}
+    inicializarBuscador('entidad-buscador', '{{ form.entidad.id_for_label }}', 'entidad-resultados',
+        '{% url "liquidaciones:entidad_buscar" %}');
+});
+</script>
+{% endblock %}

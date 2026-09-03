@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load static %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "productos/menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Productos</h4>
+        <a href="{% url 'productos:producto_alta' %}" class="btn btn-sm btn-primary">+ Nuevo</a>
+    </div>
+
+    <div class="form-group mb-3" style="max-width: 320px;">
+        <label for="buscador-producto" class="mb-1">Buscar por Id o Nombre</label>
+        <input
+            type="text"
+            id="buscador-producto"
+            class="form-control form-control-sm"
+            data-buscador-tabla="tabla-producto-listado"
+            placeholder="Escribí un id o un nombre..."
+            autocomplete="off">
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle" id="tabla-producto-listado">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'id' 'ID' %}</th>
+                    <th>{% sort_th 'nombre' 'Nombre' %}</th>
+                    <th>{% sort_th 'categoria' 'Categoría' %}</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for producto in productos %}
+                <tr data-fila-dato>
+                    <td>{{ producto.id }}</td>
+                    <td>{{ producto.nombre }}</td>
+                    <td>{{ producto.item_tipo.nombre|default:"-" }}</td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'productos:producto_editar' producto.pk %}">Editar</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr data-fila-vacia>
+                    <td colspan="4" class="text-center text-muted py-4">No hay productos cargados.</td>
+                </tr>
+                {% endfor %}
+                {% if productos %}
+                <tr data-fila-sin-coincidencias hidden>
+                    <td colspan="4" class="text-center text-muted">No hay coincidencias para esa búsqueda.</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<script src="{% static 'js/buscador_tabla_tipos.js' %}"></script>
+{% endblock %}

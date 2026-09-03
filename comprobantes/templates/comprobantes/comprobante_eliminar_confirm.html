@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar comprobante</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar el comprobante <strong>{{ comprobante.id }}</strong>
+        {% if comprobante.entidad_emisor %}de <strong>{{ comprobante.entidad_emisor }}</strong>{% endif %}
+        {% if comprobante.fecha %}con fecha <strong>{{ comprobante.fecha }}</strong>{% endif %}
+        y un total de <strong>{{ comprobante.total|separador_miles }}</strong>?
+        {% if renglones %}
+        También se van a eliminar sus <strong>{{ renglones|length }}</strong> renglón{{ renglones|length|pluralize:"es" }}.
+        {% endif %}
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'comprobantes:comprobante_modificar' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

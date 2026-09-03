@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    {% include "solicitudes_compra/menu.html" %}
+
+    <h4 class="mb-3">{% if solicitud %}Editar solicitud {{ solicitud.numero }}{% else %}Nueva solicitud de compra{% endif %}</h4>
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+
+        <div class="row gx-3 gy-2 mb-3">
+            <div class="col-md-4">
+                <label class="form-label small text-muted">{{ form.entidad.label }}</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="entidad-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar por nombre o CUIT..." value="{{ entidad_texto }}">
+                    {{ form.entidad }}
+                    <div id="entidad-resultados" class="buscador-resultados"></div>
+                </div>
+                {% if form.entidad.errors %}<div class="text-danger small">{{ form.entidad.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small text-muted">{{ form.solicitante.label }}</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="solicitante-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar por nombre o apellido..." value="{{ solicitante_texto }}">
+                    {{ form.solicitante }}
+                    <div id="solicitante-resultados" class="buscador-resultados"></div>
+                </div>
+                {% if form.solicitante.errors %}<div class="text-danger small">{{ form.solicitante.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small text-muted">{{ form.responsable_retiro.label }}</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="responsable-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar por nombre o apellido..." value="{{ responsable_texto }}">
+                    {{ form.responsable_retiro }}
+                    <div id="responsable-resultados" class="buscador-resultados"></div>
+                </div>
+                {% if form.responsable_retiro.errors %}<div class="text-danger small">{{ form.responsable_retiro.errors|striptags }}</div>{% endif %}
+            </div>
+            {% for field in form %}
+            {% if field.name != 'entidad' and field.name != 'solicitante' and field.name != 'responsable_retiro' %}
+            <div class="col-md-4">
+                <label for="{{ field.id_for_label }}" class="form-label small text-muted">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        <h6 class="mt-4 mb-2">Renglones</h6>
+        {{ formset.management_form }}
+        {% if formset.non_form_errors %}
+        <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+        {% endif %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:8%">Cantidad</th>
+                        <th style="width:11%">U. de Medida</th>
+                        <th style="width:9%">Prioridad</th>
+                        <th style="width:10%">Sector</th>
+                        <th>Descripción</th>
+                        <th style="width:18%">Producto de catálogo (opcional)</th>
+                        <th style="width:6%"></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpo-renglones">
+                    {% for renglon_form in formset %}
+                    <tr class="fila-renglon">
+                        {% if renglon_form.instance.pk %}{{ renglon_form.id }}{% endif %}
+                        <td>
+                            {{ renglon_form.cantidad }}
+                            {% if renglon_form.cantidad.errors %}<div class="text-danger small">{{ renglon_form.cantidad.errors|striptags }}</div>{% endif %}
+                        </td>
+                        <td>{{ renglon_form.unidad_medida }}</td>
+                        <td>{{ renglon_form.prioridad }}</td>
+                        <td>{{ renglon_form.sector }}</td>
+                        <td>
+                            {{ renglon_form.descripcion }}
+                            {% if renglon_form.descripcion.errors %}<div class="text-danger small">{{ renglon_form.descripcion.errors|striptags }}</div>{% endif %}
+                        </td>
+                        <td>
+                            <div class="buscador-wrapper">
+                                <input type="text" class="producto-buscador form-control form-control-sm" autocomplete="off"
+                                       placeholder="Buscar producto..." value="{{ renglon_form.instance.producto_sugerido|default:'' }}">
+                                {{ renglon_form.producto_sugerido }}
+                                <div class="producto-resultados buscador-resultados"></div>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            {% if renglon_form.instance.pk %}
+                            <div class="form-check">
+                                {{ renglon_form.DELETE }}
+                                <label class="form-check-label small">Borrar</label>
+                            </div>
+                            {% else %}
+                            <button type="button" class="btn btn-sm btn-outline-danger btn-quitar-fila">×</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <button type="button" id="btn-agregar-renglon" class="btn btn-sm btn-outline-primary mb-3">+ Agregar renglón</button>
+
+        <div>
+            <button type="submit" name="accion" value="guardar" class="btn btn-primary btn-sm">Guardar</button>
+            <button type="submit" name="accion" value="guardar_pdf" class="btn btn-outline-primary btn-sm">Guardar y generar PDF</button>
+            <button type="submit" name="accion" value="guardar_excel" class="btn btn-outline-success btn-sm">Guardar y generar Excel</button>
+            <a href="{% url 'solicitudes_compra:listado' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('entidad-buscador', '{{ form.entidad.id_for_label }}', 'entidad-resultados',
+        '{% url "entidades:entidad_buscar" %}');
+    inicializarBuscador('solicitante-buscador', '{{ form.solicitante.id_for_label }}', 'solicitante-resultados',
+        '{% url "empleados:buscar" %}');
+    inicializarBuscador('responsable-buscador', '{{ form.responsable_retiro.id_for_label }}', 'responsable-resultados',
+        '{% url "empleados:buscar" %}');
+
+    function inicializarBuscadorProductoEnFila(fila) {
+        var input = fila.querySelector('.producto-buscador');
+        var hidden = fila.querySelector('input[name$="-producto_sugerido"]');
+        var resultados = fila.querySelector('.producto-resultados');
+        inicializarBuscadorEnElementos(input, hidden, resultados, '{% url "productos:buscar" %}', null, 1);
+    }
+
+    document.querySelectorAll('.fila-renglon').forEach(inicializarBuscadorProductoEnFila);
+
+    var totalForms = document.getElementById('id_renglones-TOTAL_FORMS');
+    var cuerpo = document.getElementById('cuerpo-renglones');
+    var btnAgregar = document.getElementById('btn-agregar-renglon');
+
+    function activarBotonQuitar(fila) {
+        var boton = fila.querySelector('.btn-quitar-fila');
+        if (boton) {
+            boton.addEventListener('click', function () {
+                fila.remove();
+            });
+        }
+    }
+
+    if (btnAgregar) {
+        btnAgregar.addEventListener('click', function () {
+            var indice = parseInt(totalForms.value, 10);
+            var filaBase = cuerpo.querySelector('.fila-renglon');
+            var filaNueva = filaBase.cloneNode(true);
+
+            filaNueva.querySelectorAll('input, select').forEach(function (campo) {
+                var nombreOriginal = campo.getAttribute('name');
+                if (!nombreOriginal) { return; }
+                var nombreNuevo = nombreOriginal.replace(/renglones-(\d+)-/, 'renglones-' + indice + '-');
+                var idNuevo = campo.id ? campo.id.replace(/renglones-(\d+)-/, 'renglones-' + indice + '-') : '';
+                campo.setAttribute('name', nombreNuevo);
+                if (idNuevo) { campo.id = idNuevo; }
+                if (campo.type === 'checkbox') {
+                    campo.checked = false;
+                } else if (campo.tagName !== 'SELECT') {
+                    // Los <select> (U. de Medida, Prioridad) se dejan con la
+                    // opción que ya traía clonada la fila (en blanco o el
+                    // valor por defecto del modelo), en vez de forzar un
+                    // value='' que no coincide con ninguna <option>.
+                    campo.value = '';
+                }
+            });
+
+            cuerpo.appendChild(filaNueva);
+            activarBotonQuitar(filaNueva);
+            inicializarBuscadorProductoEnFila(filaNueva);
+            totalForms.value = indice + 1;
+        });
+    }
+
+    document.querySelectorAll('.btn-quitar-fila').forEach(function (boton) {
+        activarBotonQuitar(boton.closest('tr'));
+    });
+});
+</script>
+{% endblock %}
