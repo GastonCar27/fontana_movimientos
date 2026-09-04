@@ -13,6 +13,7 @@ from services import gestorexcel
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_queryset, aplicar_orden_lista
 from services.reportes import excel_response, pdf_response
+from services.permisos import requiere_grupo
 from django.db.models import Sum, Count, Max, Q, F, Case, When, DecimalField, CharField, Value
 from django.db.models.functions import Coalesce, Cast
 
@@ -1046,6 +1047,7 @@ def _calcular_ranking_entidades(comprobantes):
     return ranking, total_general
 
 
+@requiere_grupo('Rankings')
 def comprobante_ranking_entidades(request):
     """Ranking de entidades por monto total de comprobantes, de mayor a
     menor, filtrando por rol (emisora o receptora respecto de Fontana) y,
@@ -1088,6 +1090,7 @@ def _filas_ranking_entidades(ranking):
     }
 
 
+@requiere_grupo('Rankings')
 def comprobante_ranking_entidades_excel(request):
     _form, comprobantes, _filtros_activos = _comprobantes_ranking_filtrados(request)
     ranking, _total_general = _calcular_ranking_entidades(comprobantes)
@@ -1095,6 +1098,7 @@ def comprobante_ranking_entidades_excel(request):
     return excel_response('ranking_entidades_comprobantes', resultado)
 
 
+@requiere_grupo('Rankings')
 def comprobante_ranking_entidades_pdf(request):
     _form, comprobantes, _filtros_activos = _comprobantes_ranking_filtrados(request)
     ranking, _total_general = _calcular_ranking_entidades(comprobantes)

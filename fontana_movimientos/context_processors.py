@@ -29,6 +29,7 @@ def entorno_bd(request):
 # Cada nombre de acá tiene que coincidir EXACTO con el nombre del grupo de
 # Django (ver entidades/migrations/0002_grupos_menu.py, que los crea solos).
 GRUPOS_MENU = [
+    'Rankings',
     'Movimientos de Productos',
     'Movimientos de Caja',
     'Comprobantes',
@@ -62,6 +63,7 @@ def permisos_menu(request):
         return ve_todo or nombre_grupo in nombres_grupos
 
     return {
+        'puede_ver_rankings': puede_ver('Rankings'),
         'puede_ver_movimientos_productos': puede_ver('Movimientos de Productos'),
         'puede_ver_movimientos_caja': puede_ver('Movimientos de Caja'),
         'puede_ver_comprobantes': puede_ver('Comprobantes'),

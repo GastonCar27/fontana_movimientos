@@ -25,6 +25,7 @@ import json
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_queryset, aplicar_orden_lista
 from services.reportes import excel_response, pdf_response
+from services.permisos import requiere_grupo
 def recepcion(request):
     return render(request,'movimientos/movimiento.html',{
 
@@ -1562,6 +1563,7 @@ def _calcular_ranking_productores(movimientos):
     return ranking, total_general
 
 
+@requiere_grupo('Rankings')
 def movimiento_ranking_productores(request):
     """Ranking de productores (entidad emisora) según la suma del total de
     sus entregas, de mayor a menor, filtrando opcionalmente por un rango de
@@ -1604,6 +1606,7 @@ def _filas_ranking_productores(ranking):
     }
 
 
+@requiere_grupo('Rankings')
 def movimiento_ranking_productores_excel(request):
     _form, movimientos, _filtros_activos = _movimientos_ranking_productores_filtrados(request)
     ranking, _total_general = _calcular_ranking_productores(movimientos)
@@ -1611,6 +1614,7 @@ def movimiento_ranking_productores_excel(request):
     return excel_response('ranking_productores', resultado)
 
 
+@requiere_grupo('Rankings')
 def movimiento_ranking_productores_pdf(request):
     _form, movimientos, _filtros_activos = _movimientos_ranking_productores_filtrados(request)
     ranking, _total_general = _calcular_ranking_productores(movimientos)

@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Case, DecimalField, F, Max, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Max, OuterRef, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Coalesce, Cast
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -12,12 +12,13 @@ from django.urls import reverse
 from comprobantes.models import Comprobante
 from entidades.models import Entidad
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
+from services.permisos import requiere_grupo
 from movimientos_caja.models import MovimientoCaja
 from retenciones.models import Retencion
 from retenciones_inym.models import RetencionInym
 
 from . import documentos
-from .forms import LiquidacionSeleccionForm, LiquidacionReporteForm, SinLiquidarFiltroForm
+from .forms import LiquidacionSeleccionForm, LiquidacionReporteForm, RankingEntidadesForm, SinLiquidarFiltroForm
 from .models import (
     Liquidacion,
     LiquidacionComprobante,
@@ -1115,3 +1116,126 @@ def sin_liquidar_pdf(request, tipo):
     nombre_archivo, titulo, obtener_filas = config
     resultado = obtener_filas(request)
     return _pdf_response(nombre_archivo, titulo, resultado)
+
+
+# ---------------------------------------------------------------------------
+# Ranking de entidades (por monto total liquidado -debe + haber-, filtrando
+# por un lapso de fecha de liquidación) — mismo patrón que
+# comprobantes.views.comprobante_ranking_entidades /
+# movimientos_caja.views.movimiento_caja_ranking_entidades.
+# ---------------------------------------------------------------------------
+
+def _liquidaciones_ranking_filtrados(request):
+    """Aplica a Liquidacion los filtros de RankingEntidadesForm (fecha y,
+    opcionalmente, excluir a Fontana). Devuelve (form, queryset,
+    filtros_activos), centralizado para que la pantalla y las
+    exportaciones (Excel / PDF) usen siempre los mismos criterios."""
+    form = RankingEntidadesForm(request.GET or None)
+    liquidaciones = Liquidacion.objects.all()
+
+    filtros_activos = False
+    if form.is_valid():
+        fecha_desde = form.cleaned_data.get('fecha_desde')
+        fecha_hasta = form.cleaned_data.get('fecha_hasta')
+        excluir_fontana = form.cleaned_data.get('excluir_fontana')
+        if fecha_desde:
+            liquidaciones = liquidaciones.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            liquidaciones = liquidaciones.filter(fecha__lte=fecha_hasta)
+        if excluir_fontana:
+            liquidaciones = liquidaciones.exclude(entidad_id=ENTIDAD_PROPIA_ID)
+        filtros_activos = bool(fecha_desde or fecha_hasta or excluir_fontana)
+
+    return form, liquidaciones, filtros_activos
+
+
+def _calcular_ranking_liquidaciones(liquidaciones):
+    """A partir de un queryset de Liquidacion, arma el ranking de entidades
+    por monto total liquidado (Debe + Haber, de mayor a menor) y el total
+    general. Debe/Haber van por Coalesce a 0 antes de sumarse: si alguno de
+    los dos es NULL en una liquidación puntual, no tiene que anular la suma
+    de esa fila. Devuelve (ranking, total_general)."""
+    monto_liquidado = Coalesce(
+        F('debe'), Value(0), output_field=DecimalField(max_digits=20, decimal_places=2)
+    ) + Coalesce(
+        F('haber'), Value(0), output_field=DecimalField(max_digits=20, decimal_places=2)
+    )
+    ranking = list(
+        liquidaciones.annotate(monto_liquidado=monto_liquidado)
+        .values('entidad_id', 'entidad__nombre')
+        .annotate(total_monto=Sum('monto_liquidado'), cantidad=Count('id'))
+        .order_by('-total_monto')
+    )
+
+    total_general = sum(
+        (fila['total_monto'] for fila in ranking if fila['total_monto'] is not None), Decimal('0')
+    )
+    for posicion, fila in enumerate(ranking, start=1):
+        fila['posicion'] = posicion
+        fila['porcentaje'] = (
+            fila['total_monto'] / total_general * 100
+            if total_general and fila['total_monto'] is not None else Decimal('0')
+        )
+
+    return ranking, total_general
+
+
+@requiere_grupo('Rankings')
+def liquidacion_ranking_entidades(request):
+    """Ranking de entidades por monto total liquidado (Debe + Haber), de
+    mayor a menor, filtrando opcionalmente por un rango de fecha de
+    liquidación (y excluyendo, si se pide, a Fontana)."""
+    form, liquidaciones, filtros_activos = _liquidaciones_ranking_filtrados(request)
+    ranking, total_general = _calcular_ranking_liquidaciones(liquidaciones)
+    ranking = aplicar_orden_lista(request, ranking, {
+        'posicion': lambda f: f['posicion'],
+        'entidad': lambda f: (f['entidad__nombre'] or '').lower(),
+        'cantidad': lambda f: f['cantidad'],
+        'monto': lambda f: f['total_monto'] if f['total_monto'] is not None else Decimal('0'),
+        'porcentaje': lambda f: f['porcentaje'],
+    })
+
+    return render(request, 'liquidaciones/liquidacion_ranking_entidades.html', {
+        'form': form,
+        'ranking': ranking,
+        'total_general': total_general,
+        'filtros_activos': filtros_activos,
+    })
+
+
+def _filas_ranking_liquidaciones(ranking):
+    columnas = ['#', 'Entidad', 'Liquidaciones', 'Monto liquidado', 'Participación %']
+    filas = [
+        [
+            fila['posicion'],
+            fila['entidad__nombre'] or 'Sin nombre',
+            fila['cantidad'],
+            _numero_o_none(fila['total_monto']),
+            _numero_o_none(fila['porcentaje']),
+        ]
+        for fila in ranking
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': {3, 4},  # Monto liquidado, Participación %
+        'anchos': [0.4, 2.2, 1.0, 1.2, 1.2],
+    }
+
+
+@requiere_grupo('Rankings')
+def liquidacion_ranking_entidades_excel(request):
+    _form, liquidaciones, _filtros_activos = _liquidaciones_ranking_filtrados(request)
+    ranking, _total_general = _calcular_ranking_liquidaciones(liquidaciones)
+    resultado = _filas_ranking_liquidaciones(ranking)
+    return _excel_response('ranking_entidades_liquidaciones', resultado)
+
+
+@requiere_grupo('Rankings')
+def liquidacion_ranking_entidades_pdf(request):
+    _form, liquidaciones, _filtros_activos = _liquidaciones_ranking_filtrados(request)
+    ranking, _total_general = _calcular_ranking_liquidaciones(liquidaciones)
+    resultado = _filas_ranking_liquidaciones(ranking)
+    return _pdf_response(
+        'ranking_entidades_liquidaciones', 'Ranking de entidades por monto liquidado', resultado
+    )

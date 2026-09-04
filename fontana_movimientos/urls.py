@@ -17,6 +17,7 @@ urlpatterns =[
     path('movimiento-caja/', include('movimientos_caja.urls')),
     path('respaldo/', include('respaldo.urls')),
     path('retenciones/', include('retenciones.urls')),
+    path('retenciones-inym/', include('retenciones_inym.urls')),
     path('tipos/', include('tipos.urls')),
     path('empleados/', include('empleados.urls')),
     path('solicitudes-compra/', include('solicitudes_compra.urls')),

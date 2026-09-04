@@ -10,10 +10,6 @@
                 <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'comprobante_reportes' %}active{% endif %}"
                    href="{% url 'comprobantes:comprobante_reportes' %}">Reportes</a>
             </div>
-            <div class="btn-group btn-group-sm" role="group">
-                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'comprobante_ranking_entidades' %}active{% endif %}"
-                   href="{% url 'comprobantes:comprobante_ranking_entidades' %}">Rankings</a>
-            </div>
         </div>
         <div>
             <span class="text-muted small text-uppercase fw-semibold me-2">Renglones</span>

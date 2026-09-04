@@ -9,9 +9,5 @@
             <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_reportes' %}active{% endif %}"
                href="{% url 'movimientos:movimiento_reportes' %}">Reportes</a>
         </div>
-        <div class="btn-group btn-group-sm" role="group">
-            <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_ranking_productores' %}active{% endif %}"
-               href="{% url 'movimientos:movimiento_ranking_productores' %}">Rankings</a>
-        </div>
     </div>
 </nav>

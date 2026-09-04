@@ -11,6 +11,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from entidades.models import Entidad
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
+from services.permisos import requiere_grupo
 
 from .forms import (
     AsignarLibroMovimientoForm,
@@ -715,6 +716,7 @@ def _calcular_ranking(movimientos):
     return ranking, total_general
 
 
+@requiere_grupo('Rankings')
 def movimiento_caja_ranking_entidades(request):
     """Ranking de entidades receptoras según la suma de montos de sus
     movimientos de caja, de mayor a menor, filtrando opcionalmente por un
@@ -758,6 +760,7 @@ def _filas_ranking_entidades(ranking):
     }
 
 
+@requiere_grupo('Rankings')
 def movimiento_caja_ranking_entidades_excel(request):
     _form, movimientos, _filtros_activos = _movimientos_ranking_filtrados(request)
     ranking, _total_general = _calcular_ranking(movimientos)
@@ -765,6 +768,7 @@ def movimiento_caja_ranking_entidades_excel(request):
     return _excel_response('ranking_entidades', resultado)
 
 
+@requiere_grupo('Rankings')
 def movimiento_caja_ranking_entidades_pdf(request):
     _form, movimientos, _filtros_activos = _movimientos_ranking_filtrados(request)
     ranking, _total_general = _calcular_ranking(movimientos)

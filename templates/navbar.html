@@ -61,6 +61,22 @@
                 </div>
              </li>
 
+             {% if puede_ver_rankings %}
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownRankings" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Rankings
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownRankings">
+                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_ranking_entidades' %}">Comprobantes</a>
+                    <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_ranking_entidades' %}">Movimiento de Caja</a>
+                    <a class="dropdown-item" href="{% url 'movimientos:movimiento_ranking_productores' %}">Movimientos de Producto</a>
+                    <a class="dropdown-item" href="{% url 'liquidaciones:ranking_entidades' %}">Liquidaciones</a>
+                    <a class="dropdown-item" href="{% url 'retenciones:ranking_entidades' %}">Retenciones</a>
+                    <a class="dropdown-item" href="{% url 'retenciones_inym:ranking_entidades' %}">Retenciones Inym</a>
+                </div>
+             </li>
+             {% endif %}
+
              {% if puede_ver_movimientos_productos %}
              <li class="nav-item dropdown">
                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMovimientosProductos" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
@@ -70,7 +86,6 @@
                     <a class="dropdown-item" href="{% url 'movimientos:movimiento_alta' %}">Alta</a>
                     <a class="dropdown-item" href="{% url 'movimientos:movimiento_modificar' %}">Modificación</a>
                     <a class="dropdown-item" href="{% url 'movimientos:movimiento_reportes' %}">Reportes</a>
-                    <a class="dropdown-item" href="{% url 'movimientos:movimiento_ranking_productores' %}">Rankings</a>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-submenu">
                         <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownIngresoHvYerbaMate">Ingreso H.V. de Yerba Mate</a>
@@ -108,7 +123,6 @@
                     <a class="dropdown-item" href="{% url 'comprobantes:comprobante_alta' %}">Alta</a>
                     <a class="dropdown-item" href="{% url 'comprobantes:comprobante_modificar' %}">Modificar</a>
                     <a class="dropdown-item" href="{% url 'comprobantes:comprobante_reportes' %}">Reportes</a>
-                    <a class="dropdown-item" href="{% url 'comprobantes:comprobante_ranking_entidades' %}">Rankings</a>
                     <div class="dropdown-divider"></div>
                     <h6 class="dropdown-header">Comprobante Renglones</h6>
                     <a class="dropdown-item" href="{% url 'comprobantes:comprobante_renglon_alta' %}">Alta</a>
