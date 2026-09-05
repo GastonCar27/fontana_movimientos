@@ -94,8 +94,12 @@
 
     <p>
         {{ form.producto.label_tag }}<br>
-        <input type="text" name="buscador_producto" placeholder="Buscar producto..." autocomplete="off"><br>
-        {{ form.producto }}
+        <div class="buscador-wrapper">
+            <input type="text" id="producto-buscador" autocomplete="off"
+                   placeholder="Buscar producto por ID o nombre..." value="{{ producto_texto }}">
+            {{ form.producto }}
+            <div id="producto-resultados" class="buscador-resultados"></div>
+        </div>
         {% if form.producto.errors %}<span style="color:red;">{{ form.producto.errors }}</span>{% endif %}
     </p>
 
@@ -103,7 +107,6 @@
 </form>
 
 <script src="{% static 'js/buscador_generico.js' %}"></script>
-<script src="{% static 'js/buscador_producto.js' %}"></script>
 <script src="{% static 'js/calculo_total_con_btd.js' %}"></script>
 <script>
     // Mapa {id_operador_inym: id_entidad} usado para restringir el Operador INYM
@@ -255,22 +258,12 @@
         aplicarDefaultsSecaderoSiCorresponde();
     });
 
-    // OJO: 'buscador_producto.js' ya declara su propia variable global
-    // 'selectProducto' (con let); por eso acá se usa otro nombre para el
-    // select de producto, para no chocar con esa declaración (redeclarar el
-    // mismo identificador con const/let en otro <script> de la misma página
-    // es un SyntaxError que invalida TODO el bloque de script).
-    const selectProductoParaDefaults = document.querySelector('[name="producto"]');
-    const buscadorProductoParaDefaults = document.querySelector('[name="buscador_producto"]');
-    if (selectProductoParaDefaults) {
-        selectProductoParaDefaults.addEventListener('change', aplicarDefaultsSecaderoSiCorresponde);
-    }
-    if (buscadorProductoParaDefaults) {
-        buscadorProductoParaDefaults.addEventListener('input', () => {
-            clearTimeout(buscadorProductoParaDefaults._defaultsTimeout);
-            buscadorProductoParaDefaults._defaultsTimeout = setTimeout(aplicarDefaultsSecaderoSiCorresponde, 450);
-        });
-    }
+    // El campo 'producto' ahora es un buscador con autocompletado por AJAX
+    // (ver productos:buscar, en buscador_ajax.js): al elegir un resultado se
+    // completa el input oculto (name="producto") y se re-evalúan los
+    // defaults de Hoja Verde/Secadero con ese nuevo valor.
+    inicializarBuscador('producto-buscador', '{{ form.producto.id_for_label }}', 'producto-resultados',
+        '{% url "productos:buscar" %}', aplicarDefaultsSecaderoSiCorresponde);
 
     // Si al cargar la página el operador emisor/receptor YA tenía un valor
     // (por ejemplo al editar un movimiento existente), se guarda acá para no

@@ -289,7 +289,10 @@ class ComprobanteRenglonReporteForm(forms.Form):
     producto = forms.ModelChoiceField(
         queryset=ProductoDetalle.objects.all().order_by('nombre'),
         required=False,
-        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        # Se reemplaza el <select> por un buscador con autocompletado (ver
+        # comprobante_renglon_reporte.html); el campo queda oculto y lo
+        # completa el JS del buscador (productos:buscar).
+        widget=forms.HiddenInput(),
     )
     fecha_desde = forms.DateField(
         required=False,

@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+    .panel-dashboard { padding: 1.5rem 0 3rem; }
+    .panel-dashboard .panel-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1.75rem;
+    }
+    .panel-dashboard .panel-header h2 {
+        margin: 0;
+        font-weight: 700;
+    }
+    .panel-dashboard .panel-header p {
+        margin: .25rem 0 0;
+        color: #6c757d;
+    }
+    .panel-dashboard .btn-inicio {
+        border-radius: 2rem;
+        padding: .5rem 1.25rem;
+        font-weight: 600;
+    }
+    .panel-card {
+        --accent: #6c757d;
+        --accent-soft: rgba(108, 117, 125, .12);
+        border: 1px solid rgba(0,0,0,.06) !important;
+        border-top: 4px solid var(--accent) !important;
+        border-radius: .9rem !important;
+        transition: transform .15s ease, box-shadow .15s ease;
+        overflow: hidden;
+    }
+    .panel-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 .75rem 1.5rem rgba(0,0,0,.1) !important;
+    }
+    .panel-card .card-header {
+        background: #fff;
+        border-bottom: 1px solid rgba(0,0,0,.05);
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        padding: 1rem 1.1rem;
+    }
+    .panel-card .icon-badge {
+        width: 2.6rem;
+        height: 2.6rem;
+        min-width: 2.6rem;
+        border-radius: .65rem;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+    }
+    .panel-card .card-header h5 {
+        margin: 0;
+        font-weight: 700;
+        font-size: 1.02rem;
+    }
+    .panel-card .card-body {
+        padding: .5rem 0;
+    }
+    .panel-card .subgrupo-titulo {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: #adb5bd;
+        font-weight: 700;
+        padding: .6rem 1.1rem .2rem;
+    }
+    .panel-card .list-group-item {
+        border: none;
+        border-radius: 0 !important;
+        padding: .5rem 1.1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #343a40;
+        font-size: .92rem;
+        transition: background .12s ease, color .12s ease, padding-left .12s ease;
+    }
+    .panel-card .list-group-item i.bi-chevron-right {
+        opacity: 0;
+        font-size: .75rem;
+        transition: opacity .12s ease;
+    }
+    .panel-card .list-group-item:hover {
+        background: var(--accent-soft);
+        color: var(--accent);
+        padding-left: 1.4rem;
+    }
+    .panel-card .list-group-item:hover i.bi-chevron-right {
+        opacity: 1;
+    }
+    .panel-card .list-group-item.item-anidado {
+        padding-left: 1.7rem;
+        font-size: .87rem;
+    }
+    .panel-card .list-group-item.item-anidado:hover {
+        padding-left: 2rem;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="col panel-dashboard">
+
+    <div class="panel-header">
+        <div>
+            <h2>Panel</h2>
+            <p>Acceso directo a todas las opciones del sistema, agrupadas por sección.</p>
+        </div>
+        <a href="{% url 'liquidaciones:listado' %}" class="btn btn-outline-primary btn-inicio">
+            <i class="bi bi-house-door me-1"></i> Inicio
+        </a>
+    </div>
+
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4">
+
+        <!-- Ingreso (sin restricción) -->
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#0d6efd; --accent-soft:rgba(13,110,253,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-box-arrow-in-down"></i></div>
+                    <h5>Ingreso</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'movimientos:buscar_movimiento_2' %}" class="list-group-item list-group-item-action">Buscar <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Salida (sin restricción) -->
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#fd7e14; --accent-soft:rgba(253,126,20,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-box-arrow-up"></i></div>
+                    <h5>Salida</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'movimientos:salida' %}" class="list-group-item list-group-item-action">Salida en Kgs. <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:salida_canchada' %}" class="list-group-item list-group-item-action">Y.M. Canchada <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:buscar_movimiento_2' %}" class="list-group-item list-group-item-action">Buscar <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reportes (sin restricción) -->
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#6f42c1; --accent-soft:rgba(111,66,193,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-bar-chart-line"></i></div>
+                    <h5>Reportes</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'movimientos:buscar_saldo_producto_en_comprobantes' %}" class="list-group-item list-group-item-action">Saldo por Producto en Movimientos y Comprobantes <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:buscar_saldo_producto_en_comprobantes_por_entidad' %}" class="list-group-item list-group-item-action">Saldo por Producto y Entidad en Movimientos y Comprobantes <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'comprobantes:buscar_comprobantes_por_entidad' %}" class="list-group-item list-group-item-action">Comprobantes por Entidad <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+
+        {% if puede_ver_rankings %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#d4a017; --accent-soft:rgba(212,160,23,.14);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-trophy"></i></div>
+                    <h5>Rankings</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'comprobantes:comprobante_ranking_entidades' %}" class="list-group-item list-group-item-action">Comprobantes <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos_caja:movimiento_caja_ranking_entidades' %}" class="list-group-item list-group-item-action">Movimiento de Caja <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:movimiento_ranking_productores' %}" class="list-group-item list-group-item-action">Movimientos de Producto <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:ranking_entidades' %}" class="list-group-item list-group-item-action">Liquidaciones <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:ranking_entidades' %}" class="list-group-item list-group-item-action">Retenciones <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones_inym:ranking_entidades' %}" class="list-group-item list-group-item-action">Retenciones Inym <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_movimientos_productos %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#198754; --accent-soft:rgba(25,135,84,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-boxes"></i></div>
+                    <h5>Movimientos de Productos</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'movimientos:movimiento_alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:movimiento_modificar' %}" class="list-group-item list-group-item-action">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:movimiento_reportes' %}" class="list-group-item list-group-item-action">Reportes <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Ingreso H.V. de Yerba Mate</div>
+                    <a href="{% url 'movimientos:recepcion_hv_yerba_mate' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:listado_recepcion_hv_yerba_mate' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos:reporte_hv_yerba_mate' %}" class="list-group-item list-group-item-action item-anidado">Reportes <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_movimientos_caja %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#20c997; --accent-soft:rgba(32,201,151,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-cash-coin"></i></div>
+                    <h5>Movimientos de Caja</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'movimientos_caja:movimiento_caja_alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="list-group-item list-group-item-action">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos_caja:movimiento_caja_reportes' %}" class="list-group-item list-group-item-action">Reportes <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'movimientos_caja:movimiento_caja_libro_modificar' %}" class="list-group-item list-group-item-action">Modificar en libro <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_comprobantes %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#0dcaf0; --accent-soft:rgba(13,202,240,.14);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-receipt"></i></div>
+                    <h5>Comprobantes</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'comprobantes:comprobante_alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'comprobantes:comprobante_modificar' %}" class="list-group-item list-group-item-action">Modificar <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'comprobantes:comprobante_reportes' %}" class="list-group-item list-group-item-action">Reportes <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Comprobante Renglones</div>
+                    <a href="{% url 'comprobantes:comprobante_renglon_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'comprobantes:comprobante_renglon_modificar' %}" class="list-group-item list-group-item-action item-anidado">Modificar <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'comprobantes:comprobante_renglon_reportes' %}" class="list-group-item list-group-item-action item-anidado">Reportes <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_liquidaciones %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#6610f2; --accent-soft:rgba(102,16,242,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-calculator"></i></div>
+                    <h5>Liquidaciones</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'liquidaciones:listado' %}" class="list-group-item list-group-item-action">Listado <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:alta' %}" class="list-group-item list-group-item-action">Nueva liquidación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:reporte' %}" class="list-group-item list-group-item-action">Reportes <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Sin Liquidar</div>
+                    <a href="{% url 'liquidaciones:sin_liquidar_comprobantes' %}" class="list-group-item list-group-item-action item-anidado">Comprobantes <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:sin_liquidar_movimientos_caja' %}" class="list-group-item list-group-item-action item-anidado">Movimientos de Caja <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:sin_liquidar_retenciones' %}" class="list-group-item list-group-item-action item-anidado">Retenciones <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:sin_liquidar_retenciones_inym' %}" class="list-group-item list-group-item-action item-anidado">Retenciones Inym <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'liquidaciones:diferencias' %}" class="list-group-item list-group-item-action">Diferencias <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_retenciones %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#dc3545; --accent-soft:rgba(220,53,69,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-percent"></i></div>
+                    <h5>Retenciones</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'retenciones:alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:listado' %}" class="list-group-item list-group-item-action">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:listado' %}" class="list-group-item list-group-item-action">Listado <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Ret. Impuestos</div>
+                    <a href="{% url 'retenciones:tipo_impuesto_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:tipo_impuesto_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:tipo_impuesto_listado' %}" class="list-group-item list-group-item-action item-anidado">Listado <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Ret. Regímenes</div>
+                    <a href="{% url 'retenciones:tipo_regimen_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:tipo_regimen_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones:tipo_regimen_listado' %}" class="list-group-item list-group-item-action item-anidado">Listado <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_tipos %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#6c757d; --accent-soft:rgba(108,117,125,.14);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-tags"></i></div>
+                    <h5>Tipos</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <div class="subgrupo-titulo">Productos</div>
+                    <a href="{% url 'productos:producto_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'productos:producto_modificar' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'productos:producto_reportes' %}" class="list-group-item list-group-item-action item-anidado">Reportes <i class="bi bi-chevron-right"></i></a>
+                    {% for caso in tipos_menu %}
+                    <div class="subgrupo-titulo">{{ caso.nombre_plural }}</div>
+                    <a href="{% url 'tipos:alta' slug=caso.slug %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'tipos:listado' slug=caso.slug %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'tipos:listado' slug=caso.slug %}" class="list-group-item list-group-item-action item-anidado">Listado <i class="bi bi-chevron-right"></i></a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_solicitudes_compra %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#e83e8c; --accent-soft:rgba(232,62,140,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-cart-check"></i></div>
+                    <h5>Solicitudes de Compra</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'solicitudes_compra:alta' %}" class="list-group-item list-group-item-action">Nueva solicitud <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'solicitudes_compra:listado' %}" class="list-group-item list-group-item-action">Listado <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_empleados %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#0a58ca; --accent-soft:rgba(10,88,202,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-people"></i></div>
+                    <h5>Empleados</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'empleados:alta' %}" class="list-group-item list-group-item-action">Nuevo empleado <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'empleados:listado' %}" class="list-group-item list-group-item-action">Listado <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_otros %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#343a40; --accent-soft:rgba(52,58,64,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-gear"></i></div>
+                    <h5>Otros</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'respaldo:backup' %}" class="list-group-item list-group-item-action">Backup de base de datos <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'register' %}" class="list-group-item list-group-item-action">Nuevo usuario <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:alta' %}" class="list-group-item list-group-item-action">Nueva entidad <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:listado' %}" class="list-group-item list-group-item-action">Modificar entidades <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:reportes' %}" class="list-group-item list-group-item-action">Reporte de entidades <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}

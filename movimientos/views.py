@@ -307,8 +307,10 @@ def mi_vista_buscar(request):
         # Formulario vacío inicial
         form = BuscarMovimientoForm()
 
+    producto_id = form['producto'].value()
+    producto_texto = str(ProductoDetalle.objects.filter(pk=producto_id).first() or '') if producto_id else ''
 
-    return render(request, 'movimientos/mi_plantilla.html', {'form': form})
+    return render(request, 'movimientos/mi_plantilla.html', {'form': form, 'producto_texto': producto_texto})
 
 def vista_buscar_saldo_producto(request):
     from .forms import BuscarSaldoProductoMovimientoComprobanteForm
@@ -347,8 +349,10 @@ def vista_buscar_saldo_producto(request):
         # Formulario vacío inicial
         form = BuscarSaldoProductoMovimientoComprobanteForm()
 
+    producto_id = form['producto'].value()
+    producto_texto = str(ProductoDetalle.objects.filter(pk=producto_id).first() or '') if producto_id else ''
 
-    return render(request, 'movimientos/producto_buscar_saldo.html', {'form': form})
+    return render(request, 'movimientos/producto_buscar_saldo.html', {'form': form, 'producto_texto': producto_texto})
 
      
 def crear_response_excel():
@@ -1200,8 +1204,10 @@ def vista_buscar_saldo_producto_entidad(request):
         # Formulario vacío inicial
         form = BuscarSaldoProductoEntidadForm()
 
+    producto_id = form['producto'].value()
+    producto_texto = str(ProductoDetalle.objects.filter(pk=producto_id).first() or '') if producto_id else ''
 
-    return render(request, 'movimientos/producto_por_entidad_buscar_saldo.html', {'form': form})
+    return render(request, 'movimientos/producto_por_entidad_buscar_saldo.html', {'form': form, 'producto_texto': producto_texto})
 
 def generar_vinculo_movimientos_comprobantes(nombre_hoja,movimientos,comprobantes_renglones):
     from openpyxl.styles import NamedStyle
@@ -1377,6 +1383,9 @@ def movimiento_form(request, pk=None):
         for operador in Inym_Operador.objects.filter(tipo_operador__nombre__iexact='PRODUCTORES')
     }
 
+    producto_id = form['producto'].value()
+    producto_texto = str(ProductoDetalle.objects.filter(pk=producto_id).first() or '') if producto_id else ''
+
     return render(request, 'movimientos/movimiento_gestion_form.html', {
         'form': form,
         'pesaje_form': pesaje_form,
@@ -1387,6 +1396,7 @@ def movimiento_form(request, pk=None):
         'producto_hoja_verde_secadero_id': PRODUCTO_HOJA_VERDE_SECADERO_ID,
         'operador_fontana_secadero_id': OPERADOR_FONTANA_SECADERO_ID,
         'operadores_productores_por_entidad_json': json.dumps(operadores_productores_por_entidad),
+        'producto_texto': producto_texto,
     })
 
 
@@ -1476,6 +1486,7 @@ def movimiento_reporte(request):
         .order_by('-fecha', '-id_movimiento')
     )
 
+    producto = None
     entidad_emisor = None
     entidad_receptor = None
     if form.is_valid():
@@ -1515,6 +1526,7 @@ def movimiento_reporte(request):
         'totales': totales,
         'entidad_emisor_texto': texto_entidad_buscador(entidad_emisor),
         'entidad_receptor_texto': texto_entidad_buscador(entidad_receptor),
+        'producto_texto': str(producto) if producto else '',
     })
 
 
@@ -1578,11 +1590,17 @@ def movimiento_ranking_productores(request):
         'porcentaje': lambda f: f['porcentaje'],
     })
 
+    # Texto a mostrar en el buscador de producto: el ya elegido (viene de
+    # ?producto=<id> en la URL), o vacío si no hay filtro de producto.
+    producto_id = form['producto'].value()
+    producto_texto = str(ProductoDetalle.objects.filter(pk=producto_id).first() or '') if producto_id else ''
+
     return render(request, 'movimientos/movimiento_ranking_productores.html', {
         'form': form,
         'ranking': ranking,
         'total_general': total_general,
         'filtros_activos': filtros_activos,
+        'producto_texto': producto_texto,
     })
 
 

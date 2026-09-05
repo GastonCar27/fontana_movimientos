@@ -20,6 +20,10 @@
             <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
         </div>
         <div class="col-auto">
+            <label for="id_monto" class="mb-1 small text-muted">Monto</label>
+            <input type="text" id="id_monto" name="monto" class="form-control form-control-sm" value="{{ q_monto }}" placeholder="Ej: 1500,50" inputmode="decimal">
+        </div>
+        <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
         </div>

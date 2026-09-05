@@ -10,6 +10,7 @@ urlpatterns =[
     path('usuarios/login',views.login_view,name='login'),
     path('usuarios/logout', views.logout_view, name='logout'),
     path('usuarios/registro', views.register, name='register'),
+    path('panel/', views.panel, name='panel'),
     path('roles/',include('entidades.urls')),
     path('movimiento/',include('movimientos.urls')),
     path('comprobante/',include('comprobantes.urls')),

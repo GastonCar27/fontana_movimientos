@@ -247,6 +247,9 @@
                 <div class="dropdown-menu" aria-labelledby="navbarDropdownOtros">
                     <a class="dropdown-item" href="{% url 'respaldo:backup' %}">Backup de base de datos</a>
                     <a class="dropdown-item" href="{{ alta_usuario }}">Nuevo usuario</a>
+                    <a class="dropdown-item" href="{% url 'entidades:alta' %}">Nueva entidad</a>
+                    <a class="dropdown-item" href="{% url 'entidades:listado' %}">Modificar entidades</a>
+                    <a class="dropdown-item" href="{% url 'entidades:reportes' %}">Reporte de entidades</a>
                 </div>
              </li>
              {% endif %}

@@ -24,6 +24,10 @@ class MovimientoForm(ModelForm):
         widgets = {
             'fecha': forms.DateInput(attrs={'type': 'date'}),
             'total': forms.NumberInput(attrs={'readonly': 'readonly'}),
+            # Se reemplaza el <select> por un buscador con autocompletado
+            # (ver movimiento_gestion_form.html); el campo queda oculto y lo
+            # completa el JS del buscador (productos:buscar).
+            'producto': forms.HiddenInput(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -231,26 +235,21 @@ class BuscarMovimientoForm(forms.Form):
         label="Selecciona un receptor",
         empty_label="--- Elige una opción ---",
         )
-    buscador_producto = forms.CharField(
-        max_length=200,
-        required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': 'Buscar producto...',
-            'autocomplete': 'off'
-        })
-        )
     producto = forms.ModelChoiceField(
         queryset=ProductoDetalle.objects.all(), # Aquí defines el "otro modelo"
         label="Selecciona un producto",
         empty_label="--- Elige una opción ---",
-        required=False
-
+        required=False,
+        # Se reemplaza el <select> (y el viejo buscador_producto de filtrado
+        # cliente) por un buscador con autocompletado por AJAX (ver
+        # buscador_movimiento.html); el campo queda oculto y lo completa el
+        # JS del buscador (productos:buscar).
+        widget=forms.HiddenInput(),
     )
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         nuevo_orden = ['id_movimiento','numero','fecha_desde','fecha_hasta','buscador_emisor','emisor','buscador_receptor','receptor',
-                       'buscador_producto','producto']
+                       'producto']
         self.order_fields(nuevo_orden) #orden de los inputs
 
 
@@ -278,8 +277,11 @@ def crear_campo_producto():
         queryset=ProductoDetalle.objects.all(), # Aquí defines el "otro modelo"
         label="Selecciona un producto",
         empty_label="--- Elige una opción ---",
-        required=False
-
+        required=False,
+        # Se reemplaza el <select> por un buscador con autocompletado (ver
+        # producto_buscar_saldo_form.html); el campo queda oculto y lo
+        # completa el JS del buscador (productos:buscar).
+        widget=forms.HiddenInput(),
     )
 
 def crear_campo_emisor():
@@ -304,21 +306,22 @@ def crear_campo_buscador_emisor():
 class BuscarSaldoProductoMovimientoComprobanteForm(forms.Form):
     fecha_desde = crear_campo_fecha()
     fecha_hasta = crear_campo_fecha()
+    # producto ya no usa el viejo buscador_producto de filtrado en cliente:
+    # crear_campo_producto() lo entrega oculto y lo completa el buscador con
+    # autocompletado por AJAX (ver producto_buscar_saldo_form.html).
     producto = crear_campo_producto()
-    buscador_producto = crear_campo_buscador_producto()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        nuevo_orden = ['fecha_desde','fecha_hasta','buscador_producto','producto',]
+        nuevo_orden = ['fecha_desde','fecha_hasta','producto',]
         self.order_fields(nuevo_orden) #orden de los inputs
 
 class BuscarSaldoProductoEntidadForm(BuscarSaldoProductoMovimientoComprobanteForm):
     buscador_emisor = crear_campo_buscador_emisor()
-    buscador_producto = crear_campo_buscador_producto()
     emisor = crear_campo_emisor()
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        nuevo_orden = ['fecha_desde','fecha_hasta','buscador_emisor','emisor','buscador_producto','producto']
+        nuevo_orden = ['fecha_desde','fecha_hasta','buscador_emisor','emisor','producto']
         self.order_fields(nuevo_orden) #orden de los inputs
 
 """
@@ -365,7 +368,11 @@ class MovimientoReporteForm(forms.Form):
     producto = forms.ModelChoiceField(
         queryset=ProductoDetalle.objects.all().order_by('nombre'),
         required=False,
-        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        # Se reemplaza el <select> por un buscador con autocompletado (ver
+        # movimiento_gestion_reporte.html): con muchos productos cargados,
+        # elegir de una lista desplegable es incómodo. El campo queda oculto
+        # y lo completa el JS del buscador (productos:buscar).
+        widget=forms.HiddenInput(),
     )
     entidad_emisor = forms.ModelChoiceField(
         queryset=Entidad.objects.all().order_by('nombre'),
@@ -408,7 +415,12 @@ class RankingProductoresForm(forms.Form):
     producto = forms.ModelChoiceField(
         queryset=ProductoDetalle.objects.all().order_by('nombre'),
         required=False,
-        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+        # Se reemplaza el <select> por un buscador con autocompletado (ver
+        # movimiento_ranking_productores.html): con muchos productos
+        # cargados, elegir de una lista desplegable es incómodo. El campo
+        # queda oculto y lo completa el JS del buscador (productos:buscar,
+        # que ya busca por ID o por nombre).
+        widget=forms.HiddenInput(),
     )
 
     def clean(self):

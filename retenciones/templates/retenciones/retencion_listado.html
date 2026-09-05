@@ -48,10 +48,14 @@
                     <td class="text-center">{{ g.cantidad_renglones }}</td>
                     <td class="text-end">{{ g.total|separador_miles }}</td>
                     <td class="text-center">
+                        {% if g.año and g.numero %}
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'retenciones:modificar' anio=g.año numero=g.numero %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones:eliminar' anio=g.año numero=g.numero %}">Eliminar</a>
                         <a class="btn btn-sm btn-outline-secondary" href="{% url 'retenciones:pdf' anio=g.año numero=g.numero %}">PDF</a>
                         <a class="btn btn-sm btn-outline-success" href="{% url 'retenciones:excel' anio=g.año numero=g.numero %}">Excel</a>
+                        {% else %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" title="Este registro no tiene año y/o número cargados; no se puede editar, eliminar ni imprimir desde acá.">Año/Nº incompleto</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}

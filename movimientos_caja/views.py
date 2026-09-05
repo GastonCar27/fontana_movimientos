@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.db import IntegrityError, transaction
@@ -210,6 +210,7 @@ def movimiento_caja_listado(request):
     q_id = request.GET.get('id', '').strip()
     q_fecha = request.GET.get('fecha', '').strip()
     q_caja = request.GET.get('caja', '').strip()
+    q_monto = request.GET.get('monto', '').strip()
 
     if q_receptor:
         movimientos = movimientos.filter(
@@ -224,6 +225,13 @@ def movimiento_caja_listado(request):
         movimientos = movimientos.filter(emision=q_fecha)
     if q_caja.isdigit():
         movimientos = movimientos.filter(caja_id=int(q_caja))
+    if q_monto:
+        try:
+            monto_valor = Decimal(q_monto.replace('.', '').replace(',', '.')) if ',' in q_monto else Decimal(q_monto)
+        except InvalidOperation:
+            movimientos = movimientos.none()
+        else:
+            movimientos = movimientos.filter(monto=monto_valor)
 
     movimientos = aplicar_orden_queryset(request, movimientos, {
         'id': 'id',
@@ -242,6 +250,7 @@ def movimiento_caja_listado(request):
         'q_id': q_id,
         'q_fecha': q_fecha,
         'q_caja': q_caja,
+        'q_monto': q_monto,
     })
 
 

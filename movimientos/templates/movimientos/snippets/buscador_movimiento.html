@@ -7,14 +7,24 @@
             <form method="post"  class="horizontal-form" style="width: 50%;">
                 {% csrf_token %}
                 {% for field in form %}
+                    {% if field.name != 'producto' %}
                     {% if 'Selecciona' not in field.label_tag and 'Emisor' not in field.label_tag %}
-                       <p> 
+                       <p>
                         {{ field.label_tag }}
                     {% endif %}
-                
+
                 {{ field }}
                 </p>
+                    {% endif %}
                 {% endfor %}
+                <p>
+                    <div class="buscador-wrapper">
+                        <input type="text" id="producto-buscador" autocomplete="off"
+                               placeholder="Buscar producto por ID o nombre..." value="{{ producto_texto }}">
+                        {{ form.producto }}
+                        <div id="producto-resultados" class="buscador-resultados"></div>
+                    </div>
+                </p>
                 <div class="radio-group">
                  <input type="radio" id="emisor_inym" name="agrupar" value="por_emisor_inym">
                  <label for="emisor_inym">Agrupar por Emisor Op. Inym</label>
@@ -27,6 +37,9 @@
 <script src="{% static '/js/buscador_generico.js' %}"></script>
 <script src="{% static '/js/buscador_emisor.js' %}"></script>
 <script src="{% static '/js/buscador_receptor.js' %}"></script>
-<script src="{% static '/js/buscador_producto.js' %}"></script>
-
-
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('producto-buscador', '{{ form.producto.id_for_label }}', 'producto-resultados',
+        '{% url "productos:buscar" %}');
+});
+</script>

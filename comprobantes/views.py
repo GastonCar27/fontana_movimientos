@@ -1488,6 +1488,7 @@ def comprobante_renglon_reporte(request):
         .order_by('-comprobante__fecha', '-id')
     )
 
+    producto = None
     if form.is_valid():
         producto = form.cleaned_data.get('producto')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -1515,4 +1516,5 @@ def comprobante_renglon_reporte(request):
         'form': form,
         'renglones': renglones[:500],
         'totales': totales,
+        'producto_texto': str(producto) if producto else '',
     })

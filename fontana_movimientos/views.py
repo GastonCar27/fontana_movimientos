@@ -64,3 +64,15 @@ def register(request):
         return redirect('register')
     return render(request, 'users/register.html', {'form': form})
 
+
+# Menú "Panel" (dashboard con tarjetas): pantalla alternativa al navbar de
+# siempre, con las mismas opciones y las mismas restricciones por grupo (los
+# flags puede_ver_* ya los expone el context processor permisos_menu a
+# TODOS los templates, así que acá no hace falta pasar nada especial — la
+# vista solo renderiza panel.html, que hace los mismos {% if puede_ver_x %}
+# que navbar.html). Por ahora se accede solo por URL directa (/panel/); no
+# está linkeada desde el navbar.
+@login_required
+def panel(request):
+    return render(request, 'panel.html')
+

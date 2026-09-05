@@ -10,5 +10,10 @@
 <script src="{% static '/js/buscador_generico.js' %}"></script>
 <script src="{% static '/js/buscador_emisor.js' %}"></script>
 <script src="{% static '/js/buscador_receptor.js' %}"></script>
-<script src="{% static '/js/buscador_producto.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('producto-buscador', '{{ form.producto.id_for_label }}', 'producto-resultados',
+        '{% url "productos:buscar" %}');
+});
+</script>
 {% endblock %}
