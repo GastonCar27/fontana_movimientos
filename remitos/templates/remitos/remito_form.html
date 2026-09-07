@@ -86,7 +86,7 @@
                 <label>Transportista</label>
                 <div class="buscador-wrapper">
                     <input type="text" id="transportista-buscador" autocomplete="off" class="form-control form-control-sm"
-                           placeholder="Buscar transportista..." value="{{ transportista_texto }}">
+                           placeholder="Buscar por nombre o CUIT..." value="{{ transportista_texto }}">
                     {{ form.transportista }}
                     <div id="transportista-resultados" class="buscador-resultados"></div>
                 </div>
@@ -97,7 +97,7 @@
                 <label>Chofer</label>
                 <div class="buscador-wrapper">
                     <input type="text" id="chofer-buscador" autocomplete="off" class="form-control form-control-sm"
-                           placeholder="Buscar chofer..." value="{{ chofer_texto }}">
+                           placeholder="Buscar por nombre o DNI..." value="{{ chofer_texto }}">
                     {{ form.chofer }}
                     <div id="chofer-resultados" class="buscador-resultados"></div>
                 </div>
@@ -112,9 +112,13 @@
                 {{ entidad_rapida_form.nombre.label_tag }}
                 {{ entidad_rapida_form.nombre }}
             </div>
-            <div class="mb-2">
+            <div class="mb-2" id="entidad-crear-cuit-wrapper">
                 {{ entidad_rapida_form.cuit.label_tag }}
                 {{ entidad_rapida_form.cuit }}
+            </div>
+            <div class="mb-2" id="entidad-crear-documento-wrapper">
+                {{ entidad_rapida_form.documento_nro.label_tag }}
+                {{ entidad_rapida_form.documento_nro }}
             </div>
             <div id="entidad-crear-errores" class="text-danger small mb-2"></div>
             <button type="button" class="btn btn-sm btn-primary" id="entidad-crear-guardar">Crear y seleccionar</button>
@@ -233,13 +237,49 @@ document.addEventListener('DOMContentLoaded', function () {
 
     inicializarBuscador('transportista-buscador', '{{ form.transportista.id_for_label }}', 'transportista-resultados',
         '{% url "remitos:entidad_buscar" %}?rol={{ rol_transportista_id }}');
+    // 'mostrar=documento_nro': el chofer es una persona, se identifica por
+    // DNI y no por CUIT (ver services.buscadores.texto_entidad_buscador).
     inicializarBuscador('chofer-buscador', '{{ form.chofer.id_for_label }}', 'chofer-resultados',
-        '{% url "remitos:entidad_buscar" %}?rol={{ rol_chofer_id }}');
+        '{% url "remitos:entidad_buscar" %}?rol={{ rol_chofer_id }}&mostrar=documento_nro');
+
+    var vehiculoHidden = document.getElementById('{{ form.vehiculo.id_for_label }}');
+    var acopladoBuscadorInput = document.getElementById('acoplado-buscador');
+    var acopladoHidden = document.getElementById('{{ form.acoplado.id_for_label }}');
 
     inicializarBuscador('vehiculo-buscador', '{{ form.vehiculo.id_for_label }}', 'vehiculo-resultados',
-        '{% url "remitos:vehiculo_buscar" %}');
+        '{% url "remitos:vehiculo_buscar" %}', function () {
+            // Al cambiar de vehículo se limpia el acoplado ya elegido: el
+            // conjunto de acoplados válidos puede ser otro (ver
+            // Vehiculo.acoplados_habituales, en models.py).
+            acopladoBuscadorInput.value = '';
+            acopladoHidden.value = '';
+        });
+    // La URL del buscador de acoplado se arma en el momento de cada
+    // búsqueda (función, no un string fijo) para poder incluir el vehículo
+    // elegido EN ESE MOMENTO: si tiene acoplados vinculados, el buscador
+    // sólo ofrece esos (ver remitos.views.acoplado_buscar).
     inicializarBuscador('acoplado-buscador', '{{ form.acoplado.id_for_label }}', 'acoplado-resultados',
-        '{% url "remitos:acoplado_buscar" %}');
+        function () {
+            var url = '{% url "remitos:acoplado_buscar" %}';
+            return vehiculoHidden.value ? url + '?vehiculo=' + encodeURIComponent(vehiculoHidden.value) : url;
+        });
+
+    // Nombres de campo -> etiqueta legible, para mostrar mejor los errores
+    // de las altas rápidas (fetch) de acá abajo (transportista/chofer,
+    // vehículo, acoplado): 'form.errors.get_json_data()' agrupa los
+    // mensajes por nombre de campo, pero mostrar sólo el mensaje sin decir
+    // de qué campo es (ej. "This field is required.") no alcanza para
+    // saber cuál falta completar.
+    var ETIQUETAS_CAMPO = {
+        nombre: 'Nombre', cuit: 'CUIT', documento_nro: 'DNI', patente: 'Patente', activo: 'Activo',
+    };
+    function formatearErroresForm(errores) {
+        return Object.keys(errores || {}).map(function (campo) {
+            var etiqueta = ETIQUETAS_CAMPO[campo] || campo;
+            var mensajes = errores[campo].map(function (e) { return e.message; }).join(' ');
+            return etiqueta + ': ' + mensajes;
+        }).join(' — ');
+    }
 
     // --- Recuperar observación estándar: se agrega al final del textarea ---
     var observacionSelect = document.getElementById('{{ form.observacion_estandar.id_for_label }}');
@@ -259,27 +299,37 @@ document.addEventListener('DOMContentLoaded', function () {
     var entidadCrearTitulo = document.getElementById('entidad-crear-titulo');
     var entidadCrearNombre = document.getElementById('{{ entidad_rapida_form.nombre.id_for_label }}');
     var entidadCrearCuit = document.getElementById('{{ entidad_rapida_form.cuit.id_for_label }}');
+    var entidadCrearDocumento = document.getElementById('{{ entidad_rapida_form.documento_nro.id_for_label }}');
+    var entidadCrearCuitWrapper = document.getElementById('entidad-crear-cuit-wrapper');
+    var entidadCrearDocumentoWrapper = document.getElementById('entidad-crear-documento-wrapper');
     var entidadCrearErrores = document.getElementById('entidad-crear-errores');
     var entidadCrearGuardar = document.getElementById('entidad-crear-guardar');
     var entidadCrearCancelar = document.getElementById('entidad-crear-cancelar');
-    var contextoEntidadRapida = null;  // {rol, buscadorInput, hidden}
+    var contextoEntidadRapida = null;  // {rol, buscadorInput, hidden, campoDocumento}
 
-    function abrirCreacionEntidad(rol, tituloBuscando, buscadorInput, hidden) {
-        contextoEntidadRapida = { rol: rol, buscadorInput: buscadorInput, hidden: hidden };
+    function abrirCreacionEntidad(rol, tituloBuscando, buscadorInput, hidden, campoDocumento) {
+        contextoEntidadRapida = { rol: rol, buscadorInput: buscadorInput, hidden: hidden, campoDocumento: campoDocumento };
         entidadCrearTitulo.textContent = tituloBuscando;
         entidadCrearNombre.value = buscadorInput.value.trim();
         entidadCrearCuit.value = '';
+        entidadCrearDocumento.value = '';
         entidadCrearErrores.textContent = '';
+        // Transportista es una empresa (se identifica por CUIT); chofer es
+        // una persona (por DNI, ver entidades.models.Entidad.documento_nro)
+        // -- se muestra sólo el campo que corresponde.
+        var esDocumento = campoDocumento === 'documento_nro';
+        entidadCrearCuitWrapper.style.display = esDocumento ? 'none' : '';
+        entidadCrearDocumentoWrapper.style.display = esDocumento ? '' : 'none';
         entidadCrearWrapper.style.display = '';
     }
 
     document.getElementById('transportista-crear-toggle').addEventListener('click', function () {
         abrirCreacionEntidad('{{ rol_transportista_id }}', 'Nuevo transportista',
-            document.getElementById('transportista-buscador'), document.getElementById('{{ form.transportista.id_for_label }}'));
+            document.getElementById('transportista-buscador'), document.getElementById('{{ form.transportista.id_for_label }}'), 'cuit');
     });
     document.getElementById('chofer-crear-toggle').addEventListener('click', function () {
         abrirCreacionEntidad('{{ rol_chofer_id }}', 'Nuevo chofer',
-            document.getElementById('chofer-buscador'), document.getElementById('{{ form.chofer.id_for_label }}'));
+            document.getElementById('chofer-buscador'), document.getElementById('{{ form.chofer.id_for_label }}'), 'documento_nro');
     });
     entidadCrearCancelar.addEventListener('click', function () {
         entidadCrearWrapper.style.display = 'none';
@@ -290,6 +340,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var datos = new URLSearchParams();
         datos.append('nombre', entidadCrearNombre.value.trim());
         datos.append('cuit', entidadCrearCuit.value.trim());
+        datos.append('documento_nro', entidadCrearDocumento.value.trim());
         datos.append('rol', contextoEntidadRapida.rol);
         datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
 
@@ -297,8 +348,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
             .then(function (resultado) {
                 if (resultado.status !== 200) {
-                    var detalles = Object.values(resultado.data.errores || {}).flat();
-                    entidadCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear la entidad.';
+                    entidadCrearErrores.textContent = formatearErroresForm(resultado.data.errores) || 'No se pudo crear la entidad.';
                     return;
                 }
                 contextoEntidadRapida.buscadorInput.value = resultado.data.text;
@@ -332,8 +382,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
             .then(function (resultado) {
                 if (resultado.status !== 200) {
-                    var detalles = Object.values(resultado.data.errores || {}).flat();
-                    vehiculoCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear el vehículo.';
+                    vehiculoCrearErrores.textContent = formatearErroresForm(resultado.data.errores) || 'No se pudo crear el vehículo.';
                     return;
                 }
                 document.getElementById('vehiculo-buscador').value = resultado.data.text;
@@ -364,8 +413,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
             .then(function (resultado) {
                 if (resultado.status !== 200) {
-                    var detalles = Object.values(resultado.data.errores || {}).flat();
-                    acopladoCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear el acoplado.';
+                    acopladoCrearErrores.textContent = formatearErroresForm(resultado.data.errores) || 'No se pudo crear el acoplado.';
                     return;
                 }
                 document.getElementById('acoplado-buscador').value = resultado.data.text;

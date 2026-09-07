@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load static %}
 {% load movimientos_extras %}
 {% block content %}
 <div class="col">
@@ -11,14 +10,11 @@
     </div>
 
     <div class="form-group mb-3" style="max-width: 320px;">
-        <label for="buscador-producto" class="mb-1">Buscar por Id o Nombre</label>
-        <input
-            type="text"
-            id="buscador-producto"
-            class="form-control form-control-sm"
-            data-buscador-tabla="tabla-producto-listado"
-            placeholder="Escribí un id o un nombre..."
-            autocomplete="off">
+        <form method="get">
+            <label for="id_q" class="mb-1">Buscar por Id o Nombre</label>
+            <input type="text" id="id_q" name="q" value="{{ q }}" class="form-control form-control-sm"
+                   placeholder="Escribí un id o un nombre y apretá Enter..." autocomplete="off">
+        </form>
     </div>
 
     <div class="table-responsive">
@@ -39,21 +35,20 @@
                     <td>{{ producto.item_tipo.nombre|default:"-" }}</td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'productos:producto_editar' producto.pk %}">Editar</a>
+                        <a class="btn btn-sm btn-outline-danger"
+                           href="{% url 'productos:producto_eliminar' producto.pk %}"
+                           onclick="return confirm('¿Eliminar el producto \'{{ producto|escapejs }}\'? Esta acción no se puede deshacer.');">Eliminar</a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr data-fila-vacia>
-                    <td colspan="4" class="text-center text-muted py-4">No hay productos cargados.</td>
+                    <td colspan="4" class="text-center text-muted py-4">
+                        {% if q %}No hay coincidencias para esa búsqueda.{% else %}No hay productos cargados.{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
-                {% if productos %}
-                <tr data-fila-sin-coincidencias hidden>
-                    <td colspan="4" class="text-center text-muted">No hay coincidencias para esa búsqueda.</td>
-                </tr>
-                {% endif %}
             </tbody>
         </table>
     </div>
 </div>
-<script src="{% static 'js/buscador_tabla_tipos.js' %}"></script>
 {% endblock %}

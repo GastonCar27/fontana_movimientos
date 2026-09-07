@@ -25,3 +25,22 @@ class ProductoDetalleForm(forms.ModelForm):
         self.fields['item_tipo'].queryset = ItemTipo.objects.order_by('nombre')
         self.fields['item_tipo'].empty_label = '--- Elegí una categoría ---'
         self.fields['item_tipo'].widget.attrs['class'] = 'form-control form-control-sm'
+
+    def clean_nombre(self):
+        """Avisa (con un error de formulario, no en silencio) si ya existe
+        un producto con el mismo nombre -- pedido explícito, para no dar de
+        alta el mismo producto dos veces por error. La comparación no
+        distingue mayúsculas/minúsculas ni espacios de más al principio o
+        al final, y al editar se excluye el propio producto (si no,
+        guardarlo sin cambiar el nombre "chocaría" contra sí mismo)."""
+        nombre = self.cleaned_data['nombre'].strip()
+        duplicados = ProductoDetalle.objects.filter(nombre__iexact=nombre)
+        if self.instance.pk:
+            duplicados = duplicados.exclude(pk=self.instance.pk)
+        existente = duplicados.first()
+        if existente:
+            raise forms.ValidationError(
+                f'Ya existe un producto con ese nombre: "{existente}". '
+                'Si es un producto distinto, usá un nombre que lo diferencie.'
+            )
+        return nombre

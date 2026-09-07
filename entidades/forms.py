@@ -36,8 +36,15 @@ class EntidadRolRapidoForm(forms.Form):
     chofer del alta de Remito, pero reusable por cualquier pantalla que
     necesite "crear o sumarle el rol a una entidad existente que no lo
     tiene" sin salir de su propio formulario. Si ya existe una entidad con
-    el mismo CUIT no se crea de nuevo: sólo se le agrega el rol si no lo
-    tenía (ver entidades.views.entidad_crear_rapido)."""
+    el mismo CUIT (o el mismo DNI, ver 'documento_nro') no se crea de nuevo:
+    sólo se le agrega el rol si no lo tenía (ver
+    entidades.views.entidad_crear_rapido).
+
+    Trae los dos campos de identificación (CUIT y DNI) porque el mismo
+    formulario se reusa tanto para transportistas (empresas, se
+    identifican por CUIT) como para choferes (personas, por DNI); el
+    template sólo muestra el que corresponde según cuál de los dos botones
+    "+ Crear" se haya usado (ver remito_form.html)."""
     use_required_attribute = False
 
     nombre = forms.CharField(
@@ -47,7 +54,13 @@ class EntidadRolRapidoForm(forms.Form):
     cuit = forms.CharField(
         max_length=45,
         required=False,
+        label='CUIT',
         widget=forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+    documento_nro = forms.IntegerField(
+        required=False,
+        label='DNI',
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
     )
 
 

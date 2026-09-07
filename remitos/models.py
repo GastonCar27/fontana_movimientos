@@ -30,10 +30,20 @@ class Vehiculo(models.Model):
     patente. El acoplado que lleva en un viaje puntual NO se guarda acá,
     porque puede cambiar con el tiempo (ver Acoplado y Remito.acoplado): la
     combinación vehículo+acoplado de cada viaje se registra en el propio
-    Remito."""
+    Remito.
+
+    'acoplados_habituales' es la lista de acoplados que se pueden combinar
+    con este vehículo (se carga una vez, editando el vehículo). Es sólo para
+    ACOTAR las opciones del buscador de acoplado en el alta de Remito (ver
+    remitos.views.acoplado_buscar): si el vehículo no tiene ninguno
+    vinculado, ese buscador sigue ofreciendo cualquier acoplado activo."""
     nombre = models.CharField(max_length=100)
     patente = models.CharField(max_length=20, unique=True)
     activo = models.BooleanField(default=True)
+    acoplados_habituales = models.ManyToManyField(
+        'Acoplado', related_name='vehiculos_habituales', blank=True,
+        verbose_name='Acoplados habituales',
+    )
 
     class Meta:
         db_table = 'remito_vehiculo'

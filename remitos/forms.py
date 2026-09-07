@@ -173,18 +173,44 @@ class RemitoRenglonForm(forms.ModelForm):
 class VehiculoForm(forms.ModelForm):
     class Meta:
         model = Vehiculo
-        fields = ['nombre', 'patente', 'activo']
+        fields = ['nombre', 'patente', 'activo', 'acoplados_habituales']
         widgets = {
             'nombre': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ej: Iveco 1'}),
             'patente': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'acoplados_habituales': forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # VehiculoCrearRapidoForm (alta rápida embebida, más abajo) hereda
+        # este __init__ pero no incluye 'acoplados_habituales' en su Meta.
+        if 'acoplados_habituales' not in self.fields:
+            return
+        self.fields['acoplados_habituales'].required = False
+        self.fields['acoplados_habituales'].help_text = (
+            'Acoplados que se van a poder elegir para este vehículo al cargar un remito. '
+            'Si no se marca ninguno, se va a poder elegir cualquier acoplado activo.'
+        )
+        # Igual que en RemitoForm._queryset_activos: si el vehículo ya tenía
+        # vinculado un acoplado que mientras tanto pasó a estar inactivo, se
+        # lo sigue mostrando (y marcado) para no "perderlo" al editar.
+        queryset = Acoplado.objects.filter(activo=True)
+        if self.instance.pk:
+            ya_vinculados = self.instance.acoplados_habituales.values_list('pk', flat=True)
+            queryset = Acoplado.objects.filter(Q(pk__in=queryset.values('pk')) | Q(pk__in=ya_vinculados))
+        self.fields['acoplados_habituales'].queryset = queryset.order_by('patente')
 
 
 class VehiculoCrearRapidoForm(VehiculoForm):
     """Alta rápida embebida del buscador de vehículo, en el alta de Remito
-    (mismo patrón que ProductoDetalleCrearForm, comprobantes/forms.py)."""
+    (mismo patrón que ProductoDetalleCrearForm, comprobantes/forms.py). No
+    incluye 'acoplados_habituales': ese vínculo se arma después, editando el
+    vehículo desde su propia pantalla (Catálogos > Vehículos)."""
     use_required_attribute = False
+
+    class Meta(VehiculoForm.Meta):
+        fields = ['nombre', 'patente', 'activo']
 
 
 class AcopladoForm(forms.ModelForm):

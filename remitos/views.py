@@ -53,13 +53,24 @@ def _sincronizar_movimiento_renglon(renglon):
     de remito: se crea la primera vez que se guarda el renglón (con el peso
     definitivo disponible en ese momento) y, si más tarde se completa
     'kilogramos_confirmados' (el peso que se pesó/facturó en destino, que
-    puede diferir del enviado), se actualiza el MISMO movimiento en vez de
-    crear uno nuevo, para no duplicar el saldo del producto."""
+    puede diferir del enviado) o se cambia el producto del renglón, se
+    actualiza el MISMO movimiento en vez de crear uno nuevo, para no
+    duplicar el saldo del producto."""
     remito = renglon.remito
     total = renglon.kilogramos_definitivos
 
     if renglon.movimiento_id:
         movimiento = renglon.movimiento
+        if movimiento.producto_id != renglon.producto_id:
+            # Cambió el producto del renglón: 'numero' es un correlativo
+            # POR PRODUCTO (ver _siguiente_numero_movimiento y la
+            # restricción única (numero, producto) de la tabla movimiento),
+            # así que el que tenía asignado para el producto viejo puede
+            # coincidir con uno ya usado por otro movimiento del producto
+            # nuevo (ej. "Duplicate entry '1-1037' for key
+            # 'movimiento.uq_numero_producto'"). Se recalcula para el
+            # producto nuevo.
+            movimiento.numero = _siguiente_numero_movimiento(renglon.producto)
     else:
         movimiento = Movimiento(numero=_siguiente_numero_movimiento(renglon.producto))
 
@@ -143,6 +154,21 @@ def remito_form(request, pk=None):
     else:
         contraparte_inicial = remito.contraparte if remito else None
         initial = {'contraparte': contraparte_inicial.id} if contraparte_inicial else {}
+        if remito is None:
+            # Alta nueva: sugerir como default el punto de venta y el
+            # próximo número, tomando como base el último remito que
+            # Fontana emitió (tipo Salida -- ahí 'emisor' es siempre
+            # Fontana, así que sí hay un talonario propio del que "seguir
+            # la numeración"; en los de Entrada el punto de venta/número
+            # son del talonario de la OTRA empresa, uno distinto por cada
+            # proveedor, así que no hay un "próximo" razonable que
+            # adivinar). Es sólo un valor sugerido: se puede cambiar antes
+            # de guardar, y la unicidad (emisor, punto_venta, numero) se
+            # sigue validando igual al guardar.
+            ultimo_propio = Remito.objects.filter(emisor_id=ENTIDAD_PROPIA_ID).order_by('-fecha', '-id').first()
+            if ultimo_propio:
+                initial['punto_venta'] = ultimo_propio.punto_venta
+                initial['numero'] = ultimo_propio.numero + 1
         form = forms.RemitoForm(instance=remito, initial=initial)
 
     return render(request, 'remitos/remito_form.html', {
@@ -151,17 +177,28 @@ def remito_form(request, pk=None):
         'modo': 'alta' if remito is None else 'modificar',
         'contraparte_texto': texto_entidad_buscador(remito.contraparte) if remito else '',
         'transportista_texto': texto_entidad_buscador(remito.transportista) if remito else '',
-        'chofer_texto': texto_entidad_buscador(remito.chofer) if remito else '',
+        'chofer_texto': texto_entidad_buscador(remito.chofer, campo_documento='documento_nro') if remito else '',
         'vehiculo_texto': str(remito.vehiculo) if remito and remito.vehiculo_id else '',
         'acoplado_texto': str(remito.acoplado) if remito and remito.acoplado_id else '',
         'renglones_del_remito': remito.renglones.select_related('producto', 'unidad_de_medida').all() if remito else [],
-        'vehiculo_crear_form': forms.VehiculoCrearRapidoForm(),
-        'acoplado_crear_form': forms.AcopladoCrearRapidoForm(),
+        # 'prefix': VehiculoCrearRapidoForm, AcopladoCrearRapidoForm y
+        # EntidadRolRapidoForm (más abajo) comparten nombres de campo entre
+        # sí ('nombre', 'patente'): sin un prefijo distinto, Django les
+        # arma el mismo id HTML a los dos (ej. 'id_nombre') y el JS de acá
+        # abajo (que busca el campo por ese id) termina siempre agarrando
+        # el de OTRO de los tres mini-formularios en vez del que
+        # corresponde. El prefijo sólo cambia el id/name con el que se
+        # RENDERIZAN estos campos; el POST que arma el JS sigue mandando
+        # las claves sin prefijo ('nombre', 'patente', etc.), que es lo que
+        # esperan vehiculo_crear_rapido/acoplado_crear_rapido/
+        # entidad_crear_rapido -- no hace falta tocar esas vistas.
+        'vehiculo_crear_form': forms.VehiculoCrearRapidoForm(prefix='vehiculo_crear'),
+        'acoplado_crear_form': forms.AcopladoCrearRapidoForm(prefix='acoplado_crear'),
         # Un único mini-formulario de alta rápida de entidad, reusado tanto
         # para transportista como para chofer (ver template: el JS le pone
         # el id de Rol correspondiente en el campo oculto 'rol' según cuál
         # de los dos botones "+ Crear" se haya usado).
-        'entidad_rapida_form': EntidadRolRapidoForm(),
+        'entidad_rapida_form': EntidadRolRapidoForm(prefix='entidad_rapida'),
         'rol_transportista_id': _rol_id(forms.ROL_TRANSPORTISTA),
         'rol_chofer_id': _rol_id(forms.ROL_CHOFER),
     })
@@ -614,9 +651,19 @@ def acoplado_editar(request, pk):
 
 def acoplado_buscar(request):
     q = request.GET.get('q', '').strip()
+    vehiculo_id = request.GET.get('vehiculo', '').strip()
     resultados = []
     if q:
-        acoplados = Acoplado.objects.filter(patente__icontains=q, activo=True).order_by('patente')[:20]
+        acoplados = Acoplado.objects.filter(patente__icontains=q, activo=True)
+        if vehiculo_id.isdigit():
+            vehiculo = Vehiculo.objects.filter(pk=vehiculo_id).first()
+            if vehiculo is not None and vehiculo.acoplados_habituales.exists():
+                # El vehículo tiene acoplados vinculados (ver
+                # Vehiculo.acoplados_habituales, en models.py): el buscador
+                # sólo ofrece esos. Si no tiene ninguno vinculado, se busca
+                # entre todos los acoplados activos, como antes.
+                acoplados = acoplados.filter(pk__in=vehiculo.acoplados_habituales.values('pk'))
+        acoplados = acoplados.order_by('patente')[:20]
         resultados = [{'id': a.id, 'text': str(a)} for a in acoplados]
     return JsonResponse({'resultados': resultados})
 

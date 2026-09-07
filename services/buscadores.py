@@ -5,11 +5,20 @@ las vistas de varias apps para no repetir la misma lógica de armado de
 texto en cada una."""
 
 
-def texto_entidad_buscador(entidad):
-    """Texto a mostrar en el buscador para una entidad ya seleccionada,
-    ej. 'Del Libano S.R.L. (CUIT 30711486670)'."""
+def texto_entidad_buscador(entidad, campo_documento='cuit'):
+    """Texto a mostrar en el buscador para una entidad ya seleccionada, ej.
+    'Del Libano S.R.L. (CUIT 30711486670)'.
+
+    Por default se identifica por CUIT (empresas/proveedores). Para
+    personas físicas identificadas por DNI (ej. choferes, ver
+    remitos/forms.py: ROL_CHOFER) pasar campo_documento='documento_nro' para
+    que muestre 'DNI ...' en su lugar."""
     if not entidad:
         return ''
+    if campo_documento == 'documento_nro':
+        if entidad.documento_nro:
+            return f'{entidad.nombre} (DNI {entidad.documento_nro})'
+        return entidad.nombre or ''
     if entidad.cuit:
         return f'{entidad.nombre} (CUIT {entidad.cuit})'
     return entidad.nombre or ''

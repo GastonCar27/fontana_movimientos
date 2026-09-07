@@ -55,14 +55,21 @@ def entidad_buscar(request):
     buscador de transportista/chofer sólo muestre entidades con ese rol
     (ver también entidad_crear_rapido, acá abajo, para cuando no aparece la
     que se busca).
+
+    Admite también un parámetro opcional 'mostrar' ('cuit', el default, o
+    'documento_nro') para elegir qué dato se muestra entre paréntesis en el
+    texto de cada resultado (ver services.buscadores.texto_entidad_buscador)
+    -- lo usa el alta de Remito para que el buscador de chofer muestre el
+    DNI en vez del CUIT, ya que un chofer es una persona, no una empresa.
     """
     q = request.GET.get('q', '').strip()
     rol_param = request.GET.get('rol', '').strip()
+    campo_documento = request.GET.get('mostrar', 'cuit').strip()
     resultados = []
     if len(q) >= 2:
         filtro = Q(nombre__icontains=q) | Q(cuit__icontains=q)
         if q.isdigit():
-            filtro |= Q(id=int(q))
+            filtro |= Q(id=int(q)) | Q(documento_nro__icontains=q)
         entidades = Entidad.objects.filter(filtro)
         if rol_param:
             if rol_param.isdigit():
@@ -71,7 +78,7 @@ def entidad_buscar(request):
                 entidades = entidades.filter(roles__nombre__iexact=rol_param)
         entidades = entidades.distinct().order_by('nombre')[:20]
         resultados = [
-            {'id': ent.id, 'text': texto_entidad_buscador(ent)}
+            {'id': ent.id, 'text': texto_entidad_buscador(ent, campo_documento=campo_documento)}
             for ent in entidades
         ]
     return JsonResponse({'resultados': resultados})
@@ -102,16 +109,30 @@ def entidad_crear_rapido(request):
         return JsonResponse({'errores': form.errors.get_json_data()}, status=400)
 
     cuit = form.cleaned_data['cuit'].strip()
+    documento_nro = form.cleaned_data.get('documento_nro')
     nombre = form.cleaned_data['nombre'].strip()
 
-    entidad = Entidad.objects.filter(cuit=cuit).first() if cuit else None
+    # Se busca primero por DNI y si no por CUIT (sólo se completa uno de
+    # los dos, según el rol -- ver EntidadRolRapidoForm, en forms.py, y
+    # remito_form.html): choferes (personas) se identifican por DNI,
+    # transportistas (empresas) por CUIT.
+    entidad = None
+    if documento_nro:
+        entidad = Entidad.objects.filter(documento_nro=documento_nro).first()
+    elif cuit:
+        entidad = Entidad.objects.filter(cuit=cuit).first()
+
     if entidad is None:
-        entidad = Entidad(id=siguiente_id_entidad(), nombre=nombre, cuit=cuit or None, activo=True)
+        entidad = Entidad(
+            id=siguiente_id_entidad(), nombre=nombre,
+            cuit=cuit or None, documento_nro=documento_nro, activo=True,
+        )
         entidad.save()
 
     entidad.roles.add(rol)
 
-    return JsonResponse({'id': entidad.id, 'text': texto_entidad_buscador(entidad)})
+    campo_documento = 'documento_nro' if documento_nro else 'cuit'
+    return JsonResponse({'id': entidad.id, 'text': texto_entidad_buscador(entidad, campo_documento=campo_documento)})
 
 
 class RolBusquedaListView(ListView):

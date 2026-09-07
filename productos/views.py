@@ -7,6 +7,8 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from comprobantes.models import ComprobanteRenglon
+from movimientos.models import Movimiento
+from remitos.models import RemitoRenglon
 from services.forms import BuscarConFechasForm
 from services.ordenamiento import aplicar_orden_queryset
 from services.reportes import excel_response, pdf_response
@@ -101,6 +103,33 @@ def producto_editar(request, pk):
     return render(request, 'productos/producto_form.html', {
         'form': form, 'modo': 'modificar', 'producto': producto,
     })
+
+
+def producto_eliminar(request, pk):
+    """Elimina un producto del catálogo, sólo si nunca se usó en ningún
+    movimiento, renglón de comprobante o renglón de remito. Para renglón de
+    remito ya lo impide Django solo (RemitoRenglon.producto es
+    on_delete=PROTECT), pero Movimiento y ComprobanteRenglon apuntan al
+    producto con on_delete=DO_NOTHING (tablas legadas, sin protección
+    automática de Django) -- por eso se chequea a mano acá, para no dejar
+    esas filas "colgadas" apuntando a un producto que ya no existe."""
+    producto = get_object_or_404(ProductoDetalle, pk=pk)
+
+    en_uso = (
+        Movimiento.objects.filter(producto=producto).exists()
+        or ComprobanteRenglon.objects.filter(producto=producto).exists()
+        or RemitoRenglon.objects.filter(producto=producto).exists()
+    )
+    if en_uso:
+        messages.error(
+            request,
+            f'No se puede eliminar "{producto}": ya está usado en algún movimiento, '
+            'comprobante o remito cargado.',
+        )
+    else:
+        producto.delete()
+        messages.success(request, f'Producto "{producto}" eliminado correctamente.')
+    return redirect('productos:producto_modificar')
 
 
 # --- Reporte: totales por producto en un intervalo de fechas de renglones ---
