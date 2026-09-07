@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col-md-8">
+    {% include "remitos/menu.html" %}
+
+    <h4 class="mb-3">
+        {% if renglon %}Editar renglón de remito {{ renglon.id }}{% else %}Nuevo renglón de remito{% endif %}
+    </h4>
+
+    {% if messages %}
+    <ul class="list-unstyled">
+        {% for message in messages %}<li class="text-success">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if form.non_field_errors %}
+    <ul class="text-danger">
+        {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="mb-3">
+            <label>Remito</label>
+            <div class="buscador-wrapper">
+                <input type="text" id="remito-buscador" autocomplete="off" class="form-control form-control-sm"
+                       placeholder="Buscar por número o ID de remito..." value="{{ remito_texto }}">
+                {{ form.remito }}
+                <div id="remito-resultados" class="buscador-resultados"></div>
+            </div>
+            {% if form.remito.errors %}<div class="text-danger small">{{ form.remito.errors|striptags }}</div>{% endif %}
+            {% if not renglon and not remito_texto %}
+            <small class="text-muted">Elegí un remito para poder cargarle un renglón.</small>
+            {% endif %}
+        </div>
+
+        {% if remito_seleccionado %}
+        <div class="alert alert-info py-2 px-3 small">
+            <strong>{{ remito_seleccionado }}</strong>
+            &middot; {{ remito_seleccionado.fecha }}
+            &middot; {{ remito_seleccionado.contraparte }}
+            &middot;
+            <a href="{% url 'remitos:remito_editar' remito_seleccionado.pk %}">Editar cabecera</a>
+        </div>
+        {% endif %}
+
+        {% if renglones_del_remito %}
+        <div class="mb-3">
+            <h6>Renglones ya cargados de este remito</h6>
+            <div class="table-responsive">
+                <table class="table table-striped table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Producto</th><th>Detalle</th><th class="text-end">Cantidad</th>
+                            <th class="text-end">Kg. enviados</th><th class="text-end">Kg. confirmados</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in renglones_del_remito %}
+                        <tr>
+                            <td>{{ r.producto }}</td>
+                            <td>{{ r.detalle_adicional|default:"-" }}</td>
+                            <td class="text-end">{{ r.cantidad|default:"-" }}</td>
+                            <td class="text-end">{{ r.kilogramos_enviados|separador_miles }}</td>
+                            <td class="text-end">{{ r.kilogramos_confirmados|default:"-" }}</td>
+                            <td class="text-center">
+                                <a href="{% url 'remitos:remito_renglon_editar' r.pk %}">Editar</a>
+                                <a href="{% url 'remitos:remito_renglon_eliminar' r.pk %}">Eliminar</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div id="resto-del-formulario" style="{% if not remito_texto %}display:none;{% endif %}">
+            <div class="mb-3">
+                <label>Producto</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="producto-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar por ID o nombre..." value="{{ producto_texto }}">
+                    {{ form.producto }}
+                    <div id="producto-resultados" class="buscador-resultados"></div>
+                </div>
+                {% if form.producto.errors %}<div class="text-danger small">{{ form.producto.errors|striptags }}</div>{% endif %}
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" id="producto-crear-toggle">+ Crear producto nuevo</button>
+            </div>
+
+            <div id="producto-crear-wrapper" class="border rounded p-3 mb-3 bg-light" style="display:none; max-width: 420px;">
+                <h6>Nuevo producto</h6>
+                <div class="mb-2">
+                    {{ producto_crear_form.nombre.label_tag }}
+                    {{ producto_crear_form.nombre }}
+                </div>
+                <div class="mb-2">
+                    {{ producto_crear_form.item_tipo.label_tag }}
+                    {{ producto_crear_form.item_tipo }}
+                </div>
+                <div id="producto-crear-errores" class="text-danger small mb-2"></div>
+                <button type="button" class="btn btn-sm btn-primary" id="producto-crear-guardar">Crear y seleccionar</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="producto-crear-cancelar">Cancelar</button>
+            </div>
+
+            <div class="row gx-3 gy-3">
+                <div class="col-md-6">
+                    <label>{{ form.detalle_adicional.label }}</label>
+                    {{ form.detalle_adicional }}
+                </div>
+                <div class="col-md-3">
+                    <label>{{ form.cantidad.label }}</label>
+                    {{ form.cantidad }}
+                </div>
+                <div class="col-md-3">
+                    <label>{{ form.unidad_de_medida.label }}</label>
+                    {{ form.unidad_de_medida }}
+                </div>
+                <div class="col-md-3">
+                    <label>{{ form.kilogramos_enviados.label }}</label>
+                    {{ form.kilogramos_enviados }}
+                    {% if form.kilogramos_enviados.errors %}<div class="text-danger small">{{ form.kilogramos_enviados.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label>{{ form.kilogramos_confirmados.label }}</label>
+                    {{ form.kilogramos_confirmados }}
+                    <small class="form-text text-muted">{{ form.kilogramos_confirmados.help_text }}</small>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-sm mt-3">Guardar</button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var esAlta = {{ renglon|yesno:"false,true" }};
+    var wrapperResto = document.getElementById('resto-del-formulario');
+
+    inicializarBuscador('remito-buscador', '{{ form.remito.id_for_label }}', 'remito-resultados',
+        '{% url "remitos:remito_renglon_remito_buscar" %}',
+        function (item) {
+            if (esAlta) {
+                window.location.href = '{% url "remitos:remito_renglon_alta" %}?remito=' + encodeURIComponent(item.id);
+            } else if (wrapperResto) {
+                wrapperResto.style.display = '';
+            }
+        }
+    );
+
+    // Se reusa el buscador/alta rápida de producto que ya usa el renglón
+    // de Comprobante (mismo catálogo de productos), en vez de duplicar la
+    // lógica acá.
+    inicializarBuscador('producto-buscador', '{{ form.producto.id_for_label }}', 'producto-resultados',
+        '{% url "comprobantes:comprobante_renglon_producto_buscar" %}');
+
+    var productoBuscadorInput = document.getElementById('producto-buscador');
+    var productoHidden = document.getElementById('{{ form.producto.id_for_label }}');
+    var productoCrearToggle = document.getElementById('producto-crear-toggle');
+    var productoCrearWrapper = document.getElementById('producto-crear-wrapper');
+    var productoCrearNombre = document.getElementById('{{ producto_crear_form.nombre.id_for_label }}');
+    var productoCrearItemTipo = document.getElementById('{{ producto_crear_form.item_tipo.id_for_label }}');
+    var productoCrearErrores = document.getElementById('producto-crear-errores');
+
+    productoCrearToggle.addEventListener('click', function () {
+        productoCrearNombre.value = productoBuscadorInput.value.trim();
+        productoCrearErrores.textContent = '';
+        productoCrearWrapper.style.display = '';
+    });
+    document.getElementById('producto-crear-cancelar').addEventListener('click', function () {
+        productoCrearWrapper.style.display = 'none';
+    });
+    document.getElementById('producto-crear-guardar').addEventListener('click', function () {
+        productoCrearErrores.textContent = '';
+        var datos = new URLSearchParams();
+        datos.append('nombre', productoCrearNombre.value.trim());
+        datos.append('item_tipo', productoCrearItemTipo.value);
+        datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        fetch('{% url "comprobantes:comprobante_renglon_producto_crear" %}', { method: 'POST', body: datos })
+            .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
+            .then(function (resultado) {
+                if (resultado.status !== 200) {
+                    var detalles = Object.values(resultado.data.errores || {}).flat();
+                    productoCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear el producto.';
+                    return;
+                }
+                productoBuscadorInput.value = resultado.data.text;
+                productoHidden.value = resultado.data.id;
+                productoCrearWrapper.style.display = 'none';
+            });
+    });
+});
+</script>
+{% endblock %}

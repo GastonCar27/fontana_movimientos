@@ -349,9 +349,57 @@
                 <div class="list-group list-group-flush card-body">
                     <a href="{% url 'respaldo:backup' %}" class="list-group-item list-group-item-action">Backup de base de datos <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'register' %}" class="list-group-item list-group-item-action">Nuevo usuario <i class="bi bi-chevron-right"></i></a>
-                    <a href="{% url 'entidades:alta' %}" class="list-group-item list-group-item-action">Nueva entidad <i class="bi bi-chevron-right"></i></a>
-                    <a href="{% url 'entidades:listado' %}" class="list-group-item list-group-item-action">Modificar entidades <i class="bi bi-chevron-right"></i></a>
-                    <a href="{% url 'entidades:reportes' %}" class="list-group-item list-group-item-action">Reporte de entidades <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_entidades %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#0ca678; --accent-soft:rgba(12,166,120,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-building"></i></div>
+                    <h5>Entidades</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'entidades:alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:listado' %}" class="list-group-item list-group-item-action">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:reportes' %}" class="list-group-item list-group-item-action">Reportes <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Tipos de entidad</div>
+                    <a href="{% url 'entidades:rol_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:rol_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'entidades:rol_listado' %}" class="list-group-item list-group-item-action item-anidado">Listado <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_remitos %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#a4161a; --accent-soft:rgba(164,22,26,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-truck"></i></div>
+                    <h5>Remitos</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'remitos:remito_alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:remito_modificar' %}" class="list-group-item list-group-item-action">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:remito_reportes' %}" class="list-group-item list-group-item-action">Reportes <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Renglones</div>
+                    <a href="{% url 'remitos:remito_renglon_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:remito_renglon_modificar' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Vehículos</div>
+                    <a href="{% url 'remitos:vehiculo_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:vehiculo_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Acoplados</div>
+                    <a href="{% url 'remitos:acoplado_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:acoplado_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Condiciones de venta</div>
+                    <a href="{% url 'remitos:condicion_venta_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:condicion_venta_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <div class="subgrupo-titulo">Observaciones estándar</div>
+                    <a href="{% url 'remitos:observacion_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'remitos:observacion_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
                 </div>
             </div>
         </div>

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    {% include "remitos/condicion_venta_menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Condiciones de venta</h4>
+        <a href="{% url 'remitos:condicion_venta_alta' %}" class="btn btn-sm btn-primary">+ Nueva</a>
+    </div>
+
+    <div class="form-group mb-3" style="max-width: 320px;">
+        <form method="get">
+            <label for="id_q" class="mb-1">Buscar por nombre</label>
+            <input type="text" id="id_q" name="q" value="{{ q }}" class="form-control form-control-sm" autocomplete="off">
+        </form>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th><th>Nombre</th><th class="text-center">Activa</th><th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for condicion in condiciones %}
+                <tr>
+                    <td>{{ condicion.id }}</td>
+                    <td>{{ condicion.nombre }}</td>
+                    <td class="text-center">{% if condicion.activa %}<span class="badge bg-success">Sí</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'remitos:condicion_venta_editar' condicion.pk %}">Editar</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-4">No hay condiciones de venta cargadas.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -27,7 +27,8 @@ def entorno_bd(request):
 # grupo de usuario. "Ingreso", "Salida" y "Reportes" NO están acá a propósito:
 # esas quedan visibles para cualquier usuario logueado, sin restricción.
 # Cada nombre de acá tiene que coincidir EXACTO con el nombre del grupo de
-# Django (ver entidades/migrations/0002_grupos_menu.py, que los crea solos).
+# Django (ver entidades/migrations/0002_grupos_menu.py, 0003_grupo_rankings.py
+# y 0007_grupo_entidades.py, que los crean solos).
 GRUPOS_MENU = [
     'Rankings',
     'Movimientos de Productos',
@@ -38,6 +39,8 @@ GRUPOS_MENU = [
     'Tipos',
     'Solicitudes de Compra',
     'Empleados',
+    'Entidades',
+    'Remitos',
     'Otros',
 ]
 
@@ -72,5 +75,7 @@ def permisos_menu(request):
         'puede_ver_tipos': puede_ver('Tipos'),
         'puede_ver_solicitudes_compra': puede_ver('Solicitudes de Compra'),
         'puede_ver_empleados': puede_ver('Empleados'),
+        'puede_ver_entidades': puede_ver('Entidades'),
+        'puede_ver_remitos': puede_ver('Remitos'),
         'puede_ver_otros': puede_ver('Otros'),
     }

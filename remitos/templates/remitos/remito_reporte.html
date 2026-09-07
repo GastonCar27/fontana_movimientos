@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "remitos/menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Reporte de remitos</h4>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-success" href="{% url 'remitos:remito_reporte_excel' %}?{{ request.GET.urlencode }}">
+                Exportar a Excel
+            </a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'remitos:remito_reporte_pdf' %}?{{ request.GET.urlencode }}">
+                Exportar a PDF
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-12 col-md-3">
+                    <label for="id_q" class="form-label mb-1">Buscar por Id, Número o Entidad</label>
+                    <input type="text" id="id_q" name="q" value="{{ q }}" class="form-control form-control-sm" autocomplete="off">
+                </div>
+                <div class="col-12 col-md-2">
+                    <label for="id_tipo" class="form-label mb-1">Tipo</label>
+                    <select id="id_tipo" name="tipo" class="form-select form-select-sm">
+                        <option value="">--- Todos ---</option>
+                        <option value="salida" {% if tipo == 'salida' %}selected{% endif %}>Salida</option>
+                        <option value="entrada" {% if tipo == 'entrada' %}selected{% endif %}>Entrada</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <label for="id_fecha_desde" class="form-label mb-1">Fecha desde</label>
+                    <input type="date" id="id_fecha_desde" name="fecha_desde" value="{{ fecha_desde }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-12 col-md-2">
+                    <label for="id_fecha_hasta" class="form-label mb-1">Fecha hasta</label>
+                    <input type="date" id="id_fecha_hasta" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-12 col-md-3 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
+                    {% if filtros_activos %}
+                    <a href="{% url 'remitos:remito_reportes' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'id' 'ID' %}</th>
+                    <th>{% sort_th 'fecha' 'Fecha' %}</th>
+                    <th>Tipo</th>
+                    <th>Punto Venta-Número</th>
+                    <th>Emisor</th>
+                    <th>Receptor</th>
+                    <th>Transportista</th>
+                    <th>Vehículo</th>
+                    <th class="text-end">Valor declarado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for remito in remitos %}
+                <tr>
+                    <td>{{ remito.id }}</td>
+                    <td>{{ remito.fecha }}</td>
+                    <td>{% if remito.tipo == 'salida' %}Salida{% else %}Entrada{% endif %}</td>
+                    <td>{{ remito }}</td>
+                    <td>{{ remito.emisor }}</td>
+                    <td>{{ remito.receptor }}</td>
+                    <td>{{ remito.transportista|default:"-" }}</td>
+                    <td>{{ remito.vehiculo|default:"-" }}</td>
+                    <td class="text-end">{{ remito.valor_declarado|default:"-"|separador_miles }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-4">No hay resultados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

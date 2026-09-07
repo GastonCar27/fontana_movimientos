@@ -247,9 +247,78 @@
                 <div class="dropdown-menu" aria-labelledby="navbarDropdownOtros">
                     <a class="dropdown-item" href="{% url 'respaldo:backup' %}">Backup de base de datos</a>
                     <a class="dropdown-item" href="{{ alta_usuario }}">Nuevo usuario</a>
-                    <a class="dropdown-item" href="{% url 'entidades:alta' %}">Nueva entidad</a>
-                    <a class="dropdown-item" href="{% url 'entidades:listado' %}">Modificar entidades</a>
-                    <a class="dropdown-item" href="{% url 'entidades:reportes' %}">Reporte de entidades</a>
+                </div>
+             </li>
+             {% endif %}
+
+             {% if puede_ver_entidades %}
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownEntidades" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Entidades
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownEntidades">
+                    <a class="dropdown-item" href="{% url 'entidades:alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'entidades:listado' %}">Modificación</a>
+                    <a class="dropdown-item" href="{% url 'entidades:reportes' %}">Reportes</a>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownTiposEntidad">Tipos de entidad</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownTiposEntidad">
+                            <a class="dropdown-item" href="{% url 'entidades:rol_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'entidades:rol_listado' %}">Modificación</a>
+                            <a class="dropdown-item" href="{% url 'entidades:rol_listado' %}">Listado</a>
+                        </div>
+                    </div>
+                </div>
+             </li>
+             {% endif %}
+
+             {% if puede_ver_remitos %}
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownRemitos" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Remitos
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownRemitos">
+                    <a class="dropdown-item" href="{% url 'remitos:remito_alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'remitos:remito_modificar' %}">Modificación</a>
+                    <a class="dropdown-item" href="{% url 'remitos:remito_reportes' %}">Reportes</a>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownRemitoRenglones">Renglones</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownRemitoRenglones">
+                            <a class="dropdown-item" href="{% url 'remitos:remito_renglon_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'remitos:remito_renglon_modificar' %}">Modificación</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownVehiculos">Vehículos</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownVehiculos">
+                            <a class="dropdown-item" href="{% url 'remitos:vehiculo_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'remitos:vehiculo_listado' %}">Modificación</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownAcoplados">Acoplados</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownAcoplados">
+                            <a class="dropdown-item" href="{% url 'remitos:acoplado_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'remitos:acoplado_listado' %}">Modificación</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownCondicionesVenta">Condiciones de venta</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownCondicionesVenta">
+                            <a class="dropdown-item" href="{% url 'remitos:condicion_venta_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'remitos:condicion_venta_listado' %}">Modificación</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownObservaciones">Observaciones estándar</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownObservaciones">
+                            <a class="dropdown-item" href="{% url 'remitos:observacion_alta' %}">Alta</a>
+                            <a class="dropdown-item" href="{% url 'remitos:observacion_listado' %}">Modificación</a>
+                        </div>
+                    </div>
                 </div>
              </li>
              {% endif %}
@@ -270,18 +339,43 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // Si el submenú, abierto hacia la derecha (su posición por defecto,
+    // ver styles.css), se sale de la ventana, lo pasa a abrir hacia la
+    // izquierda en su lugar (ver clase .abre-izquierda en styles.css). Pasa,
+    // por ejemplo, con los submenús de "Remitos" (Renglones, Vehículos,
+    // etc.), que al ser el último ítem del menú quedan pegados al borde
+    // derecho de la ventana.
+    function posicionarSubmenu(submenu) {
+        var menu = submenu.querySelector(':scope > .dropdown-menu');
+        if (!menu) return;
+        submenu.classList.remove('abre-izquierda');
+        var rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            submenu.classList.add('abre-izquierda');
+        }
+    }
+
     document.querySelectorAll('.dropdown-submenu > a.dropdown-toggle').forEach(function (toggle) {
+        var submenu = toggle.parentElement; // .dropdown-submenu
+
         toggle.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
-            var submenu = toggle.parentElement; // .dropdown-submenu
             var abierto = submenu.classList.contains('show');
             // cierra otros submenús hermanos que hayan quedado abiertos
             var padre = submenu.parentElement;
             padre.querySelectorAll(':scope > .dropdown-submenu.show').forEach(function (otro) {
-                if (otro !== submenu) { otro.classList.remove('show'); }
+                if (otro !== submenu) { otro.classList.remove('show', 'abre-izquierda'); }
             });
             submenu.classList.toggle('show', !abierto);
+            if (!abierto) { posicionarSubmenu(submenu); }
+        });
+
+        // En desktop, con mouse, el submenú también se abre solo al pasar
+        // por encima (ver :hover en styles.css); ahí también hay que
+        // calcular para qué lado abre, porque no hay click que lo dispare.
+        submenu.addEventListener('mouseenter', function () {
+            posicionarSubmenu(submenu);
         });
     });
 });

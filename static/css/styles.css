@@ -26,6 +26,15 @@ color:black
 .dropdown-submenu > a.dropdown-toggle::after {
     transform: rotate(-90deg);
 }
+/* Si no hay lugar a la derecha (ej. "Remitos", que quedó como último ítem
+   del menú, pegado al borde de la ventana), el submenú se abre hacia la
+   izquierda en vez de salirse de la pantalla. La clase la agrega JS en
+   navbar.html, midiendo el espacio disponible al abrir. */
+.dropdown-submenu.abre-izquierda > .dropdown-menu {
+    left: auto;
+    right: 100%;
+    margin: 0 1px 0 0;
+}
 
 /* Buscador con autocompletado (ver static/js/buscador_ajax.js): input de
    texto + resultados flotando debajo, usado en varias pantallas de

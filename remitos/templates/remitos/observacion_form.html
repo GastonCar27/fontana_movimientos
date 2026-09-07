@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col-md-6">
+    {% include "remitos/observacion_menu.html" %}
+
+    <h4 class="mb-3">
+        {% if modo == 'alta' %}Nueva observación estándar{% else %}Editar observación estándar{% endif %}
+    </h4>
+
+    {% if observacion %}<p class="text-muted">ID: {{ observacion.id }}</p>{% endif %}
+
+    {% if messages %}
+    <ul class="list-unstyled">
+        {% for message in messages %}<li class="text-success">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="form-group mb-3">
+            {% if field.name == 'activa' %}
+            <div class="form-check">
+                {{ field }}
+                <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            </div>
+            {% else %}
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% endif %}
+            {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        <a href="{% url 'remitos:observacion_listado' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

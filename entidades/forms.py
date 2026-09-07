@@ -29,6 +29,44 @@ class BuscarEntidadEmisorForm(forms.Form):
         self.order_fields(nuevo_orden) #orden de los inputs
 
 
+class EntidadRolRapidoForm(forms.Form):
+    """Alta rápida embebida (ver patrón ProductoDetalleCrearForm en
+    comprobantes/forms.py) de una Entidad para asignarle, de una, un tipo de
+    entidad (Rol) puntual. Pensado para los buscadores de transportista/
+    chofer del alta de Remito, pero reusable por cualquier pantalla que
+    necesite "crear o sumarle el rol a una entidad existente que no lo
+    tiene" sin salir de su propio formulario. Si ya existe una entidad con
+    el mismo CUIT no se crea de nuevo: sólo se le agrega el rol si no lo
+    tenía (ver entidades.views.entidad_crear_rapido)."""
+    use_required_attribute = False
+
+    nombre = forms.CharField(
+        max_length=105,
+        widget=forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+    cuit = forms.CharField(
+        max_length=45,
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+
+
+class RolForm(forms.ModelForm):
+    """Alta y modificación de un "tipo de entidad" (Rol). El slug se calcula
+    solo (ver rol_alta/rol_editar en views.py), no se pide en el formulario."""
+
+    class Meta:
+        model = Rol
+        fields = ['nombre']
+        widgets = {
+            'nombre': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['nombre'].required = True
+
+
 class EntidadAltaForm(forms.ModelForm):
     """Alta de una Entidad nueva. El id NO se pide acá: lo calcula la vista
     (ver siguiente_id_entidad en views.py), priorizando el primero libre

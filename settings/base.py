@@ -59,9 +59,19 @@ INSTALLED_APPS = [
     'solicitudes_compra',
     'respaldo',
     'tipos',
+    'remitos',
 
 
 ]
+
+# Id de la entidad "Fontana S.A." (la empresa), usado por varias apps para
+# saber cuál de las dos partes de un comprobante/remito es la propia (ver
+# comprobantes.views.ENTIDAD_PROPIA_ID, liquidaciones.views.ENTIDAD_PROPIA_ID,
+# movimientos_caja.views.ENTIDAD_PROPIA_ID y remitos.views/forms). Antes cada
+# app tenía este mismo valor repetido como constante local; queda acá
+# también, centralizado, para que remitos (nuevo) lo lea de settings en vez
+# de sumar una constante más hardcodeada.
+ENTIDAD_PROPIA_ID = 100
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

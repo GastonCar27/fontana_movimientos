@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col-md-9">
+    {% include "remitos/menu.html" %}
+
+    <h4 class="mb-3">
+        {% if modo == 'alta' %}Nuevo remito{% else %}Editar remito {{ remito }}{% endif %}
+    </h4>
+
+    {% if remito %}
+    <p class="text-muted">
+        ID: {{ remito.id }}
+        &middot;
+        <a href="{% url 'remitos:remito_imprimir_pdf' remito.pk %}" target="_blank">Imprimir PDF</a>
+        &middot;
+        <a href="{% url 'remitos:remito_imprimir_excel' remito.pk %}" target="_blank">Imprimir Excel</a>
+    </p>
+    {% endif %}
+
+    {% if messages %}
+    <ul class="list-unstyled">
+        {% for message in messages %}<li class="text-success">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if form.non_field_errors %}
+    <ul class="text-danger">
+        {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="row gx-3 gy-3">
+            <div class="col-md-3">
+                <label>{{ form.tipo.label }}</label>
+                {{ form.tipo }}
+                {% if form.tipo.errors %}<div class="text-danger small">{{ form.tipo.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-2">
+                <label>{{ form.punto_venta.label }}</label>
+                {{ form.punto_venta }}
+                {% if form.punto_venta.errors %}<div class="text-danger small">{{ form.punto_venta.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-2">
+                <label>{{ form.numero.label }}</label>
+                {{ form.numero }}
+                {% if form.numero.errors %}<div class="text-danger small">{{ form.numero.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-2">
+                <label>{{ form.fecha.label }}</label>
+                {{ form.fecha }}
+                {% if form.fecha.errors %}<div class="text-danger small">{{ form.fecha.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-3">
+                <label>{{ form.valor_declarado.label }}</label>
+                {{ form.valor_declarado }}
+                {% if form.valor_declarado.errors %}<div class="text-danger small">{{ form.valor_declarado.errors|striptags }}</div>{% endif %}
+            </div>
+        </div>
+
+        <div class="row gx-3 gy-3 mt-1">
+            <div class="col-md-6">
+                <label id="label-contraparte">Cliente / Proveedor</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="contraparte-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar por nombre o CUIT..." value="{{ contraparte_texto }}">
+                    {{ form.contraparte }}
+                    <div id="contraparte-resultados" class="buscador-resultados"></div>
+                </div>
+                {% if form.contraparte.errors %}<div class="text-danger small">{{ form.contraparte.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+                <label>{{ form.condicion_venta.label }}</label>
+                {{ form.condicion_venta }}
+                {% if form.condicion_venta.errors %}<div class="text-danger small">{{ form.condicion_venta.errors|striptags }}</div>{% endif %}
+            </div>
+        </div>
+
+        <hr>
+        <h6 class="text-muted text-uppercase small fw-semibold">Transporte</h6>
+        <div class="row gx-3 gy-3">
+            <div class="col-md-4">
+                <label>Transportista</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="transportista-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar transportista..." value="{{ transportista_texto }}">
+                    {{ form.transportista }}
+                    <div id="transportista-resultados" class="buscador-resultados"></div>
+                </div>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" id="transportista-crear-toggle">+ Crear transportista nuevo</button>
+                {% if form.transportista.errors %}<div class="text-danger small">{{ form.transportista.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="col-md-4">
+                <label>Chofer</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="chofer-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar chofer..." value="{{ chofer_texto }}">
+                    {{ form.chofer }}
+                    <div id="chofer-resultados" class="buscador-resultados"></div>
+                </div>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" id="chofer-crear-toggle">+ Crear chofer nuevo</button>
+                {% if form.chofer.errors %}<div class="text-danger small">{{ form.chofer.errors|striptags }}</div>{% endif %}
+            </div>
+        </div>
+
+        <div id="entidad-crear-wrapper" class="border rounded p-3 mt-2 bg-light" style="display:none; max-width: 420px;">
+            <h6 id="entidad-crear-titulo">Nueva entidad</h6>
+            <div class="mb-2">
+                {{ entidad_rapida_form.nombre.label_tag }}
+                {{ entidad_rapida_form.nombre }}
+            </div>
+            <div class="mb-2">
+                {{ entidad_rapida_form.cuit.label_tag }}
+                {{ entidad_rapida_form.cuit }}
+            </div>
+            <div id="entidad-crear-errores" class="text-danger small mb-2"></div>
+            <button type="button" class="btn btn-sm btn-primary" id="entidad-crear-guardar">Crear y seleccionar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="entidad-crear-cancelar">Cancelar</button>
+        </div>
+
+        <div class="row gx-3 gy-3 mt-1">
+            <div class="col-md-4">
+                <label>Vehículo</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="vehiculo-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar vehículo..." value="{{ vehiculo_texto }}">
+                    {{ form.vehiculo }}
+                    <div id="vehiculo-resultados" class="buscador-resultados"></div>
+                </div>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" id="vehiculo-crear-toggle">+ Crear vehículo nuevo</button>
+            </div>
+            <div class="col-md-4">
+                <label>Acoplado</label>
+                <div class="buscador-wrapper">
+                    <input type="text" id="acoplado-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar acoplado..." value="{{ acoplado_texto }}">
+                    {{ form.acoplado }}
+                    <div id="acoplado-resultados" class="buscador-resultados"></div>
+                </div>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" id="acoplado-crear-toggle">+ Crear acoplado nuevo</button>
+            </div>
+        </div>
+
+        <div id="vehiculo-crear-wrapper" class="border rounded p-3 mt-2 bg-light" style="display:none; max-width: 420px;">
+            <h6>Nuevo vehículo</h6>
+            <div class="mb-2">
+                {{ vehiculo_crear_form.nombre.label_tag }}
+                {{ vehiculo_crear_form.nombre }}
+            </div>
+            <div class="mb-2">
+                {{ vehiculo_crear_form.patente.label_tag }}
+                {{ vehiculo_crear_form.patente }}
+            </div>
+            <div id="vehiculo-crear-errores" class="text-danger small mb-2"></div>
+            <button type="button" class="btn btn-sm btn-primary" id="vehiculo-crear-guardar">Crear y seleccionar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="vehiculo-crear-cancelar">Cancelar</button>
+        </div>
+
+        <div id="acoplado-crear-wrapper" class="border rounded p-3 mt-2 bg-light" style="display:none; max-width: 420px;">
+            <h6>Nuevo acoplado</h6>
+            <div class="mb-2">
+                {{ acoplado_crear_form.patente.label_tag }}
+                {{ acoplado_crear_form.patente }}
+            </div>
+            <div id="acoplado-crear-errores" class="text-danger small mb-2"></div>
+            <button type="button" class="btn btn-sm btn-primary" id="acoplado-crear-guardar">Crear y seleccionar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="acoplado-crear-cancelar">Cancelar</button>
+        </div>
+
+        <hr>
+        <h6 class="text-muted text-uppercase small fw-semibold">Observaciones</h6>
+        <div class="row gx-3 gy-3">
+            <div class="col-md-5">
+                <label>{{ form.observacion_estandar.label }}</label>
+                {{ form.observacion_estandar }}
+                <small class="form-text text-muted">{{ form.observacion_estandar.help_text }}</small>
+            </div>
+        </div>
+        <div class="mb-2 mt-2">
+            {{ form.observaciones }}
+        </div>
+        <div class="form-check mb-3">
+            {{ form.guardar_observacion_estandar }}
+            <label class="form-check-label" for="{{ form.guardar_observacion_estandar.id_for_label }}">{{ form.guardar_observacion_estandar.label }}</label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        <a href="{% url 'remitos:remito_modificar' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+    </form>
+
+    {% if renglones_del_remito %}
+    <div class="mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Renglones cargados</h5>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'remitos:remito_renglon_alta' %}?remito={{ remito.pk }}">+ Agregar renglón</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped table-sm table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Producto</th><th>Detalle</th><th class="text-end">Cantidad</th>
+                        <th class="text-end">Kg. enviados</th><th class="text-end">Kg. confirmados</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in renglones_del_remito %}
+                    <tr>
+                        <td>{{ r.producto }}</td>
+                        <td>{{ r.detalle_adicional|default:"-" }}</td>
+                        <td class="text-end">{{ r.cantidad|default:"-" }}</td>
+                        <td class="text-end">{{ r.kilogramos_enviados|separador_miles }}</td>
+                        <td class="text-end">{{ r.kilogramos_confirmados|default:"-" }}</td>
+                        <td class="text-center">
+                            <a class="btn btn-sm btn-outline-primary" href="{% url 'remitos:remito_renglon_editar' r.pk %}">Editar</a>
+                            <a class="btn btn-sm btn-outline-danger" href="{% url 'remitos:remito_renglon_eliminar' r.pk %}">Eliminar</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('contraparte-buscador', '{{ form.contraparte.id_for_label }}', 'contraparte-resultados',
+        '{% url "remitos:entidad_buscar" %}');
+
+    inicializarBuscador('transportista-buscador', '{{ form.transportista.id_for_label }}', 'transportista-resultados',
+        '{% url "remitos:entidad_buscar" %}?rol={{ rol_transportista_id }}');
+    inicializarBuscador('chofer-buscador', '{{ form.chofer.id_for_label }}', 'chofer-resultados',
+        '{% url "remitos:entidad_buscar" %}?rol={{ rol_chofer_id }}');
+
+    inicializarBuscador('vehiculo-buscador', '{{ form.vehiculo.id_for_label }}', 'vehiculo-resultados',
+        '{% url "remitos:vehiculo_buscar" %}');
+    inicializarBuscador('acoplado-buscador', '{{ form.acoplado.id_for_label }}', 'acoplado-resultados',
+        '{% url "remitos:acoplado_buscar" %}');
+
+    // --- Recuperar observación estándar: se agrega al final del textarea ---
+    var observacionSelect = document.getElementById('{{ form.observacion_estandar.id_for_label }}');
+    var observacionesTextarea = document.getElementById('{{ form.observaciones.id_for_label }}');
+    if (observacionSelect) {
+        observacionSelect.addEventListener('change', function () {
+            var texto = observacionSelect.options[observacionSelect.selectedIndex].text;
+            if (observacionSelect.value && texto) {
+                var separador = observacionesTextarea.value && !observacionesTextarea.value.endsWith('\n') ? '\n' : '';
+                observacionesTextarea.value += separador + texto;
+            }
+        });
+    }
+
+    // --- Alta rápida de transportista/chofer (mismo mini-form, distinto rol) ---
+    var entidadCrearWrapper = document.getElementById('entidad-crear-wrapper');
+    var entidadCrearTitulo = document.getElementById('entidad-crear-titulo');
+    var entidadCrearNombre = document.getElementById('{{ entidad_rapida_form.nombre.id_for_label }}');
+    var entidadCrearCuit = document.getElementById('{{ entidad_rapida_form.cuit.id_for_label }}');
+    var entidadCrearErrores = document.getElementById('entidad-crear-errores');
+    var entidadCrearGuardar = document.getElementById('entidad-crear-guardar');
+    var entidadCrearCancelar = document.getElementById('entidad-crear-cancelar');
+    var contextoEntidadRapida = null;  // {rol, buscadorInput, hidden}
+
+    function abrirCreacionEntidad(rol, tituloBuscando, buscadorInput, hidden) {
+        contextoEntidadRapida = { rol: rol, buscadorInput: buscadorInput, hidden: hidden };
+        entidadCrearTitulo.textContent = tituloBuscando;
+        entidadCrearNombre.value = buscadorInput.value.trim();
+        entidadCrearCuit.value = '';
+        entidadCrearErrores.textContent = '';
+        entidadCrearWrapper.style.display = '';
+    }
+
+    document.getElementById('transportista-crear-toggle').addEventListener('click', function () {
+        abrirCreacionEntidad('{{ rol_transportista_id }}', 'Nuevo transportista',
+            document.getElementById('transportista-buscador'), document.getElementById('{{ form.transportista.id_for_label }}'));
+    });
+    document.getElementById('chofer-crear-toggle').addEventListener('click', function () {
+        abrirCreacionEntidad('{{ rol_chofer_id }}', 'Nuevo chofer',
+            document.getElementById('chofer-buscador'), document.getElementById('{{ form.chofer.id_for_label }}'));
+    });
+    entidadCrearCancelar.addEventListener('click', function () {
+        entidadCrearWrapper.style.display = 'none';
+    });
+    entidadCrearGuardar.addEventListener('click', function () {
+        if (!contextoEntidadRapida) { return; }
+        entidadCrearErrores.textContent = '';
+        var datos = new URLSearchParams();
+        datos.append('nombre', entidadCrearNombre.value.trim());
+        datos.append('cuit', entidadCrearCuit.value.trim());
+        datos.append('rol', contextoEntidadRapida.rol);
+        datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        fetch('{% url "entidades:entidad_crear_rapido" %}', { method: 'POST', body: datos })
+            .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
+            .then(function (resultado) {
+                if (resultado.status !== 200) {
+                    var detalles = Object.values(resultado.data.errores || {}).flat();
+                    entidadCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear la entidad.';
+                    return;
+                }
+                contextoEntidadRapida.buscadorInput.value = resultado.data.text;
+                contextoEntidadRapida.hidden.value = resultado.data.id;
+                entidadCrearWrapper.style.display = 'none';
+            });
+    });
+
+    // --- Alta rápida de vehículo ---
+    var vehiculoCrearWrapper = document.getElementById('vehiculo-crear-wrapper');
+    var vehiculoCrearNombre = document.getElementById('{{ vehiculo_crear_form.nombre.id_for_label }}');
+    var vehiculoCrearPatente = document.getElementById('{{ vehiculo_crear_form.patente.id_for_label }}');
+    var vehiculoCrearErrores = document.getElementById('vehiculo-crear-errores');
+    document.getElementById('vehiculo-crear-toggle').addEventListener('click', function () {
+        vehiculoCrearNombre.value = document.getElementById('vehiculo-buscador').value.trim();
+        vehiculoCrearPatente.value = '';
+        vehiculoCrearErrores.textContent = '';
+        vehiculoCrearWrapper.style.display = '';
+    });
+    document.getElementById('vehiculo-crear-cancelar').addEventListener('click', function () {
+        vehiculoCrearWrapper.style.display = 'none';
+    });
+    document.getElementById('vehiculo-crear-guardar').addEventListener('click', function () {
+        vehiculoCrearErrores.textContent = '';
+        var datos = new URLSearchParams();
+        datos.append('nombre', vehiculoCrearNombre.value.trim());
+        datos.append('patente', vehiculoCrearPatente.value.trim());
+        datos.append('activo', 'on');
+        datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+        fetch('{% url "remitos:vehiculo_crear_rapido" %}', { method: 'POST', body: datos })
+            .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
+            .then(function (resultado) {
+                if (resultado.status !== 200) {
+                    var detalles = Object.values(resultado.data.errores || {}).flat();
+                    vehiculoCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear el vehículo.';
+                    return;
+                }
+                document.getElementById('vehiculo-buscador').value = resultado.data.text;
+                document.getElementById('{{ form.vehiculo.id_for_label }}').value = resultado.data.id;
+                vehiculoCrearWrapper.style.display = 'none';
+            });
+    });
+
+    // --- Alta rápida de acoplado ---
+    var acopladoCrearWrapper = document.getElementById('acoplado-crear-wrapper');
+    var acopladoCrearPatente = document.getElementById('{{ acoplado_crear_form.patente.id_for_label }}');
+    var acopladoCrearErrores = document.getElementById('acoplado-crear-errores');
+    document.getElementById('acoplado-crear-toggle').addEventListener('click', function () {
+        acopladoCrearPatente.value = document.getElementById('acoplado-buscador').value.trim();
+        acopladoCrearErrores.textContent = '';
+        acopladoCrearWrapper.style.display = '';
+    });
+    document.getElementById('acoplado-crear-cancelar').addEventListener('click', function () {
+        acopladoCrearWrapper.style.display = 'none';
+    });
+    document.getElementById('acoplado-crear-guardar').addEventListener('click', function () {
+        acopladoCrearErrores.textContent = '';
+        var datos = new URLSearchParams();
+        datos.append('patente', acopladoCrearPatente.value.trim());
+        datos.append('activo', 'on');
+        datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+        fetch('{% url "remitos:acoplado_crear_rapido" %}', { method: 'POST', body: datos })
+            .then(function (resp) { return resp.json().then(function (data) { return { status: resp.status, data: data }; }); })
+            .then(function (resultado) {
+                if (resultado.status !== 200) {
+                    var detalles = Object.values(resultado.data.errores || {}).flat();
+                    acopladoCrearErrores.textContent = detalles.map(function (e) { return e.message; }).join(' ') || 'No se pudo crear el acoplado.';
+                    return;
+                }
+                document.getElementById('acoplado-buscador').value = resultado.data.text;
+                document.getElementById('{{ form.acoplado.id_for_label }}').value = resultado.data.id;
+                acopladoCrearWrapper.style.display = 'none';
+            });
+    });
+});
+</script>
+{% endblock %}

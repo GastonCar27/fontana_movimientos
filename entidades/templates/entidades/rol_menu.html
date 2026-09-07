@@ -1,0 +1,15 @@
+<nav class="mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <div>
+            <span class="text-muted small text-uppercase fw-semibold me-2">Tipos de entidad</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'rol_alta' %}active{% endif %}"
+                   href="{% url 'entidades:rol_alta' %}">Alta</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'rol_listado' or request.resolver_match.url_name == 'rol_editar' %}active{% endif %}"
+                   href="{% url 'entidades:rol_listado' %}">Modificación</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'rol_listado' or request.resolver_match.url_name == 'rol_editar' %}active{% endif %}"
+                   href="{% url 'entidades:rol_listado' %}">Listado</a>
+            </div>
+        </div>
+    </div>
+</nav>

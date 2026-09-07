@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    {% include "remitos/acoplado_menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Acoplados</h4>
+        <a href="{% url 'remitos:acoplado_alta' %}" class="btn btn-sm btn-primary">+ Nuevo</a>
+    </div>
+
+    <div class="form-group mb-3" style="max-width: 320px;">
+        <form method="get">
+            <label for="id_q" class="mb-1">Buscar por patente</label>
+            <input type="text" id="id_q" name="q" value="{{ q }}" class="form-control form-control-sm" autocomplete="off">
+        </form>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th><th>Patente</th><th class="text-center">Activo</th><th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acoplado in acoplados %}
+                <tr>
+                    <td>{{ acoplado.id }}</td>
+                    <td>{{ acoplado.patente }}</td>
+                    <td class="text-center">{% if acoplado.activo %}<span class="badge bg-success">Sí</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'remitos:acoplado_editar' acoplado.pk %}">Editar</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-4">No hay acoplados cargados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -14,6 +14,7 @@ urlpatterns =[
     path('roles/',include('entidades.urls')),
     path('movimiento/',include('movimientos.urls')),
     path('comprobante/',include('comprobantes.urls')),
+    path('remitos/', include('remitos.urls')),
     path('liquidaciones/', include('liquidaciones.urls')),
     path('movimiento-caja/', include('movimientos_caja.urls')),
     path('respaldo/', include('respaldo.urls')),

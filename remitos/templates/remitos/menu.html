@@ -1,0 +1,24 @@
+<nav class="mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <div>
+            <span class="text-muted small text-uppercase fw-semibold me-2">Remitos</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'remito_alta' %}active{% endif %}"
+                   href="{% url 'remitos:remito_alta' %}">Alta</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'remito_modificar' or request.resolver_match.url_name == 'remito_editar' %}active{% endif %}"
+                   href="{% url 'remitos:remito_modificar' %}">Modificación</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'remito_reportes' %}active{% endif %}"
+                   href="{% url 'remitos:remito_reportes' %}">Reportes</a>
+            </div>
+        </div>
+        <div>
+            <span class="text-muted small text-uppercase fw-semibold me-2">Renglones</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'remito_renglon_alta' %}active{% endif %}"
+                   href="{% url 'remitos:remito_renglon_alta' %}">Alta</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'remito_renglon_modificar' or request.resolver_match.url_name == 'remito_renglon_editar' %}active{% endif %}"
+                   href="{% url 'remitos:remito_renglon_modificar' %}">Modificación</a>
+            </div>
+        </div>
+    </div>
+</nav>
