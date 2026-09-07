@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('comprobantes', '0003_seed_bolsa_bolson'),
+        ('comprobantes', '0002_comprobantetipodecambio'),
         ('entidades', '0008_grupo_remitos'),
         ('movimientos', '0002_delete_comprobanteunidaddemedida_and_more'),
         ('productos', '0002_itemtipo'),
