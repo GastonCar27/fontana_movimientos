@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <h4 class="mb-3">Cuenta corriente de producto por entidad</h4>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-4 col-lg-3">
+                    <label for="id_entidad" class="mb-1 small text-muted">Entidad</label>
+                    <select id="id_entidad" name="entidad" class="form-select form-select-sm">
+                        <option value="">Seleccionar...</option>
+                        {% for ent in entidades %}
+                        <option value="{{ ent.id }}" {% if entidad.id == ent.id %}selected{% endif %}>{{ ent.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-3">
+                    <label for="id_producto" class="mb-1 small text-muted">Producto</label>
+                    <select id="id_producto" name="producto" class="form-select form-select-sm">
+                        <option value="">Seleccionar...</option>
+                        {% for prod in productos %}
+                        <option value="{{ prod.id }}" {% if producto.id == prod.id %}selected{% endif %}>{{ prod.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary px-3">Ver</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if resumen %}
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">Kg (siempre en vivo, desde Movimientos)</div>
+                <div class="card-body">
+                    <p class="mb-1">Debe (kg recibidos por la entidad): <strong>{{ resumen.debe_kg|separador_miles }}</strong></p>
+                    <p class="mb-1">Haber (kg enviados por la entidad): <strong>{{ resumen.haber_kg|separador_miles }}</strong></p>
+                    <p class="mb-0">Saldo: <strong>{{ resumen.saldo_kg|separador_miles }}</strong></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">Pesos (de liquidaciones cerradas)</div>
+                <div class="card-body">
+                    <p class="mb-1">Debe: <strong>{{ resumen.debe_pesos|separador_miles }}</strong></p>
+                    <p class="mb-1">Haber: <strong>{{ resumen.haber_pesos|separador_miles }}</strong></p>
+                    <p class="mb-1">Saldo: <strong>{{ resumen.saldo_pesos|separador_miles }}</strong></p>
+                    <p class="mb-0 text-muted">Pendiente de liquidar (vinculado, sin cerrar): {{ resumen.pendiente_pesos|separador_miles }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mb-2">
+        <a class="btn btn-sm btn-primary" href="{% url 'cuenta_corriente_productos:liquidacion_alta' %}?entidad={{ entidad.id }}&producto={{ producto.id }}">Nueva liquidación para esta cuenta</a>
+    </div>
+
+    <h6>Liquidaciones</h6>
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Número</th>
+                    <th>Fecha</th>
+                    <th class="text-end">Debe</th>
+                    <th class="text-end">Haber</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for liq in detalle_liquidaciones %}
+                <tr>
+                    <td>{{ liq.numero }}</td>
+                    <td>{{ liq.fecha }}</td>
+                    <td class="text-end">{{ liq.debe_pesos|separador_miles }}</td>
+                    <td class="text-end">{{ liq.haber_pesos|separador_miles }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">Sin liquidaciones todavía.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif entidad or producto %}
+    <p class="text-muted">Elegí entidad y producto para ver la cuenta corriente.</p>
+    {% endif %}
+</div>
+{% endblock %}

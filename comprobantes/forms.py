@@ -1,11 +1,15 @@
 from django import forms
+from django.db.models import Q
 from productos.models import ProductoDetalle
 from productos.forms import ProductoDetalleForm as _ProductoDetalleFormBase
 from entidades.models import Entidad
 from services.forms import BuscarConFechasForm
 from entidades.forms import BuscarEntidadEmisorForm
 from copy import deepcopy
-from .models import Comprobante, ComprobanteRenglon, ComprobanteRenglonDetalle, ComprobanteUnidadDeMedida
+from .models import (
+    Comprobante, ComprobanteRenglon, ComprobanteRenglonDetalle, ComprobanteUnidadDeMedida,
+    IDS_UNIDADES_SOLO_REMITOS,
+)
 
 class BuscarComprobanteEntreFechasPorEntidadForm(forms.Form):
         
@@ -229,6 +233,20 @@ class ComprobanteRenglonDetalleForm(forms.ModelForm):
         self.fields['iva_tipo'].queryset = ProductoDetalle.objects.filter(
             item_tipo__nombre__iexact=CATEGORIA_IVA
         ).order_by('nombre')
+        # Unidades que no vienen del padrón de AFIP (ver
+        # comprobantes.models.IDS_UNIDADES_SOLO_REMITOS): se excluyen acá
+        # para que nunca se puedan elegir en un comprobante fiscal real,
+        # aunque sí queden disponibles para Remitos. Igual que en
+        # RemitoForm._queryset_activos, si el renglón ya tenía guardada una
+        # de estas (no debería pasar, pero por las dudas) se la sigue
+        # mostrando para no "perderla" al editar.
+        queryset_unidades = ComprobanteUnidadDeMedida.objects.exclude(id__in=IDS_UNIDADES_SOLO_REMITOS)
+        unidad_actual_id = getattr(self.instance, 'unidad_de_medida_id', None)
+        if unidad_actual_id in IDS_UNIDADES_SOLO_REMITOS:
+            queryset_unidades = ComprobanteUnidadDeMedida.objects.filter(
+                Q(pk__in=queryset_unidades.values('pk')) | Q(pk=unidad_actual_id)
+            )
+        self.fields['unidad_de_medida'].queryset = queryset_unidades.order_by('nombre')
         # La obligatoriedad real se controla en la vista según la categoría
         # del producto elegido (no siempre corresponde completar el detalle).
         for nombre_campo in self.fields:

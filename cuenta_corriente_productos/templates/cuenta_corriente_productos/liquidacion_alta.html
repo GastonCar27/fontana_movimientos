@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <h4 class="mb-3">Nueva liquidación de producto</h4>
+
+    <form method="get" class="row gx-3 gy-3 align-items-end mb-3">
+        <div class="col-6 col-md-3">
+            <label class="mb-1 small text-muted">Entidad</label>
+            <select name="entidad" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">Seleccionar...</option>
+                {% for ent in entidades %}
+                <option value="{{ ent.id }}" {% if entidad.id == ent.id %}selected{% endif %}>{{ ent.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="mb-1 small text-muted">Producto</label>
+            <select name="producto" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">Seleccionar...</option>
+                {% for prod in productos %}
+                <option value="{{ prod.id }}" {% if producto.id == prod.id %}selected{% endif %}>{{ prod.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    {% if entidad and producto %}
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="entidad" value="{{ entidad.id }}">
+        <input type="hidden" name="producto" value="{{ producto.id }}">
+
+        <div class="row gx-3 gy-3 align-items-end mb-3">
+            <div class="col-auto">
+                <label class="mb-1 small text-muted">Fecha de la liquidación</label>
+                <input type="date" name="fecha" class="form-control form-control-sm" value="{{ fecha }}">
+            </div>
+        </div>
+
+        <div class="table-responsive mb-3">
+            <table class="table table-striped table-sm align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th></th>
+                        <th>Comprobante</th>
+                        <th>Fecha</th>
+                        <th>Movimiento</th>
+                        <th class="text-end">Monto renglón</th>
+                        <th>Tipo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vinculo in renglones_pendientes %}
+                    <tr>
+                        <td><input type="checkbox" name="renglon_sel" value="{{ vinculo.renglon_id }}"></td>
+                        <td>{{ vinculo.renglon.comprobante.tipo_comprobante }} {{ vinculo.renglon.comprobante.numero }}</td>
+                        <td>{{ vinculo.renglon.comprobante.fecha }}</td>
+                        <td>Movimiento {{ vinculo.movimiento_id }} ({{ vinculo.movimiento.fecha }})</td>
+                        <td class="text-end">{{ vinculo.renglon.total|separador_miles }}</td>
+                        <td>
+                            <select name="tipo_{{ vinculo.renglon_id }}" class="form-select form-select-sm">
+                                <option value="debe">Debe</option>
+                                <option value="haber">Haber</option>
+                            </select>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted py-3">No hay renglones vinculados pendientes de liquidar para esta cuenta.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Guardar liquidación</button>
+    </form>
+    {% else %}
+    <p class="text-muted">Elegí entidad y producto para ver los renglones pendientes de liquidar.</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <h4 class="mb-3">Diferencias en liquidaciones de producto</h4>
+    <p class="text-muted">Compara, para cada liquidación, lo guardado contra lo que da recalcular desde los renglones vinculados. Solo se listan las que difieren.</p>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'numero' 'Número' %}</th>
+                    <th>{% sort_th 'fecha' 'Fecha' %}</th>
+                    <th>{% sort_th 'entidad' 'Entidad' %}</th>
+                    <th class="text-end">Debe guardado</th>
+                    <th class="text-end">Debe calculado</th>
+                    <th class="text-end">{% sort_th 'diferencia_debe' 'Diferencia debe' %}</th>
+                    <th class="text-end">Haber guardado</th>
+                    <th class="text-end">Haber calculado</th>
+                    <th class="text-end">{% sort_th 'diferencia_haber' 'Diferencia haber' %}</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in filas %}
+                <tr>
+                    <td>{{ fila.liquidacion.numero }}</td>
+                    <td>{{ fila.liquidacion.fecha }}</td>
+                    <td>{{ fila.liquidacion.entidad }}</td>
+                    <td class="text-end">{{ fila.debe_guardado|separador_miles }}</td>
+                    <td class="text-end">{{ fila.debe_calculado|separador_miles }}</td>
+                    <td class="text-end">{{ fila.diferencia_debe|separador_miles }}</td>
+                    <td class="text-end">{{ fila.haber_guardado|separador_miles }}</td>
+                    <td class="text-end">{{ fila.haber_calculado|separador_miles }}</td>
+                    <td class="text-end">{{ fila.diferencia_haber|separador_miles }}</td>
+                    <td class="text-center">
+                        <form method="post" action="{% url 'cuenta_corriente_productos:recalcular_liquidacion' fila.liquidacion.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Recalcular</button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="10" class="text-center text-muted py-4">No hay diferencias.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

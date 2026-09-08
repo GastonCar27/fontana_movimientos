@@ -95,6 +95,16 @@
                             <a class="dropdown-item" href="{% url 'movimientos:reporte_hv_yerba_mate' %}">Reportes</a>
                         </div>
                     </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-submenu">
+                        <a class="dropdown-item dropdown-toggle" href="#" id="navbarDropdownCtaCteProductos">Cuenta Corriente de Productos</a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownCtaCteProductos">
+                            <a class="dropdown-item" href="{% url 'cuenta_corriente_productos:movimientos_abiertos' %}">Movimientos abiertos</a>
+                            <a class="dropdown-item" href="{% url 'cuenta_corriente_productos:cuenta_corriente' %}">Cuenta corriente por entidad</a>
+                            <a class="dropdown-item" href="{% url 'cuenta_corriente_productos:liquidacion_alta' %}">Nueva liquidación</a>
+                            <a class="dropdown-item" href="{% url 'cuenta_corriente_productos:diferencias' %}">Diferencias</a>
+                        </div>
+                    </div>
                 </div>
              </li>
              {% endif %}

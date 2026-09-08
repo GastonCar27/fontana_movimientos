@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'respaldo',
     'tipos',
     'remitos',
+    'cuenta_corriente_productos',
 
 
 ]

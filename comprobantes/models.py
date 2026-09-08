@@ -22,6 +22,19 @@ class ComprobanteUnidadDeMedida(models.Model):
         return f'{self.id} - {self.nombre}'
 
 
+# Ids de esta misma tabla que NO vienen del padrón de AFIP: se agregaron a
+# mano (ver migración comprobantes/migrations/0003_seed_unidades_remitos.py)
+# para poder usar en Remitos unidades reales del negocio (Bolsón, Bolsa) que
+# AFIP no contempla. remitos.models.RemitoRenglon.unidad_de_medida y
+# movimientos.models.Movimiento.unidad_de_medida apuntan a esta misma tabla
+# (no tienen catálogo propio), así que estas filas quedan disponibles ahí
+# sin más cambios. Se excluyen explícitamente del desplegable de
+# ComprobanteRenglonDetalleForm (ver comprobantes.forms) para que nunca
+# terminen usadas en un comprobante fiscal real -- el día que se conecte el
+# webservice de AFIP, esa exclusión sigue siendo necesaria.
+IDS_UNIDADES_SOLO_REMITOS = ['BN', 'BS']
+
+
 class DocumentoTipo(models.Model):
     id = models.IntegerField(primary_key=True)
     tipo = models.CharField(max_length=45, blank=True, null=True)

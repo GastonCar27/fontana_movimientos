@@ -133,11 +133,18 @@ def remito_form(request, pk=None):
                     nuevo.receptor_id = ENTIDAD_PROPIA_ID
                 nuevo.save()
 
-                observacion_elegida = form.cleaned_data.get('observacion_estandar')
-                if observacion_elegida:
-                    separador = '\n' if nuevo.observaciones and not nuevo.observaciones.endswith('\n') else ''
-                    nuevo.observaciones = f'{nuevo.observaciones}{separador}{observacion_elegida.texto}'
-                    nuevo.save(update_fields=['observaciones'])
+                # 'observacion_estandar' es sólo un helper de UI (ver
+                # RemitoForm): el JS del template (remito_form.html) ya
+                # inserta el texto de la observación elegida DENTRO del
+                # textarea de Observaciones apenas se selecciona, para que el
+                # usuario la pueda editar ahí mismo antes de guardar. Antes,
+                # acá se volvía a agregar el texto ORIGINAL (sin editar) de
+                # la observación elegida al final de 'observaciones', lo que
+                # duplicaba el texto (quedaba lo editado por el usuario +
+                # el genérico de nuevo, sin editar). Se saca ese agregado:
+                # lo que haya en el textarea al momento de guardar (ya
+                # editado por el usuario si corresponde) es lo único que se
+                # guarda.
 
                 if form.cleaned_data.get('guardar_observacion_estandar') and nuevo.observaciones.strip():
                     ObservacionEstandar.objects.get_or_create(texto=nuevo.observaciones.strip())

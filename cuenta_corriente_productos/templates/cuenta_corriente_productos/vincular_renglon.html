@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <h4 class="mb-3">Vincular comprobante al movimiento {{ movimiento.id_movimiento }}</h4>
+    <p class="text-muted">
+        Producto: {{ movimiento.producto }} · Fecha: {{ movimiento.fecha }} · Kg: {{ movimiento.total|separador_miles }}<br>
+        Emisor: {{ movimiento.entidad_emisor }} · Receptor: {{ movimiento.entidad_receptor }}
+    </p>
+
+    <h6>Vínculos actuales</h6>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped table-sm align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Comprobante</th>
+                    <th>Fecha</th>
+                    <th class="text-end">Monto renglón</th>
+                    <th>Liquidado</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vinculo in vinculos_actuales %}
+                <tr>
+                    <td>{{ vinculo.renglon.comprobante.tipo_comprobante }} {{ vinculo.renglon.comprobante.numero }}</td>
+                    <td>{{ vinculo.renglon.comprobante.fecha }}</td>
+                    <td class="text-end">{{ vinculo.renglon.total|separador_miles }}</td>
+                    <td>
+                        {% if vinculo.renglon.liquidacion_producto %}
+                            Sí ({{ vinculo.renglon.liquidacion_producto.liquidacion.numero }})
+                        {% else %}
+                            No
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if not vinculo.renglon.liquidacion_producto %}
+                        <form method="post" action="{% url 'cuenta_corriente_productos:desvincular_renglon' vinculo.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Quitar</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-3">Sin vínculos todavía.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h6>Buscar renglón para vincular</h6>
+    <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="mb-1 small text-muted">Número de comprobante o entidad</label>
+            <input type="text" name="q" class="form-control form-control-sm" value="{{ q }}">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
+        </div>
+    </form>
+
+    {% if renglones %}
+    <form method="post">
+        {% csrf_token %}
+        <div class="table-responsive">
+            <table class="table table-striped table-sm align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th></th>
+                        <th>Comprobante</th>
+                        <th>Entidad</th>
+                        <th>Fecha</th>
+                        <th class="text-end">Monto renglón</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for renglon in renglones %}
+                    <tr>
+                        <td><input type="radio" name="renglon_id" value="{{ renglon.id }}" required></td>
+                        <td>{{ renglon.comprobante.tipo_comprobante }} {{ renglon.comprobante.numero }}</td>
+                        <td>{{ renglon.comprobante.entidad_emisor }}</td>
+                        <td>{{ renglon.comprobante.fecha }}</td>
+                        <td class="text-end">{{ renglon.total|separador_miles }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <button type="submit" class="btn btn-primary">Vincular seleccionado</button>
+    </form>
+    {% elif q %}
+    <p class="text-muted">No se encontraron renglones del mismo producto que coincidan con la búsqueda.</p>
+    {% endif %}
+</div>
+{% endblock %}

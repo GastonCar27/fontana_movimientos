@@ -1,0 +1,18 @@
+<ul class="nav nav-pills mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'movimientos_abiertos' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:movimientos_abiertos' %}">Movimientos abiertos</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'cuenta_corriente' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:cuenta_corriente' %}">Cuenta corriente</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'liquidacion_alta' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:liquidacion_alta' %}">Nueva liquidación</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'diferencias' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:diferencias' %}">Diferencias</a>
+    </li>
+</ul>
