@@ -9,22 +9,22 @@
 
     <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
         <div class="col-auto">
-            <label for="id_entidad" class="mb-1 small text-muted">Entidad</label>
-            <select id="id_entidad" name="entidad" class="form-select form-select-sm">
-                <option value="">Todas</option>
-                {% for ent in entidades %}
-                <option value="{{ ent.id }}" {% if q_entidad == ent.id|stringformat:'s' %}selected{% endif %}>{{ ent.nombre }}</option>
-                {% endfor %}
-            </select>
+            <label class="mb-1 small text-muted">Entidad</label>
+            <div class="buscador-wrapper" style="min-width: 220px;">
+                <input type="text" id="entidad-buscador" class="form-control form-control-sm" autocomplete="off"
+                       placeholder="Todas (buscar por ID o nombre)" value="{{ entidad_obj.nombre|default:'' }}">
+                <input type="hidden" id="id_entidad" name="entidad" value="{{ q_entidad }}">
+                <div id="entidad-resultados" class="buscador-resultados"></div>
+            </div>
         </div>
         <div class="col-auto">
-            <label for="id_producto" class="mb-1 small text-muted">Producto</label>
-            <select id="id_producto" name="producto" class="form-select form-select-sm">
-                <option value="">Todos</option>
-                {% for prod in productos %}
-                <option value="{{ prod.id }}" {% if q_producto == prod.id|stringformat:'s' %}selected{% endif %}>{{ prod.nombre }}</option>
-                {% endfor %}
-            </select>
+            <label class="mb-1 small text-muted">Producto</label>
+            <div class="buscador-wrapper" style="min-width: 220px;">
+                <input type="text" id="producto-buscador" class="form-control form-control-sm" autocomplete="off"
+                       placeholder="Todos (buscar por ID o nombre)" value="{{ producto_obj.nombre|default:'' }}">
+                <input type="hidden" id="id_producto" name="producto" value="{{ q_producto }}">
+                <div id="producto-resultados" class="buscador-resultados"></div>
+            </div>
         </div>
         <div class="col-auto">
             <label for="id_fecha_desde" class="mb-1 small text-muted">Desde</label>
@@ -83,4 +83,12 @@
         </table>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('entidad-buscador', 'id_entidad', 'entidad-resultados',
+        '{% url "entidades:entidad_buscar" %}');
+    inicializarBuscador('producto-buscador', 'id_producto', 'producto-resultados',
+        '{% url "productos:buscar" %}');
+});
+</script>
 {% endblock %}

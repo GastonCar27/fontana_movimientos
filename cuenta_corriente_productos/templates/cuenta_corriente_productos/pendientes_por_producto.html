@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <h4 class="mb-3">Pendientes por producto</h4>
+    <p class="text-muted">
+        Por cada producto (y unidad de medida) aparecen dos totales agregados, deliberadamente por separado
+        (no se restan entre sí):
+    </p>
+    <ul class="text-muted">
+        <li><strong>Saldo pendiente</strong>: suma de Kg de movimientos que todavía no quedaron cubiertos por
+            ningún renglón de comprobante. Incluye tanto los movimientos sin vincular como los vínculos viejos
+            (sin cantidad_kg cargada) cuyo renglón factura menos Kg de los que suman los movimientos vinculados
+            de una vez (mismo descuadre que corrige el comando <code>corregir_vinculos_kg</code>, calculado acá
+            al vuelo, sin necesidad de correrlo antes).</li>
+        <li><strong>Capacidad de renglón sin usar</strong>: el caso opuesto -- renglones de comprobante
+            facturados por MÁS cantidad de la que en realidad respaldan sus movimientos vinculados (misma
+            columna "Diferencia (renglón)" que ya se ve en "Vincular por bloques", pero solo la parte
+            negativa, y sumada acá por producto).</li>
+    </ul>
+    <p class="text-muted">
+        Al lado de cada producto podés exportar el detalle por entidad de estos dos totales, en Excel o PDF.
+    </p>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-3">
+                    <label for="id_fecha_desde" class="mb-1 small text-muted">Fecha desde (opcional)</label>
+                    <input type="date" id="id_fecha_desde" name="fecha_desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label for="id_fecha_hasta" class="mb-1 small text-muted">Fecha hasta (opcional)</label>
+                    <input type="date" id="id_fecha_hasta" name="fecha_hasta" class="form-control form-control-sm" value="{{ fecha_hasta }}">
+                </div>
+                <div class="col-12 col-md-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
+                    {% if fecha_desde or fecha_hasta %}
+                    <a href="{% url 'cuenta_corriente_productos:pendientes_por_producto' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                    {% endif %}
+                </div>
+            </form>
+            <p class="text-muted small mb-0 mt-2">
+                El filtro de fechas se aplica a la fecha del movimiento (lado pendiente) y a la fecha del
+                comprobante (lado vinculado de más). Sin fechas, se calcula sobre todo lo cargado.
+            </p>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>Producto</th>
+                    <th>Unidad de medida</th>
+                    <th class="text-end">Saldo pendiente</th>
+                    <th class="text-end">Capacidad de renglón sin usar</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in filas %}
+                <tr>
+                    <td>{{ fila.producto.nombre|default:"Sin nombre" }}</td>
+                    <td>{{ fila.unidad.nombre|default:"(sin unidad)" }}</td>
+                    <td class="text-end">
+                        {% if fila.saldo_total > 0 %}
+                        <strong class="text-success">+{{ fila.saldo_total|separador_miles }}</strong>
+                        {% else %}
+                        <span class="text-muted">0,00</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if fila.capacidad_sin_usar_total > 0 %}
+                        <strong class="text-warning">{{ fila.capacidad_sin_usar_total|separador_miles }}</strong>
+                        {% else %}
+                        <span class="text-muted">0,00</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-danger"
+                           href="{% url 'cuenta_corriente_productos:pendientes_por_producto_pdf' %}?producto={{ fila.producto.id }}{% if fila.unidad %}&unidad={{ fila.unidad.id }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}">
+                            PDF
+                        </a>
+                        <a class="btn btn-sm btn-outline-success"
+                           href="{% url 'cuenta_corriente_productos:pendientes_por_producto_excel' %}?producto={{ fila.producto.id }}{% if fila.unidad %}&unidad={{ fila.unidad.id }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}">
+                            Excel
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">No hay productos con movimientos pendientes de vincular ni renglones con capacidad sin usar, con este filtro.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

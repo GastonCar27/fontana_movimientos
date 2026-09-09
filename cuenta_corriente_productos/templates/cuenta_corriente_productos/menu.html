@@ -1,5 +1,9 @@
 <ul class="nav nav-pills mb-3">
     <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'vincular_por_bloques' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:vincular_por_bloques' %}">Vincular por bloques</a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link {% if request.resolver_match.url_name == 'movimientos_abiertos' %}active{% endif %}"
            href="{% url 'cuenta_corriente_productos:movimientos_abiertos' %}">Movimientos abiertos</a>
     </li>
@@ -14,5 +18,9 @@
     <li class="nav-item">
         <a class="nav-link {% if request.resolver_match.url_name == 'diferencias' %}active{% endif %}"
            href="{% url 'cuenta_corriente_productos:diferencias' %}">Diferencias</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'pendientes_por_producto' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:pendientes_por_producto' %}">Pendientes por producto</a>
     </li>
 </ul>

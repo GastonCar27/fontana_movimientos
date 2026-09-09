@@ -6,24 +6,24 @@
 
     <h4 class="mb-3">Nueva liquidación de producto</h4>
 
-    <form method="get" class="row gx-3 gy-3 align-items-end mb-3">
+    <form method="get" id="form-entidad-producto" class="row gx-3 gy-3 align-items-end mb-3">
         <div class="col-6 col-md-3">
             <label class="mb-1 small text-muted">Entidad</label>
-            <select name="entidad" class="form-select form-select-sm" onchange="this.form.submit()">
-                <option value="">Seleccionar...</option>
-                {% for ent in entidades %}
-                <option value="{{ ent.id }}" {% if entidad.id == ent.id %}selected{% endif %}>{{ ent.nombre }}</option>
-                {% endfor %}
-            </select>
+            <div class="buscador-wrapper">
+                <input type="text" id="entidad-buscador" class="form-control form-control-sm" autocomplete="off"
+                       placeholder="Buscar por ID o nombre..." value="{{ entidad.nombre|default:'' }}">
+                <input type="hidden" id="id_entidad" name="entidad" value="{{ entidad.id|default:'' }}">
+                <div id="entidad-resultados" class="buscador-resultados"></div>
+            </div>
         </div>
         <div class="col-6 col-md-3">
             <label class="mb-1 small text-muted">Producto</label>
-            <select name="producto" class="form-select form-select-sm" onchange="this.form.submit()">
-                <option value="">Seleccionar...</option>
-                {% for prod in productos %}
-                <option value="{{ prod.id }}" {% if producto.id == prod.id %}selected{% endif %}>{{ prod.nombre }}</option>
-                {% endfor %}
-            </select>
+            <div class="buscador-wrapper">
+                <input type="text" id="producto-buscador" class="form-control form-control-sm" autocomplete="off"
+                       placeholder="Buscar por ID o nombre..." value="{{ producto.nombre|default:'' }}">
+                <input type="hidden" id="id_producto" name="producto" value="{{ producto.id|default:'' }}">
+                <div id="producto-resultados" class="buscador-resultados"></div>
+            </div>
         </div>
     </form>
 
@@ -80,4 +80,15 @@
     <p class="text-muted">Elegí entidad y producto para ver los renglones pendientes de liquidar.</p>
     {% endif %}
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var formBusqueda = document.getElementById('form-entidad-producto');
+    // Mismo comportamiento que antes (el <select> recargaba solo al elegir):
+    // al elegir una entidad o un producto de la lista, se envía el formulario.
+    inicializarBuscador('entidad-buscador', 'id_entidad', 'entidad-resultados',
+        '{% url "entidades:entidad_buscar" %}', function () { formBusqueda.submit(); });
+    inicializarBuscador('producto-buscador', 'id_producto', 'producto-resultados',
+        '{% url "productos:buscar" %}', function () { formBusqueda.submit(); });
+});
+</script>
 {% endblock %}

@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <h4 class="mb-3">Vincular por bloques</h4>
+    <p class="text-muted">
+        Elegí entidad, producto y unidad de medida para el lado de los movimientos, y producto, unidad de
+        medida y rango de fechas para el lado de los renglones de comprobante (por defecto se precargan
+        iguales a los del lado movimientos). Con eso se listan los movimientos que todavía tienen Kg
+        pendientes de vincular y los renglones que todavía tienen capacidad libre. Después podés tildar
+        varios movimientos y elegir un solo renglón para vincularlos todos juntos a ese renglón: si el
+        renglón no alcanza para cubrir todo lo tildado, cubre lo que entra y el resto queda pendiente para
+        vincularlo después con otro comprobante (no se pierde ni se marca como cubierto de más); si el
+        renglón factura más de lo que necesitaban los movimientos tildados, la capacidad que sobra queda
+        libre para usarla con otro movimiento después. Si algún renglón tiene un "candidato automático"
+        (uno o más movimientos cuyos Kg pendientes suman EXACTO su capacidad disponible), aparece un botón
+        para tildarlos y elegir ese renglón de un solo click, sin perder la confirmación final. Más abajo,
+        con el filtro de movimientos completo, aparece también la lista de vínculos ya cargados para poder
+        desvincularlos de a uno o de a varios si hace falta (esos Kg vuelven a quedar pendientes).
+    </p>
+
+    <form method="get" id="form-filtros" class="mb-4">
+        <div class="row gx-2 gy-2 align-items-end mb-2">
+            <div class="col-auto">
+                <label for="entidad-buscador" class="mb-1 small text-muted">Entidad (misma para ambos lados)</label>
+                <div class="buscador-wrapper" style="min-width: 260px;">
+                    <input type="text" id="entidad-buscador" autocomplete="off" class="form-control form-control-sm"
+                           placeholder="Buscar entidad por ID o nombre..."
+                           value="{% if entidad %}{{ entidad.id }} - {{ entidad.nombre }}{% endif %}">
+                    <input type="hidden" id="id_entidad" name="entidad" value="{{ q_entidad }}">
+                    <div id="entidad-resultados" class="buscador-resultados"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-2">
+            <div class="card-body py-2">
+                <h6 class="text-muted mb-2">Movimientos (obligatorio)</h6>
+                <div class="row gx-2 gy-2 align-items-end">
+                    <div class="col-auto">
+                        <label for="producto-mov-buscador" class="mb-1 small text-muted">Producto</label>
+                        <div class="buscador-wrapper" style="min-width: 220px;">
+                            <input type="text" id="producto-mov-buscador" autocomplete="off" class="form-control form-control-sm"
+                                   placeholder="Buscar producto por ID o nombre..."
+                                   value="{% if producto_mov %}{{ producto_mov.id }} - {{ producto_mov.nombre }}{% endif %}">
+                            <input type="hidden" id="id_producto_movimientos" name="producto_movimientos" value="{{ q_producto_mov }}">
+                            <div id="producto-mov-resultados" class="buscador-resultados"></div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label for="id_unidad_movimientos" class="mb-1 small text-muted">Unidad de medida</label>
+                        <select id="id_unidad_movimientos" name="unidad_movimientos" class="form-select form-select-sm">
+                            <option value="">Elegir...</option>
+                            {% for u in unidades_medida_mov %}
+                            <option value="{{ u.id }}" {% if q_unidad_mov == u.id|stringformat:'s' %}selected{% endif %}>{{ u.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label for="id_fecha_desde_movimientos" class="mb-1 small text-muted">Desde (opcional)</label>
+                        <input type="date" id="id_fecha_desde_movimientos" name="fecha_desde_movimientos" class="form-control form-control-sm" value="{{ fecha_desde_mov }}">
+                    </div>
+                    <div class="col-auto">
+                        <label for="id_fecha_hasta_movimientos" class="mb-1 small text-muted">Hasta (opcional)</label>
+                        <input type="date" id="id_fecha_hasta_movimientos" name="fecha_hasta_movimientos" class="form-control form-control-sm" value="{{ fecha_hasta_mov }}">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-2">
+            <div class="card-body py-2">
+                <h6 class="text-muted mb-2">Renglones de comprobante (obligatorio, precarga igual a movimientos)</h6>
+                <div class="row gx-2 gy-2 align-items-end">
+                    <div class="col-auto">
+                        <label for="producto-ren-buscador" class="mb-1 small text-muted">Producto</label>
+                        <div class="buscador-wrapper" style="min-width: 220px;">
+                            <input type="text" id="producto-ren-buscador" autocomplete="off" class="form-control form-control-sm"
+                                   placeholder="Buscar producto por ID o nombre..."
+                                   value="{% if producto_ren %}{{ producto_ren.id }} - {{ producto_ren.nombre }}{% endif %}">
+                            <input type="hidden" id="id_producto_renglones" name="producto_renglones" value="{{ q_producto_ren }}">
+                            <div id="producto-ren-resultados" class="buscador-resultados"></div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label for="id_unidad_renglones" class="mb-1 small text-muted">Unidad de medida</label>
+                        <select id="id_unidad_renglones" name="unidad_renglones" class="form-select form-select-sm">
+                            <option value="">Elegir...</option>
+                            {% for u in unidades_medida_ren %}
+                            <option value="{{ u.id }}" {% if q_unidad_ren == u.id|stringformat:'s' %}selected{% endif %}>{{ u.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label for="id_fecha_desde_renglones" class="mb-1 small text-muted">Desde (opcional)</label>
+                        <input type="date" id="id_fecha_desde_renglones" name="fecha_desde_renglones" class="form-control form-control-sm" value="{{ fecha_desde_ren }}">
+                    </div>
+                    <div class="col-auto">
+                        <label for="id_fecha_hasta_renglones" class="mb-1 small text-muted">Hasta (opcional)</label>
+                        <input type="date" id="id_fecha_hasta_renglones" name="fecha_hasta_renglones" class="form-control form-control-sm" value="{{ fecha_hasta_ren }}">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
+            <a href="{% url 'cuenta_corriente_productos:vincular_por_bloques' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+        </div>
+    </form>
+
+    {% if not filtro_movimientos_completo or not filtro_renglones_completo %}
+    <p class="text-muted fst-italic">
+        Todavía falta completar, para que aparezcan los resultados y el botón de vincular:
+        {% if not entidad %}<strong>entidad</strong>{% endif %}
+        {% if not producto_mov %}<strong>producto (movimientos)</strong>{% endif %}
+        {% if not unidad_mov %}<strong>unidad de medida (movimientos)</strong>{% endif %}
+        {% if not producto_ren %}<strong>producto (renglones)</strong>{% endif %}
+        {% if not unidad_ren %}<strong>unidad de medida (renglones)</strong>{% endif %}
+        &mdash; las fechas son opcionales, no hace falta completarlas.
+    </p>
+    {% else %}
+    <form method="post" id="form-vincular">
+        {% csrf_token %}
+        <input type="hidden" name="entidad" value="{{ q_entidad }}">
+        <input type="hidden" name="producto_movimientos" value="{{ q_producto_mov }}">
+        <input type="hidden" name="unidad_movimientos" value="{{ q_unidad_mov }}">
+        <input type="hidden" name="producto_renglones" value="{{ q_producto_ren }}">
+        <input type="hidden" name="unidad_renglones" value="{{ q_unidad_ren }}">
+        <input type="hidden" name="fecha_desde_movimientos" value="{{ fecha_desde_mov }}">
+        <input type="hidden" name="fecha_hasta_movimientos" value="{{ fecha_hasta_mov }}">
+        <input type="hidden" name="fecha_desde_renglones" value="{{ fecha_desde_ren }}">
+        <input type="hidden" name="fecha_hasta_renglones" value="{{ fecha_hasta_ren }}">
+
+        <div class="d-flex justify-content-end mb-2">
+            <button type="submit" class="btn btn-primary btn-sm">Vincular movimientos tildados al renglón elegido</button>
+        </div>
+
+        <div class="row">
+            <div class="col-md-7">
+                <h6 class="text-muted">Movimientos con Kg pendientes de vincular (tildá los que quieras vincular)</h6>
+                <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                    <table class="table table-striped table-sm table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th><input type="checkbox" id="movimiento-check-todos" title="Tildar/destildar todos"></th>
+                                <th>ID</th>
+                                <th>Fecha</th>
+                                <th>Número</th>
+                                <th>Emisor</th>
+                                <th>Receptor</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Pendiente</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for mov in movimientos %}
+                            <tr>
+                                <td><input type="checkbox" name="movimiento_sel" value="{{ mov.id_movimiento }}" class="movimiento-check" data-total="{{ mov.kg_pendiente }}"></td>
+                                <td>{{ mov.id_movimiento }}</td>
+                                <td>{{ mov.fecha }}</td>
+                                <td>{{ mov.numero }}</td>
+                                <td>{{ mov.entidad_emisor }}</td>
+                                <td>{{ mov.entidad_receptor }}</td>
+                                <td class="text-end">{{ mov.total|separador_miles }}</td>
+                                <td class="text-end">
+                                    {{ mov.kg_pendiente|separador_miles }}
+                                    {% if mov.kg_pendiente < mov.total %}<span class="text-muted small">(parcial)</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">No hay movimientos con Kg pendientes con este filtro.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-end small text-muted">Total tildado (Kg pendientes): <strong id="total-tildado">0</strong></p>
+            </div>
+
+            <div class="col-md-5">
+                <h6 class="text-muted">Renglones de comprobante con capacidad libre (elegí uno solo; no incluye renglones ya liquidados)</h6>
+                <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                    <table class="table table-striped table-sm table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th></th>
+                                <th>Comprobante</th>
+                                <th>Fecha</th>
+                                <th class="text-end">Cantidad</th>
+                                <th class="text-end">Disponible</th>
+                                <th class="text-end">Total $</th>
+                                <th>Candidato automático</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ren in renglones %}
+                            <tr>
+                                <td><input type="radio" name="renglon_sel" value="{{ ren.id }}" required></td>
+                                <td>{{ ren.comprobante.tipo_comprobante }} {{ ren.comprobante.numero }}</td>
+                                <td>{{ ren.comprobante.fecha }}</td>
+                                <td class="text-end">{{ ren.renglon_detalle_comprobante.cantidad|default_if_none:'' }}</td>
+                                <td class="text-end">{% if ren.kg_disponible is None %}<span class="text-muted small">?</span>{% else %}{{ ren.kg_disponible|separador_miles }}{% endif %}</td>
+                                <td class="text-end">{{ ren.total|separador_miles }}</td>
+                                <td>
+                                    {% if ren.candidato_automatico %}
+                                    <button type="button" class="btn btn-sm btn-outline-success btn-usar-candidato"
+                                            data-renglon="{{ ren.id }}"
+                                            data-movimientos="{% for mid in ren.candidato_automatico %}{{ mid }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                                            title="La suma de Kg pendientes de estos movimientos coincide EXACTO con la capacidad disponible de este renglón">
+                                        Usar candidato ({{ ren.candidato_automatico|length }} mov.)
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">No hay renglones con capacidad libre con este filtro.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted small">
+                    "?" en Disponible: el renglón no tiene cargada la cantidad facturada, no hay con qué comparar
+                    (solo aparece acá si todavía no tiene ningún vínculo). "Candidato automático": se
+                    encontró una combinación de movimientos (de los que están en la tabla de la izquierda)
+                    cuyos Kg pendientes suman exactamente lo disponible de ese renglón -- al hacer click se
+                    tildan esos movimientos y se elige ese renglón, pero igual hay que confirmar con
+                    "Vincular" para que quede guardado. Esta búsqueda automática solo mira comprobantes
+                    desde 2026 en adelante (empezando por el más antiguo) y, para cada uno, movimientos con
+                    fecha de hasta 3 meses antes y 10 días después de la fecha de ese comprobante -- no
+                    contra todo el historial.
+                </p>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-2">Vincular movimientos tildados al renglón elegido</button>
+    </form>
+    {% endif %}
+
+    {% if filtro_movimientos_completo %}
+    <hr class="my-4">
+    <h6 class="text-muted">Vínculos ya existentes con este filtro (para desvincular)</h6>
+    <p class="text-muted small">
+        Al desvincular, esos Kg del movimiento vuelven a estar pendientes de vincular (y, si el renglón
+        tenía cargada la cantidad facturada, esa capacidad vuelve a quedar libre) la próxima vez que
+        busques con este mismo filtro. La columna "Diferencia" compara, por renglón, la suma de Kg de
+        todos sus movimientos vinculados contra lo que factura el renglón (positiva: vinculado de más,
+        como el caso Bukay; negativa: al renglón le sobra capacidad); los que tienen diferencia aparecen
+        primero. Se puede tildar varios y desvincularlos todos juntos con el botón de abajo.
+    </p>
+    <form method="post" action="{% url 'cuenta_corriente_productos:desvincular_varios' %}" id="form-desvincular">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ url_recarga }}">
+        <div class="d-flex justify-content-end mb-2">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Desvincular seleccionados</button>
+        </div>
+        <div class="table-responsive mb-2" style="max-height: 360px; overflow-y: auto;">
+            <table class="table table-striped table-sm align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th><input type="checkbox" id="vinculo-check-todos" title="Tildar/destildar todos"></th>
+                        <th>Movimiento</th>
+                        <th>Fecha mov.</th>
+                        <th>Renglón / comprobante</th>
+                        <th>Fecha comp.</th>
+                        <th class="text-end">Kg cubiertos</th>
+                        <th class="text-end">Diferencia (renglón)</th>
+                        <th>Liquidado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vinculo in vinculos_existentes %}
+                    <tr>
+                        <td>
+                            {% if vinculo.renglon.liquidacion_producto %}
+                                <span class="text-muted small" title="Ya está incluido en una liquidación; para desvincularlo hay que revertir esa liquidación primero">bloqueado</span>
+                            {% else %}
+                                <input type="checkbox" name="vinculo_sel" value="{{ vinculo.id }}" class="vinculo-check">
+                            {% endif %}
+                        </td>
+                        <td>{{ vinculo.movimiento.id_movimiento }} ({{ vinculo.movimiento.entidad_emisor }} &rarr; {{ vinculo.movimiento.entidad_receptor }})</td>
+                        <td>{{ vinculo.movimiento.fecha }}</td>
+                        <td>{{ vinculo.renglon.comprobante.tipo_comprobante }} {{ vinculo.renglon.comprobante.numero }}</td>
+                        <td>{{ vinculo.renglon.comprobante.fecha }}</td>
+                        <td class="text-end">
+                            {% if vinculo.cantidad_kg is None %}
+                                <span class="text-muted small" title="Vínculo cargado antes de guardar este dato: se asume que cubre el movimiento completo">todo</span>
+                            {% else %}
+                                {{ vinculo.cantidad_kg|separador_miles }}
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if vinculo.renglon_diferencia_texto is None %}
+                                <span class="text-muted small" title="El renglón no tiene cargada la cantidad facturada, no hay con qué comparar">?</span>
+                            {% elif vinculo.renglon_diferencia == 0 %}
+                                <span class="text-muted small">0.00</span>
+                            {% else %}
+                                <strong class="text-danger" title="Suma de Kg de los movimientos vinculados a este renglón, menos lo que factura el renglón">{{ vinculo.renglon_diferencia_texto }}</strong>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if vinculo.renglon.liquidacion_producto %}
+                                Sí ({{ vinculo.renglon.liquidacion_producto.liquidacion.numero }})
+                            {% else %}
+                                No
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-3">No hay vínculos cargados todavía con este filtro.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Desvincular seleccionados</button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+
+<script>
+// buscador_ajax.js se carga al final de base.html (después de este bloque
+// de contenido), así que inicializarBuscador todavía no existe si se la
+// llama acá arriba directo -- hay que esperar a DOMContentLoaded (dispara
+// recién cuando TODO el HTML, scripts de pie incluidos, ya se parseó),
+// mismo patrón que ya usan movimiento_gestion_reporte.html y
+// producto_por_entidad_buscar_saldo.html.
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('entidad-buscador', 'id_entidad', 'entidad-resultados', "{% url 'entidades:entidad_buscar' %}");
+
+    var productoRenTocado = {{ q_producto_ren|yesno:"true,false" }} && "{{ q_producto_ren }}" !== "{{ q_producto_mov }}";
+    var unidadRenTocado = {{ q_unidad_ren|yesno:"true,false" }} && "{{ q_unidad_ren }}" !== "{{ q_unidad_mov }}";
+
+    inicializarBuscador('producto-mov-buscador', 'id_producto_movimientos', 'producto-mov-resultados',
+        "{% url 'productos:buscar' %}", function (item) {
+            // Por defecto el producto de renglones sigue al de movimientos,
+            // mientras el usuario no haya elegido uno distinto a mano.
+            if (!productoRenTocado) {
+                document.getElementById('producto-ren-buscador').value = item.text;
+                document.getElementById('id_producto_renglones').value = item.id;
+            }
+        });
+
+    inicializarBuscador('producto-ren-buscador', 'id_producto_renglones', 'producto-ren-resultados',
+        "{% url 'productos:buscar' %}", function () {
+            productoRenTocado = true;
+        });
+
+    document.getElementById('id_unidad_movimientos').addEventListener('change', function () {
+        if (!unidadRenTocado) {
+            var destino = document.getElementById('id_unidad_renglones');
+            for (var i = 0; i < destino.options.length; i++) {
+                if (destino.options[i].value === this.value) {
+                    destino.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+    });
+    document.getElementById('id_unidad_renglones').addEventListener('change', function () {
+        unidadRenTocado = true;
+    });
+
+    var fechaDesdeRenTocado = {{ fecha_desde_ren|yesno:"true,false" }} && "{{ fecha_desde_ren }}" !== "{{ fecha_desde_mov }}";
+    var fechaHastaRenTocado = {{ fecha_hasta_ren|yesno:"true,false" }} && "{{ fecha_hasta_ren }}" !== "{{ fecha_hasta_mov }}";
+
+    document.getElementById('id_fecha_desde_movimientos').addEventListener('change', function () {
+        if (!fechaDesdeRenTocado) {
+            document.getElementById('id_fecha_desde_renglones').value = this.value;
+        }
+    });
+    document.getElementById('id_fecha_hasta_movimientos').addEventListener('change', function () {
+        if (!fechaHastaRenTocado) {
+            document.getElementById('id_fecha_hasta_renglones').value = this.value;
+        }
+    });
+    document.getElementById('id_fecha_desde_renglones').addEventListener('change', function () {
+        fechaDesdeRenTocado = true;
+    });
+    document.getElementById('id_fecha_hasta_renglones').addEventListener('change', function () {
+        fechaHastaRenTocado = true;
+    });
+
+    var totalTildado = document.getElementById('total-tildado');
+    if (totalTildado) {
+        document.querySelectorAll('.movimiento-check').forEach(function (chk) {
+            chk.addEventListener('change', actualizarTotalTildado);
+        });
+    }
+    function actualizarTotalTildado() {
+        var suma = 0;
+        document.querySelectorAll('.movimiento-check:checked').forEach(function (chk) {
+            suma += parseFloat(chk.dataset.total || '0');
+        });
+        totalTildado.textContent = suma.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Tildar/destildar todos los movimientos de un solo click.
+    var checkTodos = document.getElementById('movimiento-check-todos');
+    if (checkTodos) {
+        checkTodos.addEventListener('change', function () {
+            document.querySelectorAll('.movimiento-check').forEach(function (chk) {
+                chk.checked = checkTodos.checked;
+            });
+            actualizarTotalTildado();
+        });
+        // Si se destilda uno a mano, el checkbox "todos" deja de estar
+        // marcado (si no, quedaría tildado sin que todos lo estén).
+        document.querySelectorAll('.movimiento-check').forEach(function (chk) {
+            chk.addEventListener('change', function () {
+                if (!chk.checked) {
+                    checkTodos.checked = false;
+                }
+            });
+        });
+    }
+
+    // "Usar candidato": tilda de un click los movimientos de la
+    // combinación encontrada y elige el renglón correspondiente -- sigue
+    // haciendo falta apretar "Vincular" para confirmarlo.
+    document.querySelectorAll('.btn-usar-candidato').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            // Al usar el candidato de un renglón, se destilda TODO lo que
+            // estuviera tildado antes (de otro renglón, o a mano) y se
+            // tildan solo los movimientos de este candidato nuevo -- se
+            // vincula un renglón por vez, así que mezclar movimientos de
+            // un candidato viejo con uno nuevo no tiene sentido.
+            document.querySelectorAll('.movimiento-check').forEach(function (chk) {
+                chk.checked = false;
+            });
+            btn.dataset.movimientos.split(',').forEach(function (id) {
+                var chk = document.querySelector('.movimiento-check[value="' + id + '"]');
+                if (chk) chk.checked = true;
+            });
+            var radio = document.querySelector('input[name="renglon_sel"][value="' + btn.dataset.renglon + '"]');
+            if (radio) radio.checked = true;
+            if (checkTodos) checkTodos.checked = false;
+            if (totalTildado) actualizarTotalTildado();
+        });
+    });
+
+    // Tildar/destildar todos los vínculos a desvincular de un solo click
+    // (mismo patrón que "movimiento-check-todos" más arriba).
+    var vinculoCheckTodos = document.getElementById('vinculo-check-todos');
+    if (vinculoCheckTodos) {
+        vinculoCheckTodos.addEventListener('change', function () {
+            document.querySelectorAll('.vinculo-check').forEach(function (chk) {
+                chk.checked = vinculoCheckTodos.checked;
+            });
+        });
+        document.querySelectorAll('.vinculo-check').forEach(function (chk) {
+            chk.addEventListener('change', function () {
+                if (!chk.checked) {
+                    vinculoCheckTodos.checked = false;
+                }
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

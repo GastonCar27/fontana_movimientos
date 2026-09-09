@@ -104,6 +104,25 @@ class ComprobanteRenglonMovimiento(models.Model):
         on_delete=models.CASCADE,
         related_name='vinculos_comprobante',
     )
+    # Cuántos Kg (u otra unidad) del movimiento cubre ESTE vínculo en
+    # particular. Se agregó porque un mismo movimiento puede necesitar
+    # más de un renglón para cubrirse por completo (anticipo + ajustes de
+    # precio, ver docstring de la clase) y un renglón puede facturar
+    # menos cantidad que la suma de los movimientos que se le vinculan de
+    # una sola vez ("Vincular por bloques") -- sin este campo, un
+    # movimiento con CUALQUIER vínculo se consideraba 100% cubierto,
+    # aunque el renglón vinculado facturara menos Kg de los que tiene el
+    # movimiento, y esa diferencia dejaba de aparecer como pendiente.
+    #
+    # Puede quedar en null en vínculos viejos (de antes de este campo):
+    # se interpreta como "se asume que este vínculo cubre el movimiento
+    # completo", igual que el comportamiento previo a agregar el campo.
+    # Los vínculos nuevos (creados por las vistas de este archivo) SIEMPRE
+    # lo completan con un valor real.
+    cantidad_kg = models.DecimalField(
+        max_digits=14, decimal_places=2, blank=True, null=True,
+        verbose_name='cantidad (Kg u otra unidad) cubierta por este vínculo',
+    )
     observaciones = models.CharField(max_length=255, blank=True)
     guardado_el = models.DateTimeField(auto_now_add=True)
 

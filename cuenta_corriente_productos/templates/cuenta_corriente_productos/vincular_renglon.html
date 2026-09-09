@@ -6,7 +6,8 @@
 
     <h4 class="mb-3">Vincular comprobante al movimiento {{ movimiento.id_movimiento }}</h4>
     <p class="text-muted">
-        Producto: {{ movimiento.producto }} · Fecha: {{ movimiento.fecha }} · Kg: {{ movimiento.total|separador_miles }}<br>
+        Producto: {{ movimiento.producto }} · Fecha: {{ movimiento.fecha }} · Kg: {{ movimiento.total|separador_miles }}
+        · Pendiente de vincular: <strong>{{ kg_pendiente|separador_miles }}</strong><br>
         Emisor: {{ movimiento.entidad_emisor }} · Receptor: {{ movimiento.entidad_receptor }}
     </p>
 
@@ -18,6 +19,7 @@
                     <th>Comprobante</th>
                     <th>Fecha</th>
                     <th class="text-end">Monto renglón</th>
+                    <th class="text-end">Kg cubiertos</th>
                     <th>Liquidado</th>
                     <th class="text-center">Acciones</th>
                 </tr>
@@ -28,6 +30,13 @@
                     <td>{{ vinculo.renglon.comprobante.tipo_comprobante }} {{ vinculo.renglon.comprobante.numero }}</td>
                     <td>{{ vinculo.renglon.comprobante.fecha }}</td>
                     <td class="text-end">{{ vinculo.renglon.total|separador_miles }}</td>
+                    <td class="text-end">
+                        {% if vinculo.cantidad_kg is None %}
+                            <span class="text-muted small" title="Vínculo cargado antes de guardar este dato: se asume que cubre el movimiento completo">todo</span>
+                        {% else %}
+                            {{ vinculo.cantidad_kg|separador_miles }}
+                        {% endif %}
+                    </td>
                     <td>
                         {% if vinculo.renglon.liquidacion_producto %}
                             Sí ({{ vinculo.renglon.liquidacion_producto.liquidacion.numero }})
@@ -45,7 +54,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="5" class="text-center text-muted py-3">Sin vínculos todavía.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted py-3">Sin vínculos todavía.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
