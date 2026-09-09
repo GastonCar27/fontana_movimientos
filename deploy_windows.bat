@@ -31,12 +31,9 @@ if "%MENSAJE%"=="" (
 
 git add .
 git commit -m "%MENSAJE%"
-if errorlevel 1 (
-    echo.
-    echo No habia cambios para commitear (o el commit fallo). Nada para subir.
-    pause
-    exit /b 0
-)
+rem Si git commit dice "nothing to commit" esto va a marcar error, pero no
+rem hay que cortar aca: puede haber commits locales de antes que todavia
+rem no se subieron a GitHub, asi que se intenta el push igual.
 
 echo.
 echo --- git push ---
