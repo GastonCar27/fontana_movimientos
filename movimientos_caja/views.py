@@ -29,6 +29,7 @@ from .models import (
     MovimientoCajaBancoCuentaEntidad,
     MovimientoCajaConcepto,
     MovimientoCajaDiferido,
+    MovimientoCajaEmisor,
     MovimientoCajaNumero,
 )
 
@@ -171,6 +172,12 @@ def movimiento_caja_form(request, pk=None):
             else:
                 MovimientoCajaNumero.objects.filter(movimiento_caja=nuevo).delete()
 
+            emisor = form_rel.cleaned_data.get('emisor')
+            if emisor:
+                MovimientoCajaEmisor.objects.update_or_create(id=nuevo, defaults={'id_entidad': emisor})
+            else:
+                MovimientoCajaEmisor.objects.filter(id=nuevo).delete()
+
             cuenta_bancaria = form_rel.cleaned_data.get('cuenta_bancaria_entidad')
             if cuenta_bancaria:
                 numero_destino = (cuenta_bancaria.numero or cuenta_bancaria.cbu or '')[:30]
@@ -212,6 +219,7 @@ def movimiento_caja_form(request, pk=None):
             asiento = LibroMovim.objects.filter(movimiento_caja=movimiento).first()
             diferido_obj = MovimientoCajaDiferido.objects.filter(id=movimiento).first()
             concepto_obj = MovimientoCajaConcepto.objects.filter(movimiento_caja=movimiento).first()
+            emisor_obj = MovimientoCajaEmisor.objects.filter(id=movimiento).first()
             cuenta_obj = MovimientoCajaBancoCuentaEntidad.objects.filter(id=movimiento).first()
 
             if asiento:
@@ -222,6 +230,8 @@ def movimiento_caja_form(request, pk=None):
                 initial_rel['concepto_tipo'] = concepto_obj.concepto_tipo_id
             if movimiento.numero is not None:
                 initial_rel['numero'] = movimiento.numero
+            if emisor_obj and emisor_obj.id_entidad_id:
+                initial_rel['emisor'] = emisor_obj.id_entidad_id
             if cuenta_obj and cuenta_obj.numero_cuenta_entidad_destino and movimiento.receptor_id:
                 # numero_cuenta_entidad_destino es un texto libre (no una FK):
                 # tratamos de reencontrar, a partir de él, la cuenta bancaria
@@ -520,7 +530,9 @@ def _movimientos_reporte_filtrados(request):
     """
     form = MovimientoCajaReporteForm(request.GET or None)
     movimientos = (
-        MovimientoCaja.objects.select_related('caja', 'tipo', 'receptor', 'movimientocajadiferido')
+        MovimientoCaja.objects.select_related(
+            'caja', 'tipo', 'receptor', 'movimientocajadiferido', 'emisor_relacion__id_entidad',
+        )
         .prefetch_related('liquidaciones__liquidacion')
         .order_by('-emision', '-id')
     )
@@ -531,6 +543,7 @@ def _movimientos_reporte_filtrados(request):
         caja = form.cleaned_data.get('caja')
         tipo = form.cleaned_data.get('tipo')
         receptor = form.cleaned_data.get('receptor')
+        emisor = form.cleaned_data.get('emisor')
         fecha_desde = form.cleaned_data.get('fecha_desde')
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
         efectivizacion_desde = form.cleaned_data.get('efectivizacion_desde')
@@ -545,6 +558,11 @@ def _movimientos_reporte_filtrados(request):
             movimientos = movimientos.filter(tipo=tipo)
         if receptor:
             movimientos = movimientos.filter(receptor=receptor)
+        if emisor:
+            # Sólo encuentra movimientos con este emisor cargado explícitamente
+            # (tabla movimiento_caja_emisor); los que no tienen carga son
+            # Fontana por defecto pero no matchean un filtro por otra entidad.
+            movimientos = movimientos.filter(emisor_relacion__id_entidad=emisor)
         if fecha_desde:
             movimientos = movimientos.filter(emision__gte=fecha_desde)
         if fecha_hasta:
@@ -561,7 +579,7 @@ def _movimientos_reporte_filtrados(request):
             movimientos = movimientos.filter(efectivizacion__isnull=True)
 
         filtros_activos = any([
-            caja, tipo, receptor, fecha_desde, fecha_hasta,
+            caja, tipo, receptor, emisor, fecha_desde, fecha_hasta,
             efectivizacion_desde, efectivizacion_hasta,
             diferido_desde, diferido_hasta, sin_efectivizar,
         ])
@@ -582,6 +600,7 @@ def movimiento_caja_reporte(request):
         'caja': 'caja__nombre',
         'tipo': 'tipo__nombre',
         'emision': 'emision',
+        'emisor': 'emisor_relacion__id_entidad__nombre',
         'receptor': 'receptor__nombre',
         'monto': 'monto',
         'diferido': 'movimientocajadiferido__diferido',
@@ -591,6 +610,8 @@ def movimiento_caja_reporte(request):
 
     receptor_id = form['receptor'].value()
     receptor_texto = texto_entidad_buscador(Entidad.objects.filter(pk=receptor_id).first()) if receptor_id else ''
+    emisor_id = form['emisor'].value()
+    emisor_texto = texto_entidad_buscador(Entidad.objects.filter(pk=emisor_id).first()) if emisor_id else ''
 
     return render(request, 'movimientos_caja/movimiento_caja_reporte.html', {
         'form': form,
@@ -599,6 +620,7 @@ def movimiento_caja_reporte(request):
         'cantidad_total': cantidad_total,
         'filtros_activos': filtros_activos,
         'receptor_texto': receptor_texto,
+        'emisor_texto': emisor_texto,
     })
 
 
@@ -618,7 +640,7 @@ def _texto_liquidacion(movimiento):
 
 
 def _filas_movimiento_caja_reporte(movimientos):
-    columnas = ['ID', 'Caja', 'Tipo', 'Emisión', 'Receptor', 'Monto', 'Diferido', 'Efectivización', 'Liquidación']
+    columnas = ['ID', 'Caja', 'Tipo', 'Emisión', 'Emisor', 'Receptor', 'Monto', 'Diferido', 'Efectivización', 'Liquidación']
     filas = []
     for m in movimientos:
         try:
@@ -630,6 +652,7 @@ def _filas_movimiento_caja_reporte(movimientos):
             str(m.caja) if m.caja else '',
             str(m.tipo) if m.tipo else '',
             m.emision,
+            str(m.emisor) if m.emisor else '',
             str(m.receptor) if m.receptor else '',
             _numero_o_none(m.monto),
             diferido,
@@ -639,8 +662,8 @@ def _filas_movimiento_caja_reporte(movimientos):
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {5},  # Monto
-        'anchos': [0.5, 1.1, 1.3, 0.9, 1.8, 1.0, 0.9, 1.0, 1.3],
+        'columnas_numericas': {6},  # Monto
+        'anchos': [0.5, 1.1, 1.3, 0.9, 1.6, 1.8, 1.0, 0.9, 1.0, 1.3],
     }
 
 

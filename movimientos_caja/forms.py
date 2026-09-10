@@ -83,6 +83,12 @@ class MovimientoCajaRelacionadosForm(forms.Form):
         required=False, label='Número',
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
     )
+    emisor = forms.ModelChoiceField(
+        queryset=Entidad.objects.all().order_by('nombre'),
+        required=False,
+        label='Emisor',
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+    )
     diferido = forms.DateField(
         required=False, label='Fecha de diferido',
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
@@ -181,6 +187,12 @@ class MovimientoCajaReporteForm(forms.Form):
         # Reemplazado por un buscador con autocompletado (ver
         # movimiento_caja_reporte.html); este campo queda oculto y lo
         # completa el JS del buscador.
+        widget=forms.HiddenInput(),
+    )
+    emisor = forms.ModelChoiceField(
+        queryset=Entidad.objects.all().order_by('nombre'),
+        required=False,
+        # Mismo mecanismo que 'receptor': buscador con autocompletado, campo oculto.
         widget=forms.HiddenInput(),
     )
     fecha_desde = forms.DateField(

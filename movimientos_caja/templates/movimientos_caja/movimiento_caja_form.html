@@ -60,6 +60,13 @@
             {% if form_rel.cuenta_bancaria_entidad.errors %}<div class="text-danger small">{{ form_rel.cuenta_bancaria_entidad.errors }}</div>{% endif %}
             <div class="form-text">Opcional. Se completa según las cuentas registradas del receptor elegido.</div>
         </div>
+        <div class="col-sm-5">
+            <label class="form-label">Emisor</label>
+            <input type="text" name="buscador_emisor" class="form-control form-control-sm mb-1" placeholder="Buscar por ID o nombre...">
+            {{ form_rel.emisor }}
+            {% if form_rel.emisor.errors %}<div class="text-danger small">{{ form_rel.emisor.errors }}</div>{% endif %}
+            <div class="form-text">Opcional. Si se deja vacío, el emisor del movimiento es Fontana (la entidad propia).</div>
+        </div>
 
         <hr class="mt-2">
         <h6 class="text-muted mb-0">Libro / hoja / renglón</h6>
@@ -110,6 +117,7 @@
 
 <script src="{% static 'js/buscador_generico.js' %}"></script>
 <script src="{% static 'js/buscador_receptor.js' %}"></script>
+<script src="{% static 'js/buscador_emisor.js' %}"></script>
 <script>
 (function () {
     var URL_CUENTAS_BANCARIAS = "{% url 'movimientos_caja:movimiento_caja_entidad_cuentas_bancarias' entidad_id=0 %}";
