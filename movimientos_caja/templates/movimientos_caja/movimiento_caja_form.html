@@ -37,6 +37,11 @@
             {{ form.monto }}
             {% if form.monto.errors %}<div class="text-danger small">{{ form.monto.errors }}</div>{% endif %}
         </div>
+        <div class="col-sm-2">
+            {{ form_rel.numero.label_tag }}
+            {{ form_rel.numero }}
+            {% if form_rel.numero.errors %}<div class="text-danger small">{{ form_rel.numero.errors }}</div>{% endif %}
+        </div>
 
         <div class="col-sm-3">
             {{ form.efectivizacion.label_tag }}

@@ -26,6 +26,12 @@
                     {{ form.fecha_hasta.label_tag }}
                     {{ form.fecha_hasta }}
                 </div>
+                <div class="col-12 col-md-3 form-check ms-1">
+                    {{ form.sin_renglones }}
+                    <label class="form-check-label" for="{{ form.sin_renglones.id_for_label }}">
+                        {{ form.sin_renglones.label }}
+                    </label>
+                </div>
                 <div class="col-12 col-md-2">
                     <button type="submit" class="btn btn-sm btn-primary px-3">Filtrar</button>
                 </div>
@@ -44,6 +50,7 @@
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
                     <th>Moneda</th>
+                    <th class="text-center">{% sort_th 'renglones' 'Renglones' %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -56,10 +63,17 @@
                     <td>{{ c.numero }}</td>
                     <td class="text-end">{{ c.total|separador_miles }}</td>
                     <td>{{ c.moneda }}</td>
+                    <td class="text-center">
+                        {% if c.cantidad_renglones %}
+                        {{ c.cantidad_renglones }}
+                        {% else %}
+                        <span class="badge text-bg-warning">Sin renglones</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted py-4">No hay resultados.</td>
+                    <td colspan="8" class="text-center text-muted py-4">No hay resultados.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -67,6 +81,7 @@
                 <tr class="table-light fw-bold">
                     <td colspan="5" class="text-end">Total</td>
                     <td class="text-end">{{ totales.total|separador_miles }}</td>
+                    <td></td>
                     <td></td>
                 </tr>
             </tfoot>

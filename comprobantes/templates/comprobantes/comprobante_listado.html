@@ -19,6 +19,10 @@
             <label for="id_fecha" class="mb-1 small text-muted">Fecha</label>
             <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
         </div>
+        <div class="col-auto form-check mb-1">
+            <input type="checkbox" class="form-check-input" id="id_sin_renglones" name="sin_renglones" value="1" {% if q_sin_renglones %}checked{% endif %}>
+            <label class="form-check-label" for="id_sin_renglones">Solo sin renglones cargados</label>
+        </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'comprobantes:comprobante_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
@@ -36,6 +40,7 @@
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
                     <th>Moneda</th>
+                    <th class="text-center">{% sort_th 'renglones' 'Renglones' %}</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
@@ -49,6 +54,13 @@
                     <td>{{ c.numero }}</td>
                     <td class="text-end">{{ c.total|separador_miles }}</td>
                     <td>{{ c.moneda }}</td>
+                    <td class="text-center">
+                        {% if c.cantidad_renglones %}
+                        {{ c.cantidad_renglones }}
+                        {% else %}
+                        <span class="badge text-bg-warning">Sin renglones</span>
+                        {% endif %}
+                    </td>
                     <td class="text-center text-nowrap">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
@@ -56,11 +68,15 @@
                            href="{% url 'comprobantes:comprobante_exportar_excel' c.pk %}">Excel</a>
                         <a class="btn btn-sm btn-outline-secondary" title="Exportar a PDF"
                            href="{% url 'comprobantes:comprobante_exportar_pdf' c.pk %}">PDF</a>
+                        {% if not c.cantidad_renglones %}
+                        <a class="btn btn-sm btn-warning" title="Este comprobante todavía no tiene ningún renglón cargado"
+                           href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">No hay comprobantes cargados.</td>
+                    <td colspan="9" class="text-center text-muted py-4">No hay comprobantes cargados.</td>
                 </tr>
                 {% endfor %}
             </tbody>

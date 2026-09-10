@@ -137,6 +137,15 @@ class ComprobanteReporteForm(forms.Form):
         required=False,
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
     )
+    # Agregado 2026-09-09: para encontrar rápido los comprobantes cargados
+    # sin ningún ComprobanteRenglon (por ejemplo, comprobantes importados o
+    # cargados a mano a los que todavía no se les detalló el contenido) y
+    # poder ir directo a agregarles uno desde "Modificar".
+    sin_renglones = forms.BooleanField(
+        required=False,
+        label='Solo sin renglones cargados',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
 
 # ---------------------------------------------------------------------------

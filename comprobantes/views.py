@@ -452,6 +452,11 @@ def comprobante_listado(request):
     q_entidad = request.GET.get('entidad', '').strip()
     q_id = request.GET.get('id', '').strip()
     q_fecha = request.GET.get('fecha', '').strip()
+    # Agregado 2026-09-09: mismo filtro "sin renglones cargados" que
+    # comprobante_reporte, para poder encontrarlos acá y agregarles un
+    # renglón directamente (ver botón "Agregar renglón" más abajo y en el
+    # template).
+    q_sin_renglones = request.GET.get('sin_renglones', '').strip()
 
     if q_entidad:
         comprobantes = comprobantes.filter(
@@ -464,6 +469,16 @@ def comprobante_listado(request):
             comprobantes = comprobantes.none()
     if q_fecha:
         comprobantes = comprobantes.filter(fecha=q_fecha)
+    if q_sin_renglones:
+        comprobantes = comprobantes.filter(renglon_comprobante__isnull=True)
+
+    # Se agrega DESPUÉS de los filtros de arriba (no hay ningún .aggregate()
+    # sobre este queryset en esta vista, así que combinar Count con los
+    # filtros de fecha/entidad/id no tiene el problema de GROUP BY que sí
+    # hay que cuidar en comprobante_reporte) -- cuántos renglones tiene
+    # cargados cada comprobante, para mostrar el botón "Agregar renglón"
+    # sólo en los que tienen 0.
+    comprobantes = comprobantes.annotate(cantidad_renglones=Count('renglon_comprobante', distinct=True))
 
     comprobantes = aplicar_orden_queryset(request, comprobantes, {
         'id': 'id',
@@ -472,6 +487,7 @@ def comprobante_listado(request):
         'tipo': 'tipo_comprobante__nombre',
         'numero': 'numero',
         'total': 'total',
+        'renglones': 'cantidad_renglones',
     })
 
     return render(request, 'comprobantes/comprobante_listado.html', {
@@ -479,6 +495,7 @@ def comprobante_listado(request):
         'q_entidad': q_entidad,
         'q_id': q_id,
         'q_fecha': q_fecha,
+        'q_sin_renglones': q_sin_renglones,
     })
 
 
@@ -944,16 +961,28 @@ def comprobante_reporte(request):
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
+        sin_renglones = form.cleaned_data.get('sin_renglones')
         if entidad:
             comprobantes = comprobantes.filter(entidad_emisor=entidad)
         if fecha_desde:
             comprobantes = comprobantes.filter(fecha__gte=fecha_desde)
         if fecha_hasta:
             comprobantes = comprobantes.filter(fecha__lte=fecha_hasta)
+        if sin_renglones:
+            # related_name de ComprobanteRenglon.comprobante -- comprobantes
+            # que todavía no tienen ningún renglón cargado (ver docstring
+            # de ComprobanteReporteForm.sin_renglones).
+            comprobantes = comprobantes.filter(renglon_comprobante__isnull=True)
 
     totales = comprobantes.aggregate(
         total=Coalesce(Sum('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=20, decimal_places=2)),
     )
+
+    # Se agrega DESPUÉS de calcular 'totales' arriba (Count + Sum en el
+    # mismo queryset generaría un GROUP BY que rompe la suma general) --
+    # para mostrar, junto al filtro "sin_renglones", cuántos renglones
+    # tiene cargados cada comprobante (0 = el caso que interesa detectar).
+    comprobantes = comprobantes.annotate(cantidad_renglones=Count('renglon_comprobante', distinct=True))
 
     comprobantes = aplicar_orden_queryset(request, comprobantes, {
         'id': 'id',
@@ -962,6 +991,7 @@ def comprobante_reporte(request):
         'tipo': 'tipo_comprobante__nombre',
         'numero': 'numero',
         'total': 'total',
+        'renglones': 'cantidad_renglones',
     })
 
     return render(request, 'comprobantes/comprobante_reporte.html', {

@@ -29,7 +29,13 @@ from .models import (
     MovimientoCajaBancoCuentaEntidad,
     MovimientoCajaConcepto,
     MovimientoCajaDiferido,
+    MovimientoCajaNumero,
 )
+
+# Tope de renglones por hoja del libro de caja: al llegar al 25, el
+# siguiente movimiento de un alta encadenada pasa a renglón 1 de la hoja
+# siguiente (ver _proximo_renglon_y_hoja).
+RENGLON_MAXIMO_POR_HOJA = 25
 
 
 def _url_next_segura(request, next_url):
@@ -47,19 +53,43 @@ def _url_next_segura(request, next_url):
 # Alta / Modificación (misma vista, pk=None para alta)
 # ---------------------------------------------------------------------------
 
+def _proximo_renglon_y_hoja(ultimo_renglon, ultima_hoja):
+    """Dado el renglón/hoja del movimiento recién guardado en un alta, calcula
+    los valores a precargar para el próximo: el renglón +1 manteniendo la
+    misma hoja, salvo que el renglón ya guardado haya llegado al tope
+    (RENGLON_MAXIMO_POR_HOJA = 25), en cuyo caso el próximo pasa a ser
+    renglón 1 de la hoja siguiente (+1)."""
+    if ultimo_renglon is None:
+        return None, ultima_hoja
+    if ultimo_renglon >= RENGLON_MAXIMO_POR_HOJA:
+        proxima_hoja = (ultima_hoja + 1) if ultima_hoja is not None else None
+        return 1, proxima_hoja
+    return ultimo_renglon + 1, ultima_hoja
+
+
 @transaction.atomic
 def movimiento_caja_form(request, pk=None):
     """Alta y modificación de un Movimiento de Caja, junto con los datos de
-    sus tablas relacionadas: libro/hoja/renglón (LibroMovim), fecha de
-    diferido (MovimientoCajaDiferido), concepto (MovimientoCajaConcepto) y
-    cuenta bancaria del receptor (MovimientoCajaBancoCuentaEntidad); antes
-    sólo se podían cargar desde el admin.
+    sus tablas relacionadas: libro/hoja/renglón/número (LibroMovim /
+    MovimientoCajaNumero), fecha de diferido (MovimientoCajaDiferido),
+    concepto (MovimientoCajaConcepto) y cuenta bancaria del receptor
+    (MovimientoCajaBancoCuentaEntidad); antes sólo se podían cargar desde el
+    admin.
 
     El siguiente ID y la validación (full_clean) del movimiento en sí ya los
     resuelve MovimientoCaja.save(). Los registros relacionados son opcionales:
     si se dejan vacíos no se guardan (o se borran, si ya existían).
+
+    En el alta (pk=None), al guardar no se vuelve al listado: se vuelve a
+    mostrar esta misma pantalla de alta, con el banco (caja), el libro y la
+    fecha de emisión iguales a los del movimiento recién guardado, el
+    renglón y el número +1 (renglón con tope 25 -> pasa a 1 y la hoja +1), y
+    el resto de los campos vacíos, para poder cargar rápido varios
+    movimientos seguidos del mismo lote. En la modificación de un movimiento
+    existente el comportamiento no cambia: se vuelve al listado.
     """
     movimiento = get_object_or_404(MovimientoCaja, pk=pk) if pk else None
+    es_alta = movimiento is None
 
     receptor_id = None
     if request.method == 'POST':
@@ -87,17 +117,33 @@ def movimiento_caja_form(request, pk=None):
         form = MovimientoCajaForm(request.POST, instance=movimiento)
         form_valido = form.is_valid()
 
+        # Validaciones cruzadas entre 'form' (emisión/efectivización) y
+        # 'form_rel' (diferido): no pueden resolverse en el clean() de cada
+        # form por separado porque son dos formularios distintos.
+        if form_valido and form_rel_valido:
+            emision = form.cleaned_data.get('emision')
+            efectivizacion = form.cleaned_data.get('efectivizacion')
+            diferido = form_rel.cleaned_data.get('diferido')
+            if emision and diferido and diferido < emision:
+                form_rel.add_error('diferido', 'La fecha de diferido no puede ser anterior a la fecha de emisión.')
+                form_rel_valido = False
+            if efectivizacion and diferido and diferido > efectivizacion:
+                form_rel.add_error('diferido', 'La fecha de diferido no puede ser posterior a la fecha de efectivización.')
+                form_rel_valido = False
+
         if form_valido and form_rel_valido:
             nuevo = form.save()
 
             libro = form_rel.cleaned_data.get('libro')
+            hoja = form_rel.cleaned_data.get('hoja')
+            renglon = form_rel.cleaned_data.get('renglon')
             if libro:
                 LibroMovim.objects.update_or_create(
                     movimiento_caja=nuevo,
                     defaults={
                         'libro': libro,
-                        'hoja': form_rel.cleaned_data.get('hoja'),
-                        'renglon': form_rel.cleaned_data.get('renglon'),
+                        'hoja': hoja,
+                        'renglon': renglon,
                     },
                 )
             else:
@@ -117,6 +163,14 @@ def movimiento_caja_form(request, pk=None):
             else:
                 MovimientoCajaConcepto.objects.filter(movimiento_caja=nuevo).delete()
 
+            numero = form_rel.cleaned_data.get('numero')
+            if numero is not None:
+                MovimientoCajaNumero.objects.update_or_create(
+                    movimiento_caja=nuevo, defaults={'numero': numero},
+                )
+            else:
+                MovimientoCajaNumero.objects.filter(movimiento_caja=nuevo).delete()
+
             cuenta_bancaria = form_rel.cleaned_data.get('cuenta_bancaria_entidad')
             if cuenta_bancaria:
                 numero_destino = (cuenta_bancaria.numero or cuenta_bancaria.cbu or '')[:30]
@@ -127,9 +181,31 @@ def movimiento_caja_form(request, pk=None):
                 MovimientoCajaBancoCuentaEntidad.objects.filter(id=nuevo).delete()
 
             messages.success(request, f'Movimiento de caja {nuevo.id} guardado correctamente.')
+
+            if es_alta:
+                proximo_renglon, proxima_hoja = _proximo_renglon_y_hoja(renglon, hoja)
+                proximo_numero = (numero + 1) if numero is not None else None
+                request.session['movimiento_caja_prefill'] = {
+                    'caja': nuevo.caja_id,
+                    'emision': nuevo.emision.isoformat() if nuevo.emision else None,
+                    'libro': libro.id if libro else None,
+                    'hoja': proxima_hoja,
+                    'renglon': proximo_renglon,
+                    'numero': proximo_numero,
+                }
+                return redirect('movimientos_caja:movimiento_caja_alta')
+
             return redirect('movimientos_caja:movimiento_caja_modificar')
     else:
-        form = MovimientoCajaForm(instance=movimiento)
+        prefill = request.session.pop('movimiento_caja_prefill', None) if es_alta else None
+
+        initial_form = {}
+        if prefill:
+            if prefill.get('caja') is not None:
+                initial_form['caja'] = prefill['caja']
+            if prefill.get('emision') is not None:
+                initial_form['emision'] = prefill['emision']
+        form = MovimientoCajaForm(instance=movimiento, initial=initial_form)
 
         initial_rel = {}
         if movimiento:
@@ -144,6 +220,8 @@ def movimiento_caja_form(request, pk=None):
                 initial_rel['diferido'] = diferido_obj.diferido
             if concepto_obj:
                 initial_rel['concepto_tipo'] = concepto_obj.concepto_tipo_id
+            if movimiento.numero is not None:
+                initial_rel['numero'] = movimiento.numero
             if cuenta_obj and cuenta_obj.numero_cuenta_entidad_destino and movimiento.receptor_id:
                 # numero_cuenta_entidad_destino es un texto libre (no una FK):
                 # tratamos de reencontrar, a partir de él, la cuenta bancaria
@@ -154,6 +232,15 @@ def movimiento_caja_form(request, pk=None):
                 ).first()
                 if cuenta_match:
                     initial_rel['cuenta_bancaria_entidad'] = cuenta_match.id
+        elif prefill:
+            if prefill.get('libro') is not None:
+                initial_rel['libro'] = prefill['libro']
+            if prefill.get('hoja') is not None:
+                initial_rel['hoja'] = prefill['hoja']
+            if prefill.get('renglon') is not None:
+                initial_rel['renglon'] = prefill['renglon']
+            if prefill.get('numero') is not None:
+                initial_rel['numero'] = prefill['numero']
 
         form_rel = MovimientoCajaRelacionadosForm(initial=initial_rel, receptor_id=receptor_id)
 

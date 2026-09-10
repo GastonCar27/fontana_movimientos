@@ -44,10 +44,18 @@ class MovimientoCajaForm(forms.ModelForm):
             actuales = campo.widget.attrs.get('class', '')
             campo.widget.attrs['class'] = f'{actuales} {extra}'.strip()
 
+    def clean(self):
+        cleaned_data = super().clean()
+        emision = cleaned_data.get('emision')
+        efectivizacion = cleaned_data.get('efectivizacion')
+        if emision and efectivizacion and efectivizacion < emision:
+            self.add_error('efectivizacion', 'La efectivización no puede ser anterior a la fecha de emisión.')
+        return cleaned_data
+
 
 class MovimientoCajaRelacionadosForm(forms.Form):
     """Datos de las tablas relacionadas con un Movimiento de Caja (libro,
-    hoja, renglón, fecha de diferido, concepto y cuenta bancaria del
+    hoja, renglón, número, fecha de diferido, concepto y cuenta bancaria del
     receptor), para completarlos en la misma pantalla de Alta/Modificación
     sin tener que pasar por el admin. Todos los campos son opcionales: si se
     dejan vacíos, no se guarda (o se borra, si ya existía) el registro
@@ -69,6 +77,10 @@ class MovimientoCajaRelacionadosForm(forms.Form):
     )
     renglon = forms.IntegerField(
         required=False, label='Renglón',
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+    numero = forms.IntegerField(
+        required=False, label='Número',
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
     )
     diferido = forms.DateField(
