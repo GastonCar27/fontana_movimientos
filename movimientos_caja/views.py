@@ -307,6 +307,7 @@ def movimiento_caja_listado(request):
     q_id = request.GET.get('id', '').strip()
     q_fecha = request.GET.get('fecha', '').strip()
     q_caja = request.GET.get('caja', '').strip()
+    q_numero = request.GET.get('numero', '').strip()
     q_monto = request.GET.get('monto', '').strip()
 
     if q_receptor:
@@ -327,6 +328,11 @@ def movimiento_caja_listado(request):
         movimientos = movimientos.filter(emision=q_fecha)
     if q_caja.isdigit():
         movimientos = movimientos.filter(caja_id=int(q_caja))
+    if q_numero:
+        if q_numero.isdigit():
+            movimientos = movimientos.filter(rel_numero__numero=int(q_numero))
+        else:
+            movimientos = movimientos.none()
     if q_monto:
         try:
             monto_valor = Decimal(q_monto.replace('.', '').replace(',', '.')) if ',' in q_monto else Decimal(q_monto)
@@ -353,6 +359,7 @@ def movimiento_caja_listado(request):
         'q_id': q_id,
         'q_fecha': q_fecha,
         'q_caja': q_caja,
+        'q_numero': q_numero,
         'q_monto': q_monto,
     })
 

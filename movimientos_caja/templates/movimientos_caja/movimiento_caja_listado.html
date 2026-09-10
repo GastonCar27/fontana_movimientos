@@ -20,6 +20,10 @@
             <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
         </div>
         <div class="col-auto">
+            <label for="id_numero" class="mb-1 small text-muted">Número</label>
+            <input type="text" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}" placeholder="Número de movimiento" inputmode="numeric">
+        </div>
+        <div class="col-auto">
             <label for="id_monto" class="mb-1 small text-muted">Monto</label>
             <input type="text" id="id_monto" name="monto" class="form-control form-control-sm" value="{{ q_monto }}" placeholder="Ej: 1500,50" inputmode="decimal">
         </div>
