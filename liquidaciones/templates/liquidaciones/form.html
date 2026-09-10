@@ -70,6 +70,16 @@
     background: #dc3545;
     color: #fff;
 }
+/* Botón de guardar siempre visible: fijo abajo a la derecha, sin depender
+   del scroll ni del zoom del navegador (ver reporte de "el botón
+   desapareció" cuando la ventana no tenía altura suficiente). */
+.btn-guardar-liquidacion {
+    position: fixed;
+    right: 24px;
+    bottom: 20px;
+    z-index: 1050;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
 </style>
 
 {% if entidad %}
@@ -250,7 +260,7 @@
         Diferencia: <span id="total-diferencia">0,00</span>
     </div>
 
-    <button type="submit" style="margin-top:15px;">Guardar liquidación</button>
+    <button type="submit" class="btn btn-primary btn-guardar-liquidacion" style="margin-top:15px;">Guardar liquidación</button>
 </form>
 
 <!-- Ventana modal de confirmación cuando debe y haber no coinciden -->
