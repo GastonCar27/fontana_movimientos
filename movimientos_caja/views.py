@@ -298,7 +298,7 @@ def movimiento_caja_listado(request):
     liquidado y con qué id, sin pegarle a la base una vez por fila.
     """
     movimientos = (
-        MovimientoCaja.objects.select_related('caja', 'tipo', 'receptor', 'rel_numero')
+        MovimientoCaja.objects.select_related('caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad')
         .prefetch_related('liquidaciones__liquidacion')
         .order_by('-emision', '-id')
     )
@@ -310,8 +310,13 @@ def movimiento_caja_listado(request):
     q_monto = request.GET.get('monto', '').strip()
 
     if q_receptor:
+        # Busca tanto en el receptor como en el emisor (si tiene uno cargado
+        # explícitamente): antes sólo miraba el receptor, así que un
+        # movimiento donde la entidad buscada es la emisora no aparecía.
         movimientos = movimientos.filter(
             Q(receptor__nombre__icontains=q_receptor) | Q(receptor__cuit__icontains=q_receptor)
+            | Q(emisor_relacion__id_entidad__nombre__icontains=q_receptor)
+            | Q(emisor_relacion__id_entidad__cuit__icontains=q_receptor)
         )
     if q_id:
         if q_id.isdigit():
@@ -337,6 +342,7 @@ def movimiento_caja_listado(request):
         'emision': 'emision',
         'numero': 'rel_numero__numero',
         'monto': 'monto',
+        'emisor': 'emisor_relacion__id_entidad__nombre',
         'receptor': 'receptor__nombre',
         'efectivizacion': 'efectivizacion',
     })

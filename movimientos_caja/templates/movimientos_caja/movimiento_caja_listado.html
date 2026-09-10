@@ -8,7 +8,7 @@
 
     <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
         <div class="col-auto">
-            <label for="id_receptor" class="mb-1 small text-muted">Receptor</label>
+            <label for="id_receptor" class="mb-1 small text-muted">Entidad (receptor o emisor)</label>
             <input type="text" id="id_receptor" name="receptor" class="form-control form-control-sm" value="{{ q_receptor }}" placeholder="Nombre o CUIT">
         </div>
         <div class="col-auto">
@@ -38,6 +38,7 @@
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
                     <th>{% sort_th 'emision' 'Emisión' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
+                    <th>{% sort_th 'emisor' 'Emisor' %}</th>
                     <th>{% sort_th 'receptor' 'Receptor' %}</th>
                     <th class="text-end">{% sort_th 'monto' 'Monto' %}</th>
                     <th>{% sort_th 'efectivizacion' 'Efectivización' %}</th>
@@ -53,6 +54,7 @@
                     <td>{{ m.tipo }}</td>
                     <td>{{ m.emision }}</td>
                     <td>{{ m.numero|default:"-" }}</td>
+                    <td>{{ m.emisor|default:"-" }}</td>
                     <td>{{ m.receptor|default:"-" }}</td>
                     <td class="text-end">{{ m.monto|separador_miles }}</td>
                     <td>{{ m.efectivizacion|default:"-" }}</td>
@@ -72,7 +74,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="10" class="text-center text-muted py-4">No hay movimientos de caja cargados.</td>
+                    <td colspan="11" class="text-center text-muted py-4">No hay movimientos de caja cargados.</td>
                 </tr>
                 {% endfor %}
             </tbody>
