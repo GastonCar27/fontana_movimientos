@@ -654,7 +654,7 @@ def _texto_liquidacion(movimiento):
 
 
 def _filas_movimiento_caja_reporte(movimientos):
-    columnas = ['ID', 'Caja', 'Tipo', 'Número', 'Emisión', 'Emisor', 'Receptor', 'Monto', 'Diferido', 'Efectivización', 'Liquidación']
+    columnas = ['ID', 'Caja', 'Tipo', 'Número', 'Emisión', 'Diferido', 'Emisor', 'Receptor', 'Monto', 'Efectivización', 'Liquidación']
     filas = []
     for m in movimientos:
         try:
@@ -667,18 +667,18 @@ def _filas_movimiento_caja_reporte(movimientos):
             str(m.tipo) if m.tipo else '',
             m.numero if m.numero is not None else '',
             m.emision,
+            diferido,
             str(m.emisor) if m.emisor else '',
             str(m.receptor) if m.receptor else '',
             _numero_o_none(m.monto),
-            diferido,
             m.efectivizacion,
             _texto_liquidacion(m),
         ])
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {7},  # Monto
-        'anchos': [0.5, 1.1, 1.3, 0.8, 0.9, 1.6, 1.8, 1.0, 0.9, 1.0, 1.3],
+        'columnas_numericas': {8},  # Monto
+        'anchos': [0.5, 1.1, 1.3, 0.8, 0.9, 0.9, 1.6, 1.8, 1.0, 1.0, 1.3],
     }
 
 

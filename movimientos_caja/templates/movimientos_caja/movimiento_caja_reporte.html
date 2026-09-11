@@ -118,10 +118,10 @@
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'emision' 'Emisión' %}</th>
+                    <th>{% sort_th 'diferido' 'Diferido' %}</th>
                     <th>{% sort_th 'emisor' 'Emisor' %}</th>
                     <th>{% sort_th 'receptor' 'Receptor' %}</th>
                     <th class="text-end">{% sort_th 'monto' 'Monto' %}</th>
-                    <th>{% sort_th 'diferido' 'Diferido' %}</th>
                     <th>{% sort_th 'efectivizacion' 'Efectivización' %}</th>
                     <th>Liquidación</th>
                 </tr>
@@ -134,10 +134,10 @@
                     <td>{{ m.tipo }}</td>
                     <td>{{ m.numero|default:"-" }}</td>
                     <td>{{ m.emision|default:"-" }}</td>
+                    <td>{{ m.movimientocajadiferido.diferido|default:"-" }}</td>
                     <td>{{ m.emisor|default:"-" }}</td>
                     <td>{{ m.receptor|default:"-" }}</td>
                     <td class="text-end">{{ m.monto|separador_miles }}</td>
-                    <td>{{ m.movimientocajadiferido.diferido|default:"-" }}</td>
                     <td>
                         {% if m.efectivizacion %}
                             {{ m.efectivizacion }}
@@ -163,9 +163,9 @@
             </tbody>
             <tfoot>
                 <tr class="table-light fw-bold">
-                    <td colspan="7" class="text-end">Total</td>
+                    <td colspan="8" class="text-end">Total</td>
                     <td class="text-end">{{ totales.total_monto|separador_miles }}</td>
-                    <td colspan="3"></td>
+                    <td colspan="2"></td>
                 </tr>
             </tfoot>
         </table>
