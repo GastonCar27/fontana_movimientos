@@ -678,6 +678,7 @@ def _filas_movimiento_caja_reporte(movimientos):
         'columnas': columnas,
         'filas': filas,
         'columnas_numericas': {8},  # Monto
+        'columnas_fecha': {4, 5, 9},  # Emisión, Diferido, Efectivización
         'anchos': [0.5, 1.1, 1.3, 0.8, 0.9, 0.9, 1.6, 1.8, 1.0, 1.0, 1.3],
     }
 
@@ -691,6 +692,7 @@ def _excel_response(nombre_archivo, resultado):
     columnas = resultado['columnas']
     filas = resultado['filas']
     columnas_numericas = resultado.get('columnas_numericas', set())
+    columnas_fecha = resultado.get('columnas_fecha', set())
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -706,6 +708,12 @@ def _excel_response(nombre_archivo, resultado):
         for celda in ws[letra_columna]:
             if celda.row > fila_encabezado:
                 celda.number_format = '#,##0.00'
+
+    for indice in columnas_fecha:
+        letra_columna = get_column_letter(indice + 1)
+        for celda in ws[letra_columna]:
+            if celda.row > fila_encabezado:
+                celda.number_format = 'DD-MM-YYYY'
 
     for columna in ws.columns:
         letra = columna[0].column_letter
@@ -732,6 +740,7 @@ def _pdf_response(nombre_archivo, titulo, resultado):
     columnas = resultado['columnas']
     filas = resultado['filas']
     columnas_numericas = resultado.get('columnas_numericas', set())
+    columnas_fecha = resultado.get('columnas_fecha', set())
     anchos_relativos = resultado.get('anchos') or [1] * len(columnas)
 
     response = HttpResponse(content_type='application/pdf')
@@ -757,6 +766,8 @@ def _pdf_response(nombre_archivo, titulo, resultado):
             return ''
         if indice in columnas_numericas:
             return separador_miles(valor)
+        if indice in columnas_fecha and hasattr(valor, 'strftime'):
+            return valor.strftime('%d-%m-%Y')
         return str(valor)
 
     fila_encabezado = [Paragraph(str(col), estilo_encabezado) for col in columnas]
