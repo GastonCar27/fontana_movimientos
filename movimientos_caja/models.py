@@ -39,6 +39,13 @@ class LibroCaja(models.Model):
     caja = models.ForeignKey(Caja,on_delete=models.PROTECT, db_column='id_bancocuenta', blank=False, null=False)
     nombre = models.CharField(max_length=45, blank=True, null=True)
     saldo_inicial = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    # Fecha de creación del libro: se completa sola a partir de ahora
+    # (auto_now_add) para cualquier libro nuevo. Para los libros que ya
+    # existían al agregar este campo, se completó una única vez con un
+    # comando de gestión (backfill_fecha_creacion_libros) usando la fecha
+    # de emisión del movimiento más viejo cargado en cada uno; puede quedar
+    # en null si ese libro no tiene ningún movimiento cargado.
+    fecha_creacion = models.DateField(blank=True, null=True, auto_now_add=True)
 
     class Meta:
         managed = False

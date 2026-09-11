@@ -246,6 +246,22 @@ class MovimientoCajaReporteForm(forms.Form):
         return cleaned_data
 
 
+class EstadoCajaForm(forms.Form):
+    """Filtro para 'Estado de caja': una fecha de referencia (por defecto
+    hoy) y una o más cajas a consultar/exportar."""
+    fecha = forms.DateField(
+        required=False,
+        label='Fecha',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    cajas = forms.ModelMultipleChoiceField(
+        queryset=Caja.objects.all().order_by('nombre'),
+        required=False,
+        label='Cajas',
+        widget=forms.SelectMultiple(attrs={'class': 'form-select form-select-sm', 'size': 8}),
+    )
+
+
 class RankingEntidadesForm(forms.Form):
     """Filtro (sólo por fecha de emisión) para el ranking de entidades por monto total."""
     fecha_desde = forms.DateField(

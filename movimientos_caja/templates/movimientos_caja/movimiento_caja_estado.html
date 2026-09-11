@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos_caja/menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Estado de caja</h4>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-success" href="{% url 'movimientos_caja:movimiento_caja_estado_excel' %}?{{ request.GET.urlencode }}">
+                Exportar a Excel
+            </a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_estado_pdf' %}?{{ request.GET.urlencode }}">
+                Exportar a PDF
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha.label_tag }}
+                    {{ form.fecha }}
+                </div>
+                <div class="col-12 col-md-6 col-lg-4">
+                    {{ form.cajas.label_tag }}
+                    {{ form.cajas }}
+                    <div class="form-text">Mantené Ctrl (o Cmd) apretado para elegir más de una.</div>
+                </div>
+                <div class="col-12 col-lg-2">
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Calcular</button>
+                </div>
+
+                {% if form.non_field_errors %}
+                <div class="col-12">
+                    {% for error in form.non_field_errors %}
+                    <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {% if sin_seleccion %}
+    <div class="alert alert-warning">Seleccioná una o más cajas para calcular el saldo.</div>
+    {% endif %}
+
+    {% if calculado %}
+    <div class="row g-3 mb-4">
+        {% for r in resultados %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h6 class="card-title">{{ r.caja }}</h6>
+                    {% if r.libro %}
+                    <div class="text-muted small mb-1">Libro: {{ r.libro.nombre|default:r.libro.id }}</div>
+                    <div class="text-muted small mb-2">Saldo inicial del libro: {{ r.saldo_inicial|separador_miles }}</div>
+                    <div class="fs-4 fw-bold {% if r.saldo_a_fecha < 0 %}text-danger{% else %}text-success{% endif %}">
+                        {{ r.saldo_a_fecha|separador_miles }}
+                    </div>
+                    <div class="text-muted small">Saldo disponible al {{ fecha }}</div>
+                    {% else %}
+                    <div class="alert alert-warning py-2 px-2 mb-0 small">Esta caja no tiene ningún libro cargado; no se puede calcular el saldo.</div>
+                    {% endif %}
+                    {% if r.movimientos_sin_libro %}
+                    <div class="text-warning small mt-2">
+                        ⚠ {{ r.movimientos_sin_libro }} movimiento{{ r.movimientos_sin_libro|pluralize }} de esta caja sin libro asignado
+                        (no {{ r.movimientos_sin_libro|pluralize:"está,están" }} incluido{{ r.movimientos_sin_libro|pluralize }} en este cálculo).
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if resultados|length > 1 %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm border-primary">
+                <div class="card-body">
+                    <h6 class="card-title">Total</h6>
+                    <div class="fs-4 fw-bold {% if total_saldo < 0 %}text-danger{% else %}text-success{% endif %}">
+                        {{ total_saldo|separador_miles }}
+                    </div>
+                    <div class="text-muted small">Suma de las cajas seleccionadas al {{ fecha }}</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if filas_proyeccion %}
+    <h6>Proyección: movimientos diferidos pendientes después del {{ fecha }}</h6>
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>Fecha</th>
+                    {% for r in resultados %}
+                    <th class="text-end" colspan="2">{{ r.caja }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="table-light">
+                    <th></th>
+                    {% for r in resultados %}
+                    <th class="text-end">Movimiento</th>
+                    <th class="text-end">Saldo</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="fw-semibold">
+                    <td>{{ fecha }}</td>
+                    {% for r in resultados %}
+                    <td class="text-end">-</td>
+                    <td class="text-end">{% if r.saldo_a_fecha != None %}{{ r.saldo_a_fecha|separador_miles }}{% else %}-{% endif %}</td>
+                    {% endfor %}
+                </tr>
+                {% for fila in filas_proyeccion %}
+                <tr>
+                    <td>{{ fila.fecha }}</td>
+                    {% for celda in fila.celdas %}
+                    {% if celda %}
+                    <td class="text-end text-danger">-{{ celda.monto_dia|separador_miles }}</td>
+                    <td class="text-end">{{ celda.saldo|separador_miles }}</td>
+                    {% else %}
+                    <td class="text-end text-muted">-</td>
+                    <td class="text-end text-muted">-</td>
+                    {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

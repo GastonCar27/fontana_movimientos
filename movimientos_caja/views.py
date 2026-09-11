@@ -2,10 +2,11 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.db import IntegrityError, transaction
-from django.db.models import Case, Count, DecimalField, IntegerField, ProtectedError, Q, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, IntegerField, ProtectedError, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from entidades.models import Entidad
@@ -15,6 +16,7 @@ from services.permisos import requiere_grupo
 
 from .forms import (
     AsignarLibroMovimientoForm,
+    EstadoCajaForm,
     MovimientoCajaForm,
     MovimientoCajaRelacionadosForm,
     MovimientoCajaReporteForm,
@@ -919,3 +921,203 @@ def movimiento_caja_ranking_entidades_pdf(request):
     ranking, _total_general = _calcular_ranking(movimientos)
     resultado = _filas_ranking_entidades(ranking)
     return _pdf_response('ranking_entidades', 'Ranking de entidades por monto', resultado)
+
+
+# ---------------------------------------------------------------------------
+# Estado de caja: saldo disponible de una o más cajas a una fecha elegida,
+# calculado a partir del saldo inicial del último libro de cada una.
+# ---------------------------------------------------------------------------
+
+def _ultimo_libro_de_caja(caja):
+    """El libro 'vigente' de una caja: el de fecha_creacion más reciente.
+    Los libros que todavía no tienen fecha_creacion cargada (pendientes del
+    comando de gestión backfill_fecha_creacion_libros) se ordenan al final,
+    y se usa el id como desempate."""
+    return (
+        LibroCaja.objects.filter(caja=caja)
+        .order_by(F('fecha_creacion').desc(nulls_last=True), '-id')
+        .first()
+    )
+
+
+def _movimientos_firmes_de_libro(libro, fecha):
+    """Movimientos cargados en ESE libro que ya impactan el saldo a la fecha
+    dada: los que no tienen diferido (se consideran siempre firmes) o cuyo
+    diferido ya llegó (diferido <= fecha)."""
+    return MovimientoCaja.objects.filter(asiento_libro__libro=libro).filter(
+        Q(movimientocajadiferido__isnull=True)
+        | Q(movimientocajadiferido__diferido__isnull=True)
+        | Q(movimientocajadiferido__diferido__lte=fecha)
+    )
+
+
+def _calcular_estado_caja(caja, fecha):
+    """Arma el estado de una caja a una fecha dada: último libro, su saldo
+    inicial, el saldo resultante a esa fecha y, para poder proyectar hacia
+    adelante, los movimientos de ese mismo libro que todavía están
+    pendientes (con diferido posterior a la fecha elegida), agrupados por
+    día. Devuelve un dict lista para el template y para armar la
+    exportación."""
+    libro = _ultimo_libro_de_caja(caja)
+    movimientos_sin_libro = MovimientoCaja.objects.filter(caja=caja, asiento_libro__isnull=True).count()
+
+    if libro is None:
+        return {
+            'caja': caja,
+            'libro': None,
+            'saldo_inicial': None,
+            'saldo_a_fecha': None,
+            'movimientos_sin_libro': movimientos_sin_libro,
+            'proyeccion': [],
+        }
+
+    saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
+    total_firme = _movimientos_firmes_de_libro(libro, fecha).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+    saldo_a_fecha = saldo_inicial - total_firme
+
+    pendientes = (
+        MovimientoCaja.objects.filter(asiento_libro__libro=libro, movimientocajadiferido__diferido__gt=fecha)
+        .values('movimientocajadiferido__diferido')
+        .annotate(total_dia=Sum('monto'))
+        .order_by('movimientocajadiferido__diferido')
+    )
+
+    proyeccion = []
+    saldo_corriendo = saldo_a_fecha
+    for fila in pendientes:
+        saldo_corriendo = saldo_corriendo - fila['total_dia']
+        proyeccion.append({
+            'fecha': fila['movimientocajadiferido__diferido'],
+            'monto_dia': fila['total_dia'],
+            'saldo': saldo_corriendo,
+        })
+
+    return {
+        'caja': caja,
+        'libro': libro,
+        'saldo_inicial': saldo_inicial,
+        'saldo_a_fecha': saldo_a_fecha,
+        'movimientos_sin_libro': movimientos_sin_libro,
+        'proyeccion': proyeccion,
+    }
+
+
+def _datos_estado_caja(request):
+    """Lee fecha y cajas de la query string (compartido por la pantalla y
+    las exportaciones) y calcula el estado de cada caja seleccionada.
+    Devuelve (form, fecha, resultados)."""
+    if request.GET:
+        form = EstadoCajaForm(request.GET)
+        if form.is_valid():
+            fecha = form.cleaned_data.get('fecha') or timezone.localdate()
+            cajas_seleccionadas = list(form.cleaned_data.get('cajas') or [])
+        else:
+            fecha = timezone.localdate()
+            cajas_seleccionadas = []
+    else:
+        form = EstadoCajaForm(initial={'fecha': timezone.localdate()})
+        fecha = timezone.localdate()
+        cajas_seleccionadas = []
+
+    resultados = [_calcular_estado_caja(caja, fecha) for caja in cajas_seleccionadas]
+    return form, fecha, resultados
+
+
+def _filas_proyeccion_pantalla(resultados):
+    """Arma las filas de la tabla de proyección para la pantalla: una lista
+    de {'fecha':, 'celdas': [...]}, con una celda (o None, si esa caja no
+    tuvo movimiento ese día) por cada caja seleccionada, en el mismo orden
+    que 'resultados' -- para poder recorrerlas en el template con un simple
+    for anidado, sin necesidad de buscar por fecha ahí."""
+    proyeccion_por_caja = [{p['fecha']: p for p in r['proyeccion']} for r in resultados]
+    fechas_futuras = sorted({p['fecha'] for r in resultados for p in r['proyeccion']})
+
+    filas = []
+    for dia in fechas_futuras:
+        celdas = [proyeccion_por_caja[indice].get(dia) for indice in range(len(resultados))]
+        filas.append({'fecha': dia, 'celdas': celdas})
+    return filas
+
+
+@requiere_grupo('Rankings')
+def movimiento_caja_estado(request):
+    form, fecha, resultados = _datos_estado_caja(request)
+    calculado = bool(request.GET) and form.is_valid() and bool(resultados)
+
+    total_saldo = sum(
+        (r['saldo_a_fecha'] for r in resultados if r['saldo_a_fecha'] is not None), Decimal('0'),
+    )
+
+    return render(request, 'movimientos_caja/movimiento_caja_estado.html', {
+        'form': form,
+        'fecha': fecha,
+        'resultados': resultados,
+        'calculado': calculado,
+        'total_saldo': total_saldo,
+        'sin_seleccion': bool(request.GET) and form.is_valid() and not resultados,
+        'filas_proyeccion': _filas_proyeccion_pantalla(resultados) if calculado else [],
+    })
+
+
+def _tabla_estado_caja(fecha, resultados):
+    """Arma una única tabla (para Excel/PDF) con la fecha compartida en la
+    primera columna y, por cada caja seleccionada, un par de columnas
+    Movimiento/Saldo: una fila con el saldo a la fecha elegida y, después,
+    una fila por cada día posterior que tenga algún movimiento diferido
+    pendiente en alguna de las cajas (parecido a la planilla de referencia,
+    con la fecha compartida y un par Movimiento/Saldo por cuenta)."""
+    columnas = ['Fecha']
+    for r in resultados:
+        nombre = str(r['caja'])
+        columnas.append(f'{nombre} - Movimiento')
+        columnas.append(f'{nombre} - Saldo')
+
+    fila_inicial = [fecha]
+    saldo_corriente = []
+    for r in resultados:
+        fila_inicial.append(None)
+        saldo_a_fecha = r['saldo_a_fecha']
+        fila_inicial.append(_numero_o_none(saldo_a_fecha) if saldo_a_fecha is not None else None)
+        saldo_corriente.append(saldo_a_fecha)
+
+    filas = [fila_inicial]
+
+    proyeccion_por_caja = [{p['fecha']: p for p in r['proyeccion']} for r in resultados]
+    fechas_futuras = sorted({p['fecha'] for r in resultados for p in r['proyeccion']})
+
+    for dia in fechas_futuras:
+        fila = [dia]
+        for indice in range(len(resultados)):
+            entrada = proyeccion_por_caja[indice].get(dia)
+            if entrada:
+                saldo_corriente[indice] = entrada['saldo']
+                fila.append(_numero_o_none(-entrada['monto_dia']))
+                fila.append(_numero_o_none(entrada['saldo']))
+            else:
+                saldo_actual = saldo_corriente[indice]
+                fila.append(None)
+                fila.append(_numero_o_none(saldo_actual) if saldo_actual is not None else None)
+        filas.append(fila)
+
+    columnas_numericas = set(range(1, len(columnas)))
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': columnas_numericas,
+        'columnas_fecha': {0},
+        'anchos': [0.9] + [1.1] * (len(columnas) - 1),
+    }
+
+
+@requiere_grupo('Rankings')
+def movimiento_caja_estado_excel(request):
+    _form, fecha, resultados = _datos_estado_caja(request)
+    resultado = _tabla_estado_caja(fecha, resultados)
+    return _excel_response('estado_de_caja', resultado)
+
+
+@requiere_grupo('Rankings')
+def movimiento_caja_estado_pdf(request):
+    _form, fecha, resultados = _datos_estado_caja(request)
+    resultado = _tabla_estado_caja(fecha, resultados)
+    return _pdf_response('estado_de_caja', 'Estado de caja', resultado)

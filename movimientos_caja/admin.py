@@ -14,7 +14,7 @@ class CajaAdmin(admin.ModelAdmin):
 
 @admin.register(LibroCaja)
 class LibroCajaAdmin(admin.ModelAdmin):
-    list_display = ('id', 'nombre', 'caja', 'saldo_inicial')
+    list_display = ('id', 'nombre', 'caja', 'saldo_inicial', 'fecha_creacion')
     list_filter = ('caja',)
 
 
