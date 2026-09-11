@@ -544,7 +544,7 @@ def _movimientos_reporte_filtrados(request):
     form = MovimientoCajaReporteForm(request.GET or None)
     movimientos = (
         MovimientoCaja.objects.select_related(
-            'caja', 'tipo', 'receptor', 'movimientocajadiferido', 'emisor_relacion__id_entidad',
+            'caja', 'tipo', 'receptor', 'rel_numero', 'movimientocajadiferido', 'emisor_relacion__id_entidad',
         )
         .prefetch_related('liquidaciones__liquidacion')
         .order_by('-emision', '-id')
@@ -612,6 +612,7 @@ def movimiento_caja_reporte(request):
         'id': 'id',
         'caja': 'caja__nombre',
         'tipo': 'tipo__nombre',
+        'numero': 'rel_numero__numero',
         'emision': 'emision',
         'emisor': 'emisor_relacion__id_entidad__nombre',
         'receptor': 'receptor__nombre',
@@ -653,7 +654,7 @@ def _texto_liquidacion(movimiento):
 
 
 def _filas_movimiento_caja_reporte(movimientos):
-    columnas = ['ID', 'Caja', 'Tipo', 'Emisión', 'Emisor', 'Receptor', 'Monto', 'Diferido', 'Efectivización', 'Liquidación']
+    columnas = ['ID', 'Caja', 'Tipo', 'Número', 'Emisión', 'Emisor', 'Receptor', 'Monto', 'Diferido', 'Efectivización', 'Liquidación']
     filas = []
     for m in movimientos:
         try:
@@ -664,6 +665,7 @@ def _filas_movimiento_caja_reporte(movimientos):
             m.id,
             str(m.caja) if m.caja else '',
             str(m.tipo) if m.tipo else '',
+            m.numero if m.numero is not None else '',
             m.emision,
             str(m.emisor) if m.emisor else '',
             str(m.receptor) if m.receptor else '',
@@ -675,8 +677,8 @@ def _filas_movimiento_caja_reporte(movimientos):
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {6},  # Monto
-        'anchos': [0.5, 1.1, 1.3, 0.9, 1.6, 1.8, 1.0, 0.9, 1.0, 1.3],
+        'columnas_numericas': {7},  # Monto
+        'anchos': [0.5, 1.1, 1.3, 0.8, 0.9, 1.6, 1.8, 1.0, 0.9, 1.0, 1.3],
     }
 
 

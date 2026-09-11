@@ -116,6 +116,7 @@
                     <th>{% sort_th 'id' 'ID' %}</th>
                     <th>{% sort_th 'caja' 'Caja' %}</th>
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
+                    <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'emision' 'Emisión' %}</th>
                     <th>{% sort_th 'emisor' 'Emisor' %}</th>
                     <th>{% sort_th 'receptor' 'Receptor' %}</th>
@@ -131,6 +132,7 @@
                     <td>{{ m.id }}</td>
                     <td>{{ m.caja }}</td>
                     <td>{{ m.tipo }}</td>
+                    <td>{{ m.numero|default:"-" }}</td>
                     <td>{{ m.emision|default:"-" }}</td>
                     <td>{{ m.emisor|default:"-" }}</td>
                     <td>{{ m.receptor|default:"-" }}</td>
@@ -155,13 +157,13 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="10" class="text-center text-muted py-4">No hay resultados para los filtros aplicados.</td>
+                    <td colspan="11" class="text-center text-muted py-4">No hay resultados para los filtros aplicados.</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr class="table-light fw-bold">
-                    <td colspan="6" class="text-end">Total</td>
+                    <td colspan="7" class="text-end">Total</td>
                     <td class="text-end">{{ totales.total_monto|separador_miles }}</td>
                     <td colspan="3"></td>
                 </tr>

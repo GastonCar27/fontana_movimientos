@@ -1,0 +1,7 @@
+python manage.py mover_receptor_a_emisor --entidad 168
+
+Solo Lista para reemplazar usar así
+
+python manage.py mover_receptor_a_emisor --entidad 2736 --aplicar
+
+Reemplazar el 168 o el 2736 por el id de la entidad que necesitamos que mueva
