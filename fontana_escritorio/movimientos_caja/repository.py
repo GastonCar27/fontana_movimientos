@@ -342,16 +342,23 @@ def eliminar(movimiento_id):
 #     con proyección de los movimientos con diferido futuro).
 #   - "Calcular por defecto" (calcular_estado_caja_defecto): fórmula
 #     específica para Macro y Nación (saldo inicial del último libro de
-#     ESA caja + "cheques en cartera" propios de ESA caja + un renglón por
-#     cada fecha futura con movimientos propios de esa caja que tengan
-#     diferido -- pedido de Gastón, 2026-09-15: "mismo trato que pagos
-#     futuros"). Además, sólo para Macro, se suma -- fusionada por fecha
-#     si coincide -- la proyección de la caja "Pagos Futuros" (que Gastón
-#     aclaró que siempre se cargan ahí y se pasan al Macro cuando llega el
-#     día de la transferencia). Global = Macro + Nación por fecha, con
-#     forward-fill independiente para cada una (ya no se deja a Nación en
-#     un valor constante, ahora que también puede tener varios renglones).
-#     No incluye "vencidos" (omitido a pedido de Gastón).
+#     ESA caja + TODOS los movimientos ya firmes de ESE libro a la fecha
+#     elegida, igual criterio que "Calcular" genérico + "cheques en
+#     cartera" propios de ESA caja, sin sumarlos dos veces si un cheque en
+#     cartera también cae en el libro -- corregido a pedido de Gastón,
+#     2026-09-15, segunda vuelta del mismo día: "el libro del nación no
+#     está tomando en el calculo del saldo los movimientos anteriores a la
+#     fecha elegida que estan en dicho libro"; antes acá sólo se sumaba la
+#     cartera) + un renglón por cada fecha futura con movimientos propios
+#     de esa caja que tengan diferido -- pedido de Gastón, 2026-09-15:
+#     "mismo trato que pagos futuros"). Además, sólo para Macro, se suma
+#     -- fusionada por fecha si coincide -- la proyección de la caja
+#     "Pagos Futuros" (que Gastón aclaró que siempre se cargan ahí y se
+#     pasan al Macro cuando llega el día de la transferencia). Global =
+#     Macro + Nación por fecha, con forward-fill independiente para cada
+#     una (ya no se deja a Nación en un valor constante, ahora que también
+#     puede tener varios renglones). No incluye "vencidos" (omitido a
+#     pedido de Gastón).
 #
 # Convención de signo (igual que en toda la pantalla): negativo = a favor
 # nuestro, positivo = le debemos al banco; los montos ya vienen cargados
@@ -410,6 +417,24 @@ def _total_firme_de_libro(cur, libro_id, fecha):
         (libro_id, fecha),
     )
     return cur.fetchone()['total'] or Decimal('0')
+
+
+def _movimientos_firmes_de_libro_filas(cur, libro_id, fecha):
+    """Igual que `_total_firme_de_libro`, pero devuelve las filas (id,
+    monto) en vez de la suma -- lo usa `_movimientos_firmes_excluyendo_
+    cartera` para poder excluir por id los que ya se cuentan como
+    'cheques en cartera' sin duplicar el monto."""
+    cur.execute(
+        """
+        SELECT mc.id, mc.monto
+          FROM movimiento_caja mc
+          JOIN bancocuentalibro_movim lm ON lm.id = mc.id
+          LEFT JOIN movimiento_caja_diferido d ON d.id = mc.id
+         WHERE lm.id_libro = %s AND (d.diferido IS NULL OR d.diferido <= %s)
+        """,
+        (libro_id, fecha),
+    )
+    return cur.fetchall()
 
 
 def _pendientes_de_libro(cur, libro_id, fecha):
@@ -530,17 +555,17 @@ def _resolver_caja_o_error(cur, nombre, errores, opcional=False):
     return None
 
 
-def _cheques_en_cartera(cur, caja_id):
-    """Suma de los movimientos de ESA caja puntual (`idBancoCuenta = caja_id`,
-    nunca de otra) que son tipo 'Cheque', concepto 'Cartera', sin diferido y
-    todavía sin efectivizar. El filtro por `caja_id` es el mismo sea cual sea
-    la caja que se pase (Macro o Nación): cada una ve sólo sus propios
-    cheques -- verificado con un test dedicado el 2026-09-15 a raíz de una
-    duda de Gastón sobre si la caja de Nación podía estar mostrando cheques
-    de la de Macro (no era el caso: la consulta ya estaba bien filtrada)."""
+def _cheques_en_cartera_filas(cur, caja_id):
+    """Filas (id, monto) de los movimientos de ESA caja puntual
+    (`idBancoCuenta = caja_id`, nunca de otra) que son tipo 'Cheque',
+    concepto 'Cartera', sin diferido y todavía sin efectivizar -- se
+    expone aparte de `_cheques_en_cartera` para poder reusar los ids
+    exactos (ver `_movimientos_firmes_excluyendo_cartera`, que necesita
+    saber cuáles de los movimientos firmes de un libro ya están contados
+    acá, para no sumarlos dos veces)."""
     cur.execute(
         """
-        SELECT SUM(mc.monto) AS total
+        SELECT mc.id, mc.monto
           FROM movimiento_caja mc
           JOIN bancocuenta_tipomovim t ON t.id = mc.id_tipoMov
           JOIN movimiento_caja_concepto mcc ON mcc.id = mc.id
@@ -554,26 +579,80 @@ def _cheques_en_cartera(cur, caja_id):
         """,
         (caja_id, NOMBRE_TIPO_CHEQUE, NOMBRE_CONCEPTO_CARTERA),
     )
-    return cur.fetchone()['total'] or Decimal('0')
+    return cur.fetchall()
+
+
+def _cheques_en_cartera(cur, caja_id):
+    """Suma de los movimientos de ESA caja puntual (`idBancoCuenta = caja_id`,
+    nunca de otra) que son tipo 'Cheque', concepto 'Cartera', sin diferido y
+    todavía sin efectivizar. El filtro por `caja_id` es el mismo sea cual sea
+    la caja que se pase (Macro o Nación): cada una ve sólo sus propios
+    cheques -- verificado con un test dedicado el 2026-09-15 a raíz de una
+    duda de Gastón sobre si la caja de Nación podía estar mostrando cheques
+    de la de Macro (no era el caso: la consulta ya estaba bien filtrada)."""
+    total = Decimal('0')
+    for fila in _cheques_en_cartera_filas(cur, caja_id):
+        total += fila['monto']
+    return total
+
+
+def _movimientos_firmes_excluyendo_cartera(cur, libro_id, caja_id, fecha):
+    """Suma de los movimientos firmes de ESE libro (mismo criterio que
+    `_total_firme_de_libro`: sin diferido, o con diferido ya llegado) que
+    NO sean además uno de los 'cheques en cartera' de esa caja (ver
+    `_cheques_en_cartera_filas`) -- para poder sumar los dos por separado
+    sin duplicar el monto de los que caen en ambos grupos (todo cheque en
+    cartera no tiene diferido, así que ya cuenta como firme). Se compara
+    por id (no por los mismos criterios de tipo/concepto/efectivización,
+    ni con un NOT armado en SQL) porque `_cheques_en_cartera_filas`
+    filtra por CAJA, no por este libro puntual -- un cheque en cartera
+    puede estar en otro libro, o todavía sin libro asignado, y en esos
+    casos no hay nada que excluir acá (no aparece en la consulta de
+    movimientos firmes del libro de todos modos). Además, resolver la
+    exclusión en Python (en vez de un NOT/`<>` en el WHERE) evita
+    cualquier sorpresa con la lógica de tres valores de SQL cuando alguna
+    columna del JOIN (tipo, concepto) sale NULL -- mismo criterio que se
+    usó del lado Django."""
+    ids_cartera = {fila['id'] for fila in _cheques_en_cartera_filas(cur, caja_id)}
+    total = Decimal('0')
+    for fila in _movimientos_firmes_de_libro_filas(cur, libro_id, fecha):
+        if fila['id'] not in ids_cartera:
+            total += fila['monto']
+    return total
 
 
 def _saldo_base_defecto(cur, caja, fecha):
     """Primer renglón del cálculo 'por defecto' para una caja: saldo
-    inicial del último libro + los cheques en cartera de esa caja, en una
-    fila rotulada 'Cheques en cartera' -- igual que
-    movimientos_caja.views._saldo_base_defecto."""
+    inicial del último libro + TODOS los movimientos ya firmes de ese
+    libro a la fecha elegida (igual que "Calcular" genérico) + los
+    cheques en cartera de esa caja (ver _cheques_en_cartera), sin sumar
+    dos veces los que caen en los dos grupos (ver
+    _movimientos_firmes_excluyendo_cartera) -- igual que
+    movimientos_caja.views._saldo_base_defecto. Corregido el 2026-09-15
+    (segunda vuelta del mismo día): antes sólo se sumaba la cartera y se
+    perdían todos los demás movimientos ya firmes del libro (el reclamo
+    puntual de Gastón: "el libro del nación no está tomando en el
+    calculo del saldo los movimientos anteriores a la fecha elegida que
+    estan en dicho libro")."""
     libro = _ultimo_libro_de_caja(cur, caja['id'])
     if libro is None:
         return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}
 
     saldo_inicial = libro['saldo_inicial'] if libro['saldo_inicial'] is not None else Decimal('0')
+    movimientos_firmes = _movimientos_firmes_excluyendo_cartera(cur, libro['id'], caja['id'], fecha)
     cartera = _cheques_en_cartera(cur, caja['id'])
-    saldo = saldo_inicial + cartera
+    monto_base = movimientos_firmes + cartera
+    saldo = saldo_inicial + monto_base
     return {
         'caja': caja,
         'libro': libro,
         'saldo_inicial': saldo_inicial,
-        'filas': [{'fecha': fecha, 'concepto': 'Cheques en cartera', 'monto': cartera, 'saldo': saldo}],
+        'filas': [{
+            'fecha': fecha,
+            'concepto': 'Movimientos del libro + Cheques en cartera',
+            'monto': monto_base,
+            'saldo': saldo,
+        }],
         'saldo_final': saldo,
     }
 
