@@ -1,17 +1,19 @@
 """
 Pantalla de Movimientos de Caja -- alcance genérico (alta/edición/listado/
-baja), misma lógica que las vistas Django movimiento_caja_form /
-movimiento_caja_listado / movimiento_caja_eliminar, pero en Tkinter,
-contra la misma base MySQL.
+baja) más "Estado de caja", misma lógica que las vistas Django
+movimiento_caja_form / movimiento_caja_listado / movimiento_caja_eliminar /
+movimiento_caja_estado, pero en Tkinter, contra la misma base MySQL.
 
-No incluye todavía (ver README.md) la cuenta bancaria del receptor ni los
-reportes/rankings/exportaciones/"Estado de caja".
+No incluye todavía (ver README.md) la cuenta bancaria del receptor ni
+movimiento_caja_reporte/movimiento_caja_ranking_entidades.
 """
+import datetime
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 import pymysql
 
+import reportes
 from movimientos_caja import repository
 from entidades import repository as entidades_repository
 
@@ -68,9 +70,10 @@ class MovimientosCajaFrame(ttk.Frame):
         acciones.pack(fill='x', pady=(8, 0))
         ttk.Button(acciones, text='Editar', command=self.abrir_edicion).pack(side='left')
         ttk.Button(acciones, text='Eliminar', command=self.eliminar).pack(side='left', padx=(8, 0))
+        ttk.Button(acciones, text='Estado de caja', command=self.abrir_estado_caja).pack(side='left', padx=(8, 0))
         ttk.Label(
             acciones,
-            text='(No incluye todavía cuenta bancaria del receptor ni reportes/rankings -- ver README)',
+            text='(No incluye todavía cuenta bancaria del receptor ni movimiento_caja_reporte/ranking -- ver README)',
             foreground='#666',
         ).pack(side='left', padx=(16, 0))
 
@@ -142,6 +145,9 @@ class MovimientosCajaFrame(ttk.Frame):
             return
         messagebox.showinfo('Movimientos de Caja', f'El movimiento {movimiento_id} se eliminó correctamente.')
         self.refrescar()
+
+    def abrir_estado_caja(self):
+        VentanaEstadoCaja(self)
 
 
 class FormularioMovimientoCaja(tk.Toplevel):
@@ -451,4 +457,233 @@ class FormularioMovimientoCaja(tk.Toplevel):
         self.entry_numero.delete(0, 'end')
         if proximo_numero is not None:
             self.entry_numero.insert(0, str(proximo_numero))
+        # Caja, emisión y libro quedan igual que estaban (no se tocan).
+
+
+class VentanaEstadoCaja(tk.Toplevel):
+    """Estado de caja -- mismo alcance que movimientos_caja/movimiento_
+    caja_estado.html del lado Django: "Calcular" (saldo de una o más cajas
+    elegidas a una fecha, con proyección de diferidos futuros) y "Calcular
+    por defecto" (fórmula fija para Macro/Nación/Global, no hace falta
+    elegir cajas). Con exportación a Excel y PDF de lo último calculado.
+    No incluye "vencidos" (omitido a pedido de Gastón, igual que en
+    Django)."""
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title('Estado de caja')
+        self.geometry('920x650')
+
+        self._modo = None  # 'normal' o 'defecto', según lo último calculado
+        self._resultados_normal = []
+        self._fecha_normal = None  # fecha con la que se calcularon _resultados_normal (puede
+        # diferir de lo que haya ahora en self.entry_fecha si el usuario la cambió sin volver
+        # a apretar "Calcular")
+        self._datos_defecto = None
+
+        try:
+            self.cajas = repository.listar_cajas()
+        except Exception:  # noqa: BLE001
+            self.cajas = []
+
+        contenedor = ttk.Frame(self, padding=10)
+        contenedor.pack(fill='both', expand=True)
+
+        fila_filtros = ttk.Frame(contenedor)
+        fila_filtros.pack(fill='x', pady=(0, 8))
+        ttk.Label(fila_filtros, text='Fecha (AAAA-MM-DD):').pack(side='left')
+        self.entry_fecha = ttk.Entry(fila_filtros, width=12)
+        self.entry_fecha.insert(0, datetime.date.today().isoformat())
+        self.entry_fecha.pack(side='left', padx=(4, 12))
+        ttk.Button(fila_filtros, text='Calcular', command=self.calcular_normal).pack(side='left')
+        ttk.Button(
+            fila_filtros, text='Calcular por defecto', command=self.calcular_defecto,
+        ).pack(side='left', padx=(8, 0))
+        ttk.Label(
+            fila_filtros, text='(No hace falta elegir cajas para "Calcular por defecto")', foreground='#666',
+        ).pack(side='left', padx=(12, 0))
+
+        cuerpo = ttk.Frame(contenedor)
+        cuerpo.pack(fill='both', expand=True)
+
+        panel_cajas = ttk.Frame(cuerpo)
+        panel_cajas.pack(side='left', fill='y', padx=(0, 10))
+        ttk.Label(panel_cajas, text='Cajas (para "Calcular"):').pack(anchor='w')
+        self.listbox_cajas = tk.Listbox(
+            panel_cajas, selectmode='multiple', width=28, height=16, exportselection=False,
+        )
+        for c in self.cajas:
+            self.listbox_cajas.insert('end', f"{c['id']} - {c['nombre']}")
+        self.listbox_cajas.pack(fill='y', expand=True)
+
+        panel_resultado = ttk.Frame(cuerpo)
+        panel_resultado.pack(side='left', fill='both', expand=True)
+
+        self.label_errores = ttk.Label(
+            panel_resultado, text='', foreground='#b45309', wraplength=580, justify='left',
+        )
+        self.label_errores.pack(fill='x', anchor='w')
+
+        self.frame_resumen_defecto = ttk.Frame(panel_resultado)
+        self.label_resumen_macro = ttk.Label(self.frame_resumen_defecto, text='Macro: -')
+        self.label_resumen_macro.pack(anchor='w')
+        self.label_resumen_nacion = ttk.Label(self.frame_resumen_defecto, text='Nación: -')
+        self.label_resumen_nacion.pack(anchor='w')
+        self.label_resumen_global = ttk.Label(
+            self.frame_resumen_defecto, text='Global: -', font=('TkDefaultFont', 10, 'bold'),
+        )
+        self.label_resumen_global.pack(anchor='w')
+
+        self.tree = ttk.Treeview(panel_resultado, columns=(), show='headings')
+        self.tree.pack(fill='both', expand=True, pady=(8, 0))
+
+        pie = ttk.Frame(panel_resultado)
+        pie.pack(fill='x', pady=(8, 0))
+        ttk.Button(pie, text='Exportar a Excel', command=self.exportar_excel).pack(side='right')
+        ttk.Button(pie, text='Exportar a PDF', command=self.exportar_pdf).pack(side='right', padx=(0, 8))
+        ttk.Label(
+            pie,
+            text='Negativo: a favor nuestro · positivo: le debemos al banco. No incluye "vencidos" por ahora.',
+            foreground='#666',
+        ).pack(side='left')
+
+        self.transient(master)
+
+    def _cajas_elegidas(self):
+        return [self.cajas[i] for i in self.listbox_cajas.curselection()]
+
+    def _fecha(self):
+        return self.entry_fecha.get().strip() or datetime.date.today().isoformat()
+
+    def _configurar_columnas(self, columnas):
+        self.tree.delete(*self.tree.get_children())
+        ids = [f'c{i}' for i in range(len(columnas))]
+        self.tree['columns'] = ids
+        for id_col, titulo in zip(ids, columnas):
+            self.tree.heading(id_col, text=titulo)
+            self.tree.column(id_col, width=140 if id_col != 'c0' else 90, anchor='w')
+
+    def _formatear(self, valor):
+        if valor is None:
+            return ''
+        try:
+            return f'{float(valor):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+        except (TypeError, ValueError):
+            return str(valor)
+
+    def _volcar_tabla(self, tabla):
+        self._configurar_columnas(tabla['columnas'])
+        for fila in tabla['filas']:
+            valores = [
+                self._formatear(v) if indice in tabla['columnas_numericas'] else (v if v is not None else '')
+                for indice, v in enumerate(fila)
+            ]
+            self.tree.insert('', 'end', values=valores)
+
+    def calcular_normal(self):
+        cajas = self._cajas_elegidas()
+        if not cajas:
+            messagebox.showinfo('Estado de caja', 'Elegí una o más cajas de la lista para "Calcular".')
+            return
+        fecha = self._fecha()
+        try:
+            resultados = [repository.calcular_estado_caja(c, fecha) for c in cajas]
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error de conexión', f'No se pudo calcular el estado de caja:\n{exc}')
+            return
+
+        self._modo = 'normal'
+        self._resultados_normal = resultados
+        self._fecha_normal = fecha
+        self._datos_defecto = None
+        self.frame_resumen_defecto.pack_forget()
+
+        avisos = [
+            f"{r['caja']['nombre']}: no tiene ningún libro cargado, no se puede calcular el saldo."
+            for r in resultados if r['libro'] is None
+        ]
+        self.label_errores.config(text='\n'.join(avisos))
+
+        self._volcar_tabla(repository.resultado_estado_caja_para_exportar(fecha, resultados))
+
+    def calcular_defecto(self):
+        fecha = self._fecha()
+        try:
+            datos = repository.calcular_estado_caja_defecto(fecha)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error de conexión', f'No se pudo calcular el estado de caja:\n{exc}')
+            return
+
+        self._modo = 'defecto'
+        self._datos_defecto = datos
+        self._resultados_normal = []
+
+        self.label_errores.config(text='\n'.join(datos['errores']))
+        self.frame_resumen_defecto.pack(fill='x', pady=(0, 8))
+
+        macro = datos['macro']
+        nacion = datos['nacion']
+        if macro and macro['libro'] is not None:
+            self.label_resumen_macro.config(
+                text=f"Macro ({macro['caja']['nombre']}): {self._formatear(macro['saldo_final'])}",
+            )
+        else:
+            self.label_resumen_macro.config(text='Macro: no se pudo calcular (revisá la caja "Macro" y su libro).')
+        if nacion and nacion['libro'] is not None:
+            self.label_resumen_nacion.config(
+                text=f"Nación ({nacion['caja']['nombre']}): {self._formatear(nacion['saldo_final'])}",
+            )
+        else:
+            self.label_resumen_nacion.config(text='Nación: no se pudo calcular (revisá la caja "Nación" y su libro).')
+        ultimo = datos['filas_global'][-1] if datos['filas_global'] else None
+        if ultimo and ultimo['saldo_global'] is not None:
+            self.label_resumen_global.config(text=f"Global (Macro + Nación): {self._formatear(ultimo['saldo_global'])}")
+        else:
+            self.label_resumen_global.config(text='Global: -')
+
+        self._volcar_tabla(repository.resultado_estado_caja_defecto_para_exportar(datos))
+
+    def _resultado_actual(self):
+        if self._modo == 'normal' and self._resultados_normal:
+            return repository.resultado_estado_caja_para_exportar(self._fecha_normal, self._resultados_normal)
+        if self._modo == 'defecto' and self._datos_defecto:
+            return repository.resultado_estado_caja_defecto_para_exportar(self._datos_defecto)
+        return None
+
+    def exportar_excel(self):
+        resultado = self._resultado_actual()
+        if resultado is None:
+            messagebox.showinfo('Estado de caja', 'Primero calculá el estado de caja.')
+            return
+        nombre = 'estado_de_caja_por_defecto.xlsx' if self._modo == 'defecto' else 'estado_de_caja.xlsx'
+        ruta = filedialog.asksaveasfilename(
+            defaultextension='.xlsx', filetypes=[('Excel', '*.xlsx')], initialfile=nombre,
+        )
+        if not ruta:
+            return
+        try:
+            reportes.exportar_excel(ruta, resultado)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error al exportar', f'No se pudo generar el Excel:\n{exc}')
+            return
+        messagebox.showinfo('Estado de caja', f'Se guardó el Excel en:\n{ruta}')
+
+    def exportar_pdf(self):
+        resultado = self._resultado_actual()
+        if resultado is None:
+            messagebox.showinfo('Estado de caja', 'Primero calculá el estado de caja.')
+            return
+        nombre = 'estado_de_caja_por_defecto.pdf' if self._modo == 'defecto' else 'estado_de_caja.pdf'
+        titulo = 'Estado de caja por defecto' if self._modo == 'defecto' else 'Estado de caja'
+        ruta = filedialog.asksaveasfilename(
+            defaultextension='.pdf', filetypes=[('PDF', '*.pdf')], initialfile=nombre,
+        )
+        if not ruta:
+            return
+        try:
+            reportes.exportar_pdf(ruta, titulo, resultado)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error al exportar', f'No se pudo generar el PDF:\n{exc}')
+            return
+        messagebox.showinfo('Estado de caja', f'Se guardó el PDF en:\n{ruta}')
         # Caja, emisión y libro quedan igual que estaban (no se tocan).

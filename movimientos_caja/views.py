@@ -1178,8 +1178,17 @@ NOMBRE_TIPO_CHEQUE = 'Cheque'
 NOMBRE_CONCEPTO_CARTERA = 'Cartera'
 
 
+def _cajas_por_prefijo(nombre):
+    """Cajas cuyo nombre empieza con `nombre` -- en producción las cajas
+    'Macro' y 'Nación' están cargadas con la sucursal en el nombre (ej.
+    'Macro - Campo Grande', 'Nación - Oberá'), así que un match exacto
+    (iexact) nunca las encuentra. Se busca por prefijo en su lugar."""
+    return list(Caja.objects.filter(nombre__istartswith=nombre))
+
+
 def _caja_por_nombre(nombre):
-    return Caja.objects.filter(nombre__iexact=nombre).first()
+    candidatos = _cajas_por_prefijo(nombre)
+    return candidatos[0] if len(candidatos) == 1 else None
 
 
 def _cheques_en_cartera(caja):
@@ -1235,20 +1244,30 @@ def _pagos_futuros_pendientes(caja_pagos_futuros, fecha):
     return [{'fecha': f['movimientocajadiferido__diferido'], 'monto': f['total_dia']} for f in filas]
 
 
-def _calcular_estado_caja_defecto(fecha):
-    caja_macro = _caja_por_nombre(NOMBRE_CAJA_MACRO)
-    caja_nacion = _caja_por_nombre(NOMBRE_CAJA_NACION)
-    caja_pagos_futuros = _caja_por_nombre(NOMBRE_CAJA_PAGOS_FUTUROS)
-
-    errores = []
-    if caja_macro is None:
-        errores.append(f'No se encontró ninguna caja llamada "{NOMBRE_CAJA_MACRO}".')
-    if caja_nacion is None:
-        errores.append(f'No se encontró ninguna caja llamada "{NOMBRE_CAJA_NACION}".')
-    if caja_pagos_futuros is None:
+def _resolver_caja_o_error(nombre, errores, opcional=False):
+    """Busca la caja cuyo nombre empieza con `nombre` y agrega a `errores`
+    un mensaje claro si no hay ninguna o si hay más de una (en cuyo caso
+    no se puede elegir sola). `opcional` cambia la redacción del mensaje
+    para el caso de "Pagos Futuros" (no impide calcular Macro/Nación)."""
+    candidatos = _cajas_por_prefijo(nombre)
+    if len(candidatos) == 1:
+        return candidatos[0]
+    if not candidatos:
+        sufijo = ' -- no se van a proyectar pagos futuros.' if opcional else '.'
+        errores.append(f'No se encontró ninguna caja cuyo nombre empiece con "{nombre}"{sufijo}')
+    else:
+        nombres = ', '.join(f'"{c.nombre}"' for c in candidatos)
         errores.append(
-            f'No se encontró ninguna caja llamada "{NOMBRE_CAJA_PAGOS_FUTUROS}" -- no se van a proyectar pagos futuros.'
+            f'Hay más de una caja cuyo nombre empieza con "{nombre}" ({nombres}); no se pudo elegir cuál usar.'
         )
+    return None
+
+
+def _calcular_estado_caja_defecto(fecha):
+    errores = []
+    caja_macro = _resolver_caja_o_error(NOMBRE_CAJA_MACRO, errores)
+    caja_nacion = _resolver_caja_o_error(NOMBRE_CAJA_NACION, errores)
+    caja_pagos_futuros = _resolver_caja_o_error(NOMBRE_CAJA_PAGOS_FUTUROS, errores, opcional=True)
 
     macro = _saldo_base_defecto(caja_macro, fecha) if caja_macro else None
     nacion = _saldo_base_defecto(caja_nacion, fecha) if caja_nacion else None

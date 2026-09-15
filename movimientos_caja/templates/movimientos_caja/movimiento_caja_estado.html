@@ -160,6 +160,7 @@
                 <div class="card-body">
                     <h6 class="card-title">Macro</h6>
                     {% if datos_defecto.macro and datos_defecto.macro.libro %}
+                    <div class="text-muted small mb-1">Caja: {{ datos_defecto.macro.caja.nombre }}</div>
                     <div class="text-muted small mb-1">Libro: {{ datos_defecto.macro.libro.nombre|default:datos_defecto.macro.libro.id }}</div>
                     <div class="text-muted small mb-2">Saldo inicial del libro: {{ datos_defecto.macro.saldo_inicial|separador_miles }}</div>
                     <div class="fs-4 fw-bold {% if datos_defecto.macro.saldo_final < 0 %}text-success{% else %}text-danger{% endif %}">
@@ -177,6 +178,7 @@
                 <div class="card-body">
                     <h6 class="card-title">Nación</h6>
                     {% if datos_defecto.nacion and datos_defecto.nacion.libro %}
+                    <div class="text-muted small mb-1">Caja: {{ datos_defecto.nacion.caja.nombre }}</div>
                     <div class="text-muted small mb-1">Libro: {{ datos_defecto.nacion.libro.nombre|default:datos_defecto.nacion.libro.id }}</div>
                     <div class="text-muted small mb-2">Saldo inicial del libro: {{ datos_defecto.nacion.saldo_inicial|separador_miles }}</div>
                     <div class="fs-4 fw-bold {% if datos_defecto.nacion.saldo_final < 0 %}text-success{% else %}text-danger{% endif %}">

@@ -19,10 +19,12 @@ en el formulario (mismo criterio `update_or_create` / `delete()` que usa
 `movimientos_caja.views.movimiento_caja_form`).
 
 Fuera de alcance por ahora (ver README.md): la cuenta bancaria del
-receptor (`movimiento_caja_banco_cuenta_entidad`) y los reportes/rankings/
-exportaciones (`movimiento_caja_reporte`, `movimiento_caja_ranking_
-entidades`, "Estado de caja").
+receptor (`movimiento_caja_banco_cuenta_entidad`) y `movimiento_caja_
+reporte`/`movimiento_caja_ranking_entidades`. "Estado de caja" (calcular
+normal + "calcular por defecto"), en cambio, sí está: ver más abajo.
 """
+from decimal import Decimal
+
 from db import get_connection
 
 # Mismo tope que RENGLON_MAXIMO_POR_HOJA en movimientos_caja/views.py: al
@@ -328,3 +330,325 @@ def eliminar(movimiento_id):
         raise
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Estado de caja: mismo alcance que movimientos_caja/views.py del lado
+# Django (ver ese archivo, sección "Estado de caja"), calculado a mano por
+# SQL en vez de con el ORM -- dos modos:
+#
+#   - "Calcular" (calcular_estado_caja): saldo del último libro de una o
+#     más cajas elegidas a una fecha (saldo inicial + movimientos firmes,
+#     con proyección de los movimientos con diferido futuro).
+#   - "Calcular por defecto" (calcular_estado_caja_defecto): fórmula
+#     específica para Macro (saldo inicial + "cheques en cartera" +
+#     proyección de "Pagos Futuros") y Nación (saldo inicial + "cheques en
+#     cartera", sin pagos futuros), más un saldo Global = Macro + Nación
+#     por fecha. No incluye "vencidos" (omitido a pedido de Gastón).
+#
+# Convención de signo (igual que en toda la pantalla): negativo = a favor
+# nuestro, positivo = le debemos al banco; los montos ya vienen cargados
+# así, no hace falta invertir nada.
+# ---------------------------------------------------------------------------
+
+NOMBRE_CAJA_MACRO = 'Macro'
+NOMBRE_CAJA_NACION = 'Nación'
+NOMBRE_CAJA_PAGOS_FUTUROS = 'Pagos Futuros'
+NOMBRE_TIPO_CHEQUE = 'Cheque'
+NOMBRE_CONCEPTO_CARTERA = 'Cartera'
+
+
+def _ultimo_libro_de_caja(cur, caja_id):
+    """El libro 'vigente' de una caja: el de fecha_creacion más reciente
+    (los que todavía no tienen fecha_creacion cargada quedan al final, con
+    el id como desempate) -- mismo criterio que
+    movimientos_caja.views._ultimo_libro_de_caja."""
+    cur.execute(
+        """
+        SELECT id, nombre, saldo_inicial, fecha_creacion
+          FROM banco_cuenta_libro
+         WHERE id_bancocuenta = %s
+         ORDER BY (fecha_creacion IS NULL) ASC, fecha_creacion DESC, id DESC
+         LIMIT 1
+        """,
+        (caja_id,),
+    )
+    return cur.fetchone()
+
+
+def _movimientos_sin_libro(cur, caja_id):
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total
+          FROM movimiento_caja mc
+          LEFT JOIN bancocuentalibro_movim lm ON lm.id = mc.id
+         WHERE mc.idBancoCuenta = %s AND lm.id IS NULL
+        """,
+        (caja_id,),
+    )
+    return cur.fetchone()['total']
+
+
+def _total_firme_de_libro(cur, libro_id, fecha):
+    """Suma de los movimientos cargados en ESE libro que ya impactan el
+    saldo a la fecha dada: sin diferido, o con diferido <= fecha."""
+    cur.execute(
+        """
+        SELECT SUM(mc.monto) AS total
+          FROM movimiento_caja mc
+          JOIN bancocuentalibro_movim lm ON lm.id = mc.id
+          LEFT JOIN movimiento_caja_diferido d ON d.id = mc.id
+         WHERE lm.id_libro = %s AND (d.diferido IS NULL OR d.diferido <= %s)
+        """,
+        (libro_id, fecha),
+    )
+    return cur.fetchone()['total'] or Decimal('0')
+
+
+def _pendientes_de_libro(cur, libro_id, fecha):
+    """Movimientos de ESE libro con diferido posterior a la fecha elegida,
+    agrupados por día, para la proyección hacia adelante."""
+    cur.execute(
+        """
+        SELECT d.diferido AS fecha, SUM(mc.monto) AS total_dia
+          FROM movimiento_caja mc
+          JOIN bancocuentalibro_movim lm ON lm.id = mc.id
+          JOIN movimiento_caja_diferido d ON d.id = mc.id
+         WHERE lm.id_libro = %s AND d.diferido > %s
+         GROUP BY d.diferido
+         ORDER BY d.diferido
+        """,
+        (libro_id, fecha),
+    )
+    return cur.fetchall()
+
+
+def calcular_estado_caja(caja, fecha):
+    """caja: dict con al menos 'id' y 'nombre' (una fila de listar_cajas).
+    Devuelve el mismo dict que movimientos_caja.views._calcular_estado_
+    caja: libro, saldo_inicial, saldo_a_fecha y la proyección de
+    movimientos con diferido futuro."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            libro = _ultimo_libro_de_caja(cur, caja['id'])
+            movimientos_sin_libro = _movimientos_sin_libro(cur, caja['id'])
+            if libro is None:
+                return {
+                    'caja': caja, 'libro': None, 'saldo_inicial': None, 'saldo_a_fecha': None,
+                    'movimientos_sin_libro': movimientos_sin_libro, 'proyeccion': [],
+                }
+
+            saldo_inicial = libro['saldo_inicial'] if libro['saldo_inicial'] is not None else Decimal('0')
+            total_firme = _total_firme_de_libro(cur, libro['id'], fecha)
+            saldo_a_fecha = saldo_inicial + total_firme
+
+            proyeccion = []
+            saldo_corriendo = saldo_a_fecha
+            for fila in _pendientes_de_libro(cur, libro['id'], fecha):
+                saldo_corriendo = saldo_corriendo + fila['total_dia']
+                proyeccion.append({'fecha': fila['fecha'], 'monto_dia': fila['total_dia'], 'saldo': saldo_corriendo})
+
+            return {
+                'caja': caja, 'libro': libro, 'saldo_inicial': saldo_inicial, 'saldo_a_fecha': saldo_a_fecha,
+                'movimientos_sin_libro': movimientos_sin_libro, 'proyeccion': proyeccion,
+            }
+    finally:
+        conn.close()
+
+
+def resultado_estado_caja_para_exportar(fecha, resultados):
+    """Arma una única tabla (para reportes.exportar_excel/exportar_pdf) con
+    la fecha compartida en la primera columna y, por cada caja, un par de
+    columnas Movimiento/Saldo -- igual formato que
+    movimientos_caja.views._tabla_estado_caja del lado Django."""
+    columnas = ['Fecha']
+    for r in resultados:
+        nombre = f"{r['caja']['id']} - {r['caja']['nombre']}"
+        columnas.append(f'{nombre} - Movimiento')
+        columnas.append(f'{nombre} - Saldo')
+
+    fila_inicial = [fecha]
+    saldo_corriente = []
+    for r in resultados:
+        fila_inicial.append(None)
+        fila_inicial.append(r['saldo_a_fecha'])
+        saldo_corriente.append(r['saldo_a_fecha'])
+    filas = [fila_inicial]
+
+    proyeccion_por_caja = [{p['fecha']: p for p in r['proyeccion']} for r in resultados]
+    fechas_futuras = sorted({p['fecha'] for r in resultados for p in r['proyeccion']})
+    for dia in fechas_futuras:
+        fila = [dia]
+        for indice in range(len(resultados)):
+            entrada = proyeccion_por_caja[indice].get(dia)
+            if entrada:
+                saldo_corriente[indice] = entrada['saldo']
+                fila.append(entrada['monto_dia'])
+                fila.append(entrada['saldo'])
+            else:
+                fila.append(None)
+                fila.append(saldo_corriente[indice])
+        filas.append(fila)
+
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': set(range(1, len(columnas))),
+        'anchos': [0.9] + [1.1] * (len(columnas) - 1),
+    }
+
+
+def _cajas_por_prefijo(cur, nombre):
+    """Cajas cuyo nombre empieza con `nombre` -- las cajas 'Macro' y
+    'Nación' están cargadas con la sucursal en el nombre (ej. 'Macro -
+    Campo Grande', 'Nación - Oberá'), así que se busca por prefijo, nunca
+    por nombre exacto (mismo fix que se aplicó en Django el 2026-09-15)."""
+    cur.execute('SELECT id, nombre FROM bancocuenta WHERE nombre LIKE %s', (f'{nombre}%',))
+    return cur.fetchall()
+
+
+def _resolver_caja_o_error(cur, nombre, errores, opcional=False):
+    candidatos = _cajas_por_prefijo(cur, nombre)
+    if len(candidatos) == 1:
+        return candidatos[0]
+    if not candidatos:
+        sufijo = ' -- no se van a proyectar pagos futuros.' if opcional else '.'
+        errores.append(f'No se encontró ninguna caja cuyo nombre empiece con "{nombre}"{sufijo}')
+    else:
+        nombres = ', '.join(f'"{c["nombre"]}"' for c in candidatos)
+        errores.append(
+            f'Hay más de una caja cuyo nombre empieza con "{nombre}" ({nombres}); no se pudo elegir cuál usar.'
+        )
+    return None
+
+
+def _cheques_en_cartera(cur, caja_id):
+    """Suma de los movimientos de esa caja que son tipo 'Cheque', concepto
+    'Cartera', sin diferido y todavía sin efectivizar."""
+    cur.execute(
+        """
+        SELECT SUM(mc.monto) AS total
+          FROM movimiento_caja mc
+          JOIN bancocuenta_tipomovim t ON t.id = mc.id_tipoMov
+          JOIN movimiento_caja_concepto mcc ON mcc.id = mc.id
+          JOIN movimiento_caja_concepto_tipo ct ON ct.id = mcc.id_concepto
+          LEFT JOIN movimiento_caja_diferido d ON d.id = mc.id
+         WHERE mc.idBancoCuenta = %s
+           AND LOWER(t.nombre) = LOWER(%s)
+           AND LOWER(ct.nombre) = LOWER(%s)
+           AND mc.efectivizacion IS NULL
+           AND (d.id IS NULL OR d.diferido IS NULL)
+        """,
+        (caja_id, NOMBRE_TIPO_CHEQUE, NOMBRE_CONCEPTO_CARTERA),
+    )
+    return cur.fetchone()['total'] or Decimal('0')
+
+
+def _saldo_base_defecto(cur, caja, fecha):
+    """Primer renglón del cálculo 'por defecto' para una caja: saldo
+    inicial del último libro + los cheques en cartera de esa caja, en una
+    fila rotulada 'Cheques en cartera' -- igual que
+    movimientos_caja.views._saldo_base_defecto."""
+    libro = _ultimo_libro_de_caja(cur, caja['id'])
+    if libro is None:
+        return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}
+
+    saldo_inicial = libro['saldo_inicial'] if libro['saldo_inicial'] is not None else Decimal('0')
+    cartera = _cheques_en_cartera(cur, caja['id'])
+    saldo = saldo_inicial + cartera
+    return {
+        'caja': caja,
+        'libro': libro,
+        'saldo_inicial': saldo_inicial,
+        'filas': [{'fecha': fecha, 'concepto': 'Cheques en cartera', 'monto': cartera, 'saldo': saldo}],
+        'saldo_final': saldo,
+    }
+
+
+def _pagos_futuros_pendientes(cur, caja_pagos_futuros, fecha):
+    """Movimientos de la caja 'Pagos Futuros' con diferido posterior a la
+    elegida, agrupados por día -- los de fecha igual o anterior se ignoran
+    (son errores de carga, no pagos pendientes reales, confirmado por
+    Gastón)."""
+    if caja_pagos_futuros is None:
+        return []
+    cur.execute(
+        """
+        SELECT d.diferido AS fecha, SUM(mc.monto) AS total_dia
+          FROM movimiento_caja mc
+          JOIN movimiento_caja_diferido d ON d.id = mc.id
+         WHERE mc.idBancoCuenta = %s AND d.diferido > %s
+         GROUP BY d.diferido
+         ORDER BY d.diferido
+        """,
+        (caja_pagos_futuros['id'], fecha),
+    )
+    return cur.fetchall()
+
+
+def calcular_estado_caja_defecto(fecha):
+    """Réplica exacta, en SQL a mano, de movimientos_caja.views._calcular_
+    estado_caja_defecto: ver ese archivo para la explicación completa de la
+    fórmula. No incluye "vencidos" (omitido a pedido de Gastón)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            errores = []
+            caja_macro = _resolver_caja_o_error(cur, NOMBRE_CAJA_MACRO, errores)
+            caja_nacion = _resolver_caja_o_error(cur, NOMBRE_CAJA_NACION, errores)
+            caja_pagos_futuros = _resolver_caja_o_error(cur, NOMBRE_CAJA_PAGOS_FUTUROS, errores, opcional=True)
+
+            macro = _saldo_base_defecto(cur, caja_macro, fecha) if caja_macro else None
+            nacion = _saldo_base_defecto(cur, caja_nacion, fecha) if caja_nacion else None
+
+            if macro is not None and macro['libro'] is not None:
+                saldo_corriendo = macro['saldo_final']
+                for pago in _pagos_futuros_pendientes(cur, caja_pagos_futuros, fecha):
+                    saldo_corriendo = saldo_corriendo + pago['total_dia']
+                    macro['filas'].append({
+                        'fecha': pago['fecha'], 'concepto': 'Pagos futuros',
+                        'monto': pago['total_dia'], 'saldo': saldo_corriendo,
+                    })
+                macro['saldo_final'] = saldo_corriendo
+
+            macro_filas_por_fecha = {f['fecha']: f for f in macro['filas']} if macro else {}
+            saldo_nacion_constante = nacion['saldo_final'] if nacion else None
+            fechas = {fecha} | set(macro_filas_por_fecha.keys())
+
+            filas_global = []
+            ultimo_macro = None
+            for f in sorted(fechas):
+                fila_macro = macro_filas_por_fecha.get(f)
+                if fila_macro is not None:
+                    ultimo_macro = fila_macro['saldo']
+                total = (
+                    ultimo_macro + saldo_nacion_constante
+                    if ultimo_macro is not None and saldo_nacion_constante is not None else None
+                )
+                filas_global.append({
+                    'fecha': f,
+                    'macro_concepto': fila_macro['concepto'] if fila_macro else None,
+                    'macro_monto': fila_macro['monto'] if fila_macro else None,
+                    'saldo_macro': ultimo_macro,
+                    'saldo_nacion': saldo_nacion_constante,
+                    'saldo_global': total,
+                })
+
+            return {'fecha': fecha, 'macro': macro, 'nacion': nacion, 'filas_global': filas_global, 'errores': errores}
+    finally:
+        conn.close()
+
+
+def resultado_estado_caja_defecto_para_exportar(datos):
+    columnas = ['Fecha', 'Macro - Concepto', 'Macro - Movimiento', 'Macro - Saldo', 'Nación - Saldo', 'Global - Saldo']
+    filas = [
+        [f['fecha'], f['macro_concepto'], f['macro_monto'], f['saldo_macro'], f['saldo_nacion'], f['saldo_global']]
+        for f in datos['filas_global']
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': {2, 3, 4, 5},
+        'anchos': [0.9, 1.6, 1.1, 1.1, 1.1, 1.1],
+    }

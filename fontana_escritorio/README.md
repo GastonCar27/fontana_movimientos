@@ -29,7 +29,7 @@ python app.py
 | Productos | ✅ Hecho (listado, alta, edición, eliminar con chequeo de uso) |
 | Movimientos | ✅ Hecho (listado/búsqueda, alta, edición, eliminar; recepción y salida canchada de H.V. Yerba Mate con pesaje bruto/tara/descuento y operador INYM; salida genérica; ranking de productores con exportación a Excel/PDF) -- ver "Alcance de Movimientos" más abajo. |
 | Comprobantes | 🟡 Alcance genérico de la CABECERA hecho (listado/búsqueda, alta, edición, eliminar). Todavía NO incluye renglones (`comprobante_renglon`/`comprobante_renglon_detalle`) ni reportes/rankings/exportaciones -- ver "Alcance de Comprobantes" más abajo. |
-| Movimientos de Caja | ✅ Hecho (listado/búsqueda, alta, edición, eliminar; libro/hoja/renglón, número, emisor, diferido y concepto opcionales; al dar de alta la ventana precarga el siguiente para carga rápida en lote). Todavía NO incluye la cuenta bancaria del receptor ni reportes/rankings/exportaciones -- ver "Alcance de Movimientos de Caja" más abajo. |
+| Movimientos de Caja | ✅ Hecho (listado/búsqueda, alta, edición, eliminar; libro/hoja/renglón, número, emisor, diferido y concepto opcionales; al dar de alta la ventana precarga el siguiente para carga rápida en lote; Estado de caja con "Calcular" y "Calcular por defecto", exportable a Excel/PDF). Todavía NO incluye la cuenta bancaria del receptor ni `movimiento_caja_reporte`/`movimiento_caja_ranking_entidades` -- ver "Alcance de Movimientos de Caja" más abajo. |
 | Retenciones | ✅ Hecho (listado agrupado, alta/edición/baja del comprobante completo con sus renglones, catálogos Ret. Impuestos/Regímenes, ranking de entidades con exportación a Excel/PDF). Todavía NO incluye la impresión "Constancia de Retención" -- ver "Alcance de Retenciones" más abajo. |
 | Retenciones INYM | ✅ Hecho: alta/edición/baja de un registro, listado, importador del Excel de INYM (con selector de fecha y sin duplicar) y Ranking de Entidades con exportación a Excel/PDF -- todo en Django y acá al mismo tiempo -- ver "Alcance de Retenciones INYM" más abajo. Pendiente: correr el ALTER TABLE del importador en la base de producción (Gastón lo hace al llevar el resto del cambio). |
 | Liquidaciones | ⬜ Pendiente |
@@ -244,13 +244,63 @@ según venga completo o vacío en el formulario. Por ahora
     específico de la vista Django (no dejar borrar un movimiento ya
     incluido en una Liquidación) todavía no se replicó, mismo motivo que
     en Comprobantes.
+- **Estado de caja** (botón "Estado de caja" en la pestaña, equivalente a
+  `movimientos_caja.views.movimiento_caja_estado` y su fórmula "por
+  defecto" -- ver la sección dedicada más abajo).
 
 Pendiente para una próxima vuelta: la cuenta bancaria del receptor
 (`movimiento_caja_banco_cuenta_entidad`, requiere el catálogo de cuentas
-bancarias por entidad), "Modificar en libro" (asignar/editar libro-hoja-
+bancarias por entidad), y "Modificar en libro" (asignar/editar libro-hoja-
 renglón desde una pantalla aparte, pensada para los movimientos que
-todavía no lo tienen), y los reportes/rankings/exportaciones/"Estado de
-caja".
+todavía no lo tienen). `movimiento_caja_reporte` y `movimiento_caja_
+ranking_entidades` tampoco se portaron todavía.
+
+### Estado de caja (2026-09-15)
+
+Se agregó, **en Django y acá al mismo tiempo**, la pantalla de Estado de
+Caja con dos modos de cálculo (botón "Estado de caja" dentro de
+Movimientos de Caja, que abre una ventana aparte):
+
+- **"Calcular"**: elegís una o más cajas de la lista y una fecha; para
+  cada una se calcula el saldo del último libro cargado (saldo inicial +
+  movimientos firmes hasta esa fecha) más una proyección hacia adelante
+  de los movimientos con fecha de diferido posterior, agrupados por día
+  -- mismo cálculo que `movimientos_caja.views._calcular_estado_caja` del
+  lado Django, portado a SQL a mano acá (`repository.calcular_estado_
+  caja`).
+- **"Calcular por defecto"** (no hace falta elegir ninguna caja): fórmula
+  específica pedida por Gastón --
+  - **Macro**: saldo inicial del último libro + "cheques en cartera"
+    (movimientos tipo "Cheque", concepto "Cartera", sin fecha de diferido
+    y todavía sin efectivizar) en un primer renglón, más la proyección de
+    la caja **"Pagos Futuros"** (se ignora el saldo inicial de esa caja;
+    solo se suman/restan al saldo corriente del Macro sus movimientos con
+    diferido posterior a la fecha elegida -- los que quedan con diferido
+    igual o anterior a la fecha elegida son errores de carga y se
+    ignoran, confirmado por Gastón).
+  - **Nación**: se calcula aparte, con la misma fórmula de "cheques en
+    cartera" que el Macro (sin la proyección de Pagos Futuros, que es
+    exclusiva del Macro).
+  - **Global**: Macro (corriendo) + Nación (constante) por cada fecha que
+    aparece.
+  - No incluye "Vencidos" (se pidió omitirlo por ahora).
+  - Las cajas se buscan **por prefijo del nombre**, no por nombre exacto
+    -- las cajas reales en producción tienen la sucursal en el nombre
+    (ej. "Macro - Campo Grande", "Nación - Oberá"), así que buscar
+    "Macro"/"Nación" a secas no encontraba nada (bug encontrado y
+    corregido el mismo día, primero en Django, y portado acá desde el
+    principio para no repetirlo).
+- Ambos modos se pueden exportar a Excel y PDF desde la misma ventana
+  (usa `reportes.py`, igual que el resto de los reportes).
+- Convención de signo: negativo = a favor nuestro, positivo = le debemos
+  al banco -- los montos ya vienen cargados así, no se invierte nada.
+- Probado con una base SQLite sintética (usando un shim que adapta
+  `repository.py` a SQLite con los mismos parámetros `%s`) cubriendo cada
+  condición del filtro (tipo/concepto correctos e incorrectos,
+  efectivizado, con diferido, pagos futuros pasados/futuros, cajas con
+  sucursal en el nombre) antes de subir nada -- todos los cálculos
+  coincidieron con lo esperado a mano, igual criterio que se usó del lado
+  Django.
 
 ## Alcance de Retenciones
 
