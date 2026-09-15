@@ -1051,21 +1051,27 @@ def _filas_proyeccion_pantalla(resultados):
 
 @requiere_grupo('Rankings')
 def movimiento_caja_estado(request):
+    modo = request.GET.get('modo') or 'normal'
     form, fecha, resultados = _datos_estado_caja(request)
-    calculado = bool(request.GET) and form.is_valid() and bool(resultados)
+    hay_get_valido = bool(request.GET) and form.is_valid()
+    calculado = hay_get_valido and bool(resultados) and modo != 'defecto'
 
     total_saldo = sum(
         (r['saldo_a_fecha'] for r in resultados if r['saldo_a_fecha'] is not None), Decimal('0'),
     )
 
+    datos_defecto = _calcular_estado_caja_defecto(fecha) if hay_get_valido and modo == 'defecto' else None
+
     return render(request, 'movimientos_caja/movimiento_caja_estado.html', {
         'form': form,
         'fecha': fecha,
+        'modo': modo,
         'resultados': resultados,
         'calculado': calculado,
         'total_saldo': total_saldo,
-        'sin_seleccion': bool(request.GET) and form.is_valid() and not resultados,
+        'sin_seleccion': hay_get_valido and not resultados and modo != 'defecto',
         'filas_proyeccion': _filas_proyeccion_pantalla(resultados) if calculado else [],
+        'datos_defecto': datos_defecto,
     })
 
 
@@ -1131,3 +1137,191 @@ def movimiento_caja_estado_pdf(request):
     _form, fecha, resultados = _datos_estado_caja(request)
     resultado = _tabla_estado_caja(fecha, resultados)
     return _pdf_response('estado_de_caja', 'Estado de caja', resultado)
+
+
+# ---------------------------------------------------------------------------
+# "Calcular por defecto" -- agregado a pedido de Gastón (2026-09-15), al
+# lado del "Calcular" genérico de arriba. A diferencia de ése (cualquier
+# caja, cualquier movimiento firme), éste es un cálculo fijo a 3 cajas por
+# NOMBRE -- "Macro", "Nación" y "Pagos Futuros" -- y sólo tiene en cuenta
+# los movimientos tipo "Cheque" / concepto "Cartera":
+#
+#   - Macro: primer renglón = saldo inicial del último libro + los
+#     movimientos de esa caja que sean tipo Cheque, concepto Cartera, SIN
+#     diferido y todavía sin efectivizar ("Cheques en cartera"). Después,
+#     un renglón por cada fecha futura con movimientos pendientes en la
+#     caja "Pagos Futuros" -- que Gastón aclaró que por ahora siempre se
+#     cargan ahí y se pasan al Macro (a su libro correspondiente) cuando
+#     llega el día de la transferencia -- sumando esos montos al saldo
+#     corriente ("Pagos futuros"). Los movimientos de "Pagos Futuros" con
+#     fecha ya pasada respecto a la elegida se ignoran a propósito: según
+#     Gastón son errores de carga (deberían haberse pasado al Macro y no
+#     quedaron ahí), no pagos pendientes reales.
+#   - Nación: mismo primer renglón que Macro (saldo inicial + cheques en
+#     cartera, pero de Nación), sin la proyección de Pagos Futuros -- esa
+#     caja, por ahora, sólo alimenta al Macro. Si Nación no tiene cheques
+#     en cartera en un momento dado, el renglón queda en saldo inicial + 0
+#     (la fórmula es la misma, da igual si el importe es cero).
+#   - Global: Macro + Nación sumados, fecha por fecha (Nación se mantiene
+#     constante en todas las fechas porque no tiene proyección propia en
+#     este cálculo).
+#
+# "Vencidos" (cheques con diferido vencido hace más de 3 meses) quedó
+# afuera de este cálculo por ahora, a pedido explícito de Gastón -- se
+# puede agregar después si hace falta.
+# ---------------------------------------------------------------------------
+
+NOMBRE_CAJA_MACRO = 'Macro'
+NOMBRE_CAJA_NACION = 'Nación'
+NOMBRE_CAJA_PAGOS_FUTUROS = 'Pagos Futuros'
+NOMBRE_TIPO_CHEQUE = 'Cheque'
+NOMBRE_CONCEPTO_CARTERA = 'Cartera'
+
+
+def _caja_por_nombre(nombre):
+    return Caja.objects.filter(nombre__iexact=nombre).first()
+
+
+def _cheques_en_cartera(caja):
+    """Suma de los movimientos de esa caja que son tipo 'Cheque', concepto
+    'Cartera', sin diferido y todavía sin efectivizar -- el estado actual
+    del cheque (no depende de la fecha elegida, que sólo se usa como
+    rótulo de la fila donde se suma este monto)."""
+    return (
+        MovimientoCaja.objects.filter(
+            caja=caja,
+            tipo__nombre__iexact=NOMBRE_TIPO_CHEQUE,
+            rel_concepto__concepto_tipo__nombre__iexact=NOMBRE_CONCEPTO_CARTERA,
+            efectivizacion__isnull=True,
+        )
+        .filter(Q(movimientocajadiferido__isnull=True) | Q(movimientocajadiferido__diferido__isnull=True))
+        .aggregate(total=Sum('monto'))['total']
+    ) or Decimal('0')
+
+
+def _saldo_base_defecto(caja, fecha):
+    """Primer renglón del cálculo 'por defecto' para una caja: saldo
+    inicial del último libro + los cheques en cartera de esa caja (ver
+    _cheques_en_cartera), en una fila rotulada 'Cheques en cartera'."""
+    libro = _ultimo_libro_de_caja(caja)
+    if libro is None:
+        return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}
+
+    saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
+    cartera = _cheques_en_cartera(caja)
+    saldo = saldo_inicial + cartera
+    return {
+        'caja': caja,
+        'libro': libro,
+        'saldo_inicial': saldo_inicial,
+        'filas': [{'fecha': fecha, 'concepto': 'Cheques en cartera', 'monto': cartera, 'saldo': saldo}],
+        'saldo_final': saldo,
+    }
+
+
+def _pagos_futuros_pendientes(caja_pagos_futuros, fecha):
+    """Movimientos de la caja 'Pagos Futuros' con fecha de diferido
+    posterior a la elegida, agrupados por día -- los de fecha igual o
+    anterior se ignoran (ver nota más arriba: son errores de carga, no
+    pagos pendientes reales)."""
+    if caja_pagos_futuros is None:
+        return []
+    filas = (
+        MovimientoCaja.objects.filter(caja=caja_pagos_futuros, movimientocajadiferido__diferido__gt=fecha)
+        .values('movimientocajadiferido__diferido')
+        .annotate(total_dia=Sum('monto'))
+        .order_by('movimientocajadiferido__diferido')
+    )
+    return [{'fecha': f['movimientocajadiferido__diferido'], 'monto': f['total_dia']} for f in filas]
+
+
+def _calcular_estado_caja_defecto(fecha):
+    caja_macro = _caja_por_nombre(NOMBRE_CAJA_MACRO)
+    caja_nacion = _caja_por_nombre(NOMBRE_CAJA_NACION)
+    caja_pagos_futuros = _caja_por_nombre(NOMBRE_CAJA_PAGOS_FUTUROS)
+
+    errores = []
+    if caja_macro is None:
+        errores.append(f'No se encontró ninguna caja llamada "{NOMBRE_CAJA_MACRO}".')
+    if caja_nacion is None:
+        errores.append(f'No se encontró ninguna caja llamada "{NOMBRE_CAJA_NACION}".')
+    if caja_pagos_futuros is None:
+        errores.append(
+            f'No se encontró ninguna caja llamada "{NOMBRE_CAJA_PAGOS_FUTUROS}" -- no se van a proyectar pagos futuros.'
+        )
+
+    macro = _saldo_base_defecto(caja_macro, fecha) if caja_macro else None
+    nacion = _saldo_base_defecto(caja_nacion, fecha) if caja_nacion else None
+
+    if macro is not None and macro['libro'] is not None:
+        saldo_corriendo = macro['saldo_final']
+        for pago in _pagos_futuros_pendientes(caja_pagos_futuros, fecha):
+            saldo_corriendo = saldo_corriendo + pago['monto']
+            macro['filas'].append({
+                'fecha': pago['fecha'], 'concepto': 'Pagos futuros', 'monto': pago['monto'], 'saldo': saldo_corriendo,
+            })
+        macro['saldo_final'] = saldo_corriendo
+
+    macro_filas_por_fecha = {f['fecha']: f for f in macro['filas']} if macro else {}
+    saldo_nacion_constante = nacion['saldo_final'] if nacion else None
+
+    fechas = {fecha} | set(macro_filas_por_fecha.keys())
+
+    filas_global = []
+    ultimo_macro = None
+    for f in sorted(fechas):
+        fila_macro = macro_filas_por_fecha.get(f)
+        if fila_macro is not None:
+            ultimo_macro = fila_macro['saldo']
+        total = (
+            ultimo_macro + saldo_nacion_constante
+            if ultimo_macro is not None and saldo_nacion_constante is not None else None
+        )
+        filas_global.append({
+            'fecha': f,
+            'macro_concepto': fila_macro['concepto'] if fila_macro else None,
+            'macro_monto': fila_macro['monto'] if fila_macro else None,
+            'saldo_macro': ultimo_macro,
+            'saldo_nacion': saldo_nacion_constante,
+            'saldo_global': total,
+        })
+
+    return {'fecha': fecha, 'macro': macro, 'nacion': nacion, 'filas_global': filas_global, 'errores': errores}
+
+
+def _fecha_estado_defecto(request):
+    form = EstadoCajaForm(request.GET or None)
+    if request.GET and form.is_valid():
+        return form.cleaned_data.get('fecha') or timezone.localdate()
+    return timezone.localdate()
+
+
+def _tabla_estado_caja_defecto(datos):
+    columnas = ['Fecha', 'Macro - Concepto', 'Macro - Movimiento', 'Macro - Saldo', 'Nación - Saldo', 'Global - Saldo']
+    filas = [
+        [
+            f['fecha'], f['macro_concepto'],
+            _numero_o_none(f['macro_monto']), _numero_o_none(f['saldo_macro']),
+            _numero_o_none(f['saldo_nacion']), _numero_o_none(f['saldo_global']),
+        ]
+        for f in datos['filas_global']
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': {2, 3, 4, 5},
+        'columnas_fecha': {0},
+        'anchos': [0.9, 1.6, 1.1, 1.1, 1.1, 1.1],
+    }
+
+
+@requiere_grupo('Rankings')
+def movimiento_caja_estado_defecto_excel(request):
+    datos = _calcular_estado_caja_defecto(_fecha_estado_defecto(request))
+    return _excel_response('estado_de_caja_por_defecto', _tabla_estado_caja_defecto(datos))
+
+
+@requiere_grupo('Rankings')
+def movimiento_caja_estado_defecto_pdf(request):
+    datos = _calcular_estado_caja_defecto(_fecha_estado_defecto(request))
+    return _pdf_response('estado_de_caja_por_defecto', 'Estado de caja por defecto', _tabla_estado_caja_defecto(datos))

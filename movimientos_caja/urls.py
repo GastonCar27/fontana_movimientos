@@ -17,6 +17,14 @@ urlpatterns = [
     path('reportes/estado-caja/', views.movimiento_caja_estado, name='movimiento_caja_estado'),
     path('reportes/estado-caja/excel/', views.movimiento_caja_estado_excel, name='movimiento_caja_estado_excel'),
     path('reportes/estado-caja/pdf/', views.movimiento_caja_estado_pdf, name='movimiento_caja_estado_pdf'),
+    path(
+        'reportes/estado-caja/defecto/excel/',
+        views.movimiento_caja_estado_defecto_excel, name='movimiento_caja_estado_defecto_excel',
+    ),
+    path(
+        'reportes/estado-caja/defecto/pdf/',
+        views.movimiento_caja_estado_defecto_pdf, name='movimiento_caja_estado_defecto_pdf',
+    ),
     path('<int:pk>/editar/', views.movimiento_caja_form, name='movimiento_caja_editar'),
     path('<int:pk>/eliminar/', views.movimiento_caja_eliminar, name='movimiento_caja_eliminar'),
     # --- Modificar en libro (asignar/editar libro, hoja y renglón) ---
