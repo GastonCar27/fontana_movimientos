@@ -341,10 +341,17 @@ def eliminar(movimiento_id):
 #     más cajas elegidas a una fecha (saldo inicial + movimientos firmes,
 #     con proyección de los movimientos con diferido futuro).
 #   - "Calcular por defecto" (calcular_estado_caja_defecto): fórmula
-#     específica para Macro (saldo inicial + "cheques en cartera" +
-#     proyección de "Pagos Futuros") y Nación (saldo inicial + "cheques en
-#     cartera", sin pagos futuros), más un saldo Global = Macro + Nación
-#     por fecha. No incluye "vencidos" (omitido a pedido de Gastón).
+#     específica para Macro y Nación (saldo inicial del último libro de
+#     ESA caja + "cheques en cartera" propios de ESA caja + un renglón por
+#     cada fecha futura con movimientos propios de esa caja que tengan
+#     diferido -- pedido de Gastón, 2026-09-15: "mismo trato que pagos
+#     futuros"). Además, sólo para Macro, se suma -- fusionada por fecha
+#     si coincide -- la proyección de la caja "Pagos Futuros" (que Gastón
+#     aclaró que siempre se cargan ahí y se pasan al Macro cuando llega el
+#     día de la transferencia). Global = Macro + Nación por fecha, con
+#     forward-fill independiente para cada una (ya no se deja a Nación en
+#     un valor constante, ahora que también puede tener varios renglones).
+#     No incluye "vencidos" (omitido a pedido de Gastón).
 #
 # Convención de signo (igual que en toda la pantalla): negativo = a favor
 # nuestro, positivo = le debemos al banco; los montos ya vienen cargados
@@ -524,8 +531,13 @@ def _resolver_caja_o_error(cur, nombre, errores, opcional=False):
 
 
 def _cheques_en_cartera(cur, caja_id):
-    """Suma de los movimientos de esa caja que son tipo 'Cheque', concepto
-    'Cartera', sin diferido y todavía sin efectivizar."""
+    """Suma de los movimientos de ESA caja puntual (`idBancoCuenta = caja_id`,
+    nunca de otra) que son tipo 'Cheque', concepto 'Cartera', sin diferido y
+    todavía sin efectivizar. El filtro por `caja_id` es el mismo sea cual sea
+    la caja que se pase (Macro o Nación): cada una ve sólo sus propios
+    cheques -- verificado con un test dedicado el 2026-09-15 a raíz de una
+    duda de Gastón sobre si la caja de Nación podía estar mostrando cheques
+    de la de Macro (no era el caso: la consulta ya estaba bien filtrada)."""
     cur.execute(
         """
         SELECT SUM(mc.monto) AS total
@@ -566,12 +578,19 @@ def _saldo_base_defecto(cur, caja, fecha):
     }
 
 
-def _pagos_futuros_pendientes(cur, caja_pagos_futuros, fecha):
-    """Movimientos de la caja 'Pagos Futuros' con diferido posterior a la
+def _movimientos_diferidos_pendientes(cur, caja, fecha):
+    """Movimientos de ESA caja puntual con fecha de diferido posterior a la
     elegida, agrupados por día -- los de fecha igual o anterior se ignoran
-    (son errores de carga, no pagos pendientes reales, confirmado por
-    Gastón)."""
-    if caja_pagos_futuros is None:
+    (son errores de carga, no movimientos pendientes reales, confirmado
+    por Gastón). Generaliza lo que antes era sólo `_pagos_futuros_
+    pendientes` (que sólo se usaba para la caja 'Pagos Futuros'): ahora se
+    usa también para los propios movimientos diferidos de Macro y de
+    Nación (pedido de Gastón, 2026-09-15: 'para el macro y nación
+    necesito mismo trato que pagos futuros, por fecha de diferidos
+    agregar un renglon de cuando entran esos movimientos'). Sigue
+    filtrando siempre por idBancoCuenta = esa caja puntual, cada caja ve
+    sólo sus propios movimientos."""
+    if caja is None:
         return []
     cur.execute(
         """
@@ -582,15 +601,63 @@ def _pagos_futuros_pendientes(cur, caja_pagos_futuros, fecha):
          GROUP BY d.diferido
          ORDER BY d.diferido
         """,
-        (caja_pagos_futuros['id'], fecha),
+        (caja['id'], fecha),
     )
     return cur.fetchall()
+
+
+# Alias con el nombre anterior, por compatibilidad (era el único nombre que
+# existía hasta el 2026-09-15; ver la nota de arriba).
+_pagos_futuros_pendientes = _movimientos_diferidos_pendientes
+
+ETIQUETA_DIFERIDO_PROPIO = 'Diferido'
+ETIQUETA_DIFERIDO_PAGOS_FUTUROS = 'Pagos futuros'
+
+
+def _agregar_proyeccion_diferido(cur, datos_caja, caja, fecha, caja_pagos_futuros=None):
+    """Agrega, al resultado de `_saldo_base_defecto`, un renglón por cada
+    fecha de diferido futuro con movimientos pendientes -- tanto los
+    propios de esa caja (cheques u otros movimientos con diferido que
+    todavía no llegó, Macro y Nación por igual) como, sólo cuando se pasa
+    `caja_pagos_futuros` (hoy sólo para Macro), los que todavía están en
+    'Pagos Futuros' esperando pasar a esa caja. Si una misma fecha tiene
+    movimientos de las dos fuentes, se suman en un único renglón con las
+    dos etiquetas -- igual que movimientos_caja.views._agregar_proyeccion_
+    diferido del lado Django."""
+    if datos_caja is None or datos_caja['libro'] is None:
+        return
+
+    eventos = {}
+    for evento in _movimientos_diferidos_pendientes(cur, caja, fecha):
+        bucket = eventos.setdefault(evento['fecha'], {'monto': Decimal('0'), 'fuentes': []})
+        bucket['monto'] += evento['total_dia']
+        bucket['fuentes'].append(ETIQUETA_DIFERIDO_PROPIO)
+    if caja_pagos_futuros is not None:
+        for evento in _movimientos_diferidos_pendientes(cur, caja_pagos_futuros, fecha):
+            bucket = eventos.setdefault(evento['fecha'], {'monto': Decimal('0'), 'fuentes': []})
+            bucket['monto'] += evento['total_dia']
+            bucket['fuentes'].append(ETIQUETA_DIFERIDO_PAGOS_FUTUROS)
+
+    saldo_corriendo = datos_caja['saldo_final']
+    for f in sorted(eventos):
+        bucket = eventos[f]
+        saldo_corriendo = saldo_corriendo + bucket['monto']
+        datos_caja['filas'].append({
+            'fecha': f,
+            'concepto': ' + '.join(bucket['fuentes']),
+            'monto': bucket['monto'],
+            'saldo': saldo_corriendo,
+        })
+    datos_caja['saldo_final'] = saldo_corriendo
 
 
 def calcular_estado_caja_defecto(fecha):
     """Réplica exacta, en SQL a mano, de movimientos_caja.views._calcular_
     estado_caja_defecto: ver ese archivo para la explicación completa de la
-    fórmula. No incluye "vencidos" (omitido a pedido de Gastón)."""
+    fórmula (actualizada 2026-09-15: Macro Y Nación proyectan ahora sus
+    propios movimientos con diferido futuro, y el Global hace forward-fill
+    por caja en vez de dejar a Nación en un valor constante). No incluye
+    "vencidos" (omitido a pedido de Gastón)."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -602,36 +669,35 @@ def calcular_estado_caja_defecto(fecha):
             macro = _saldo_base_defecto(cur, caja_macro, fecha) if caja_macro else None
             nacion = _saldo_base_defecto(cur, caja_nacion, fecha) if caja_nacion else None
 
-            if macro is not None and macro['libro'] is not None:
-                saldo_corriendo = macro['saldo_final']
-                for pago in _pagos_futuros_pendientes(cur, caja_pagos_futuros, fecha):
-                    saldo_corriendo = saldo_corriendo + pago['total_dia']
-                    macro['filas'].append({
-                        'fecha': pago['fecha'], 'concepto': 'Pagos futuros',
-                        'monto': pago['total_dia'], 'saldo': saldo_corriendo,
-                    })
-                macro['saldo_final'] = saldo_corriendo
+            _agregar_proyeccion_diferido(cur, macro, caja_macro, fecha, caja_pagos_futuros=caja_pagos_futuros)
+            _agregar_proyeccion_diferido(cur, nacion, caja_nacion, fecha)
 
             macro_filas_por_fecha = {f['fecha']: f for f in macro['filas']} if macro else {}
-            saldo_nacion_constante = nacion['saldo_final'] if nacion else None
-            fechas = {fecha} | set(macro_filas_por_fecha.keys())
+            nacion_filas_por_fecha = {f['fecha']: f for f in nacion['filas']} if nacion else {}
+            fechas = {fecha} | set(macro_filas_por_fecha.keys()) | set(nacion_filas_por_fecha.keys())
 
             filas_global = []
             ultimo_macro = None
+            ultimo_nacion = None
             for f in sorted(fechas):
                 fila_macro = macro_filas_por_fecha.get(f)
+                fila_nacion = nacion_filas_por_fecha.get(f)
                 if fila_macro is not None:
                     ultimo_macro = fila_macro['saldo']
+                if fila_nacion is not None:
+                    ultimo_nacion = fila_nacion['saldo']
                 total = (
-                    ultimo_macro + saldo_nacion_constante
-                    if ultimo_macro is not None and saldo_nacion_constante is not None else None
+                    ultimo_macro + ultimo_nacion
+                    if ultimo_macro is not None and ultimo_nacion is not None else None
                 )
                 filas_global.append({
                     'fecha': f,
                     'macro_concepto': fila_macro['concepto'] if fila_macro else None,
                     'macro_monto': fila_macro['monto'] if fila_macro else None,
+                    'nacion_concepto': fila_nacion['concepto'] if fila_nacion else None,
+                    'nacion_monto': fila_nacion['monto'] if fila_nacion else None,
                     'saldo_macro': ultimo_macro,
-                    'saldo_nacion': saldo_nacion_constante,
+                    'saldo_nacion': ultimo_nacion,
                     'saldo_global': total,
                 })
 
@@ -641,14 +707,20 @@ def calcular_estado_caja_defecto(fecha):
 
 
 def resultado_estado_caja_defecto_para_exportar(datos):
-    columnas = ['Fecha', 'Macro - Concepto', 'Macro - Movimiento', 'Macro - Saldo', 'Nación - Saldo', 'Global - Saldo']
+    columnas = [
+        'Fecha', 'Macro - Concepto', 'Macro - Movimiento', 'Macro - Saldo',
+        'Nación - Concepto', 'Nación - Movimiento', 'Nación - Saldo', 'Global - Saldo',
+    ]
     filas = [
-        [f['fecha'], f['macro_concepto'], f['macro_monto'], f['saldo_macro'], f['saldo_nacion'], f['saldo_global']]
+        [
+            f['fecha'], f['macro_concepto'], f['macro_monto'], f['saldo_macro'],
+            f['nacion_concepto'], f['nacion_monto'], f['saldo_nacion'], f['saldo_global'],
+        ]
         for f in datos['filas_global']
     ]
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {2, 3, 4, 5},
-        'anchos': [0.9, 1.6, 1.1, 1.1, 1.1, 1.1],
+        'columnas_numericas': {2, 3, 5, 6, 7},
+        'anchos': [0.9, 1.4, 1.1, 1.1, 1.4, 1.1, 1.1, 1.1],
     }

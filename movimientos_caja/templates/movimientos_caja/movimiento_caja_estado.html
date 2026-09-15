@@ -166,7 +166,7 @@
                     <div class="fs-4 fw-bold {% if datos_defecto.macro.saldo_final < 0 %}text-success{% else %}text-danger{% endif %}">
                         {{ datos_defecto.macro.saldo_final|separador_miles }}
                     </div>
-                    <div class="text-muted small">Saldo al {{ datos_defecto.fecha }} (cheques en cartera + pagos futuros proyectados)</div>
+                    <div class="text-muted small">Saldo al {{ datos_defecto.fecha }} (cheques en cartera + diferidos propios + pagos futuros proyectados)</div>
                     {% else %}
                     <div class="alert alert-warning py-2 px-2 mb-0 small">No se pudo calcular (revisá que exista la caja "Macro" con un libro cargado).</div>
                     {% endif %}
@@ -184,7 +184,7 @@
                     <div class="fs-4 fw-bold {% if datos_defecto.nacion.saldo_final < 0 %}text-success{% else %}text-danger{% endif %}">
                         {{ datos_defecto.nacion.saldo_final|separador_miles }}
                     </div>
-                    <div class="text-muted small">Saldo al {{ datos_defecto.fecha }} (cheques en cartera)</div>
+                    <div class="text-muted small">Saldo al {{ datos_defecto.fecha }} (cheques en cartera propios + diferidos propios; no incluye los de Macro)</div>
                     {% else %}
                     <div class="alert alert-warning py-2 px-2 mb-0 small">No se pudo calcular (revisá que exista la caja "Nación" con un libro cargado).</div>
                     {% endif %}
@@ -210,7 +210,7 @@
         </div>
     </div>
 
-    <h6>Detalle por fecha (Macro con "Cheques en cartera" y "Pagos futuros"; Nación y Global se acompañan)</h6>
+    <h6>Detalle por fecha (Macro y Nación muestran cada uno "Cheques en cartera" y, por fecha, sus propios diferidos; Macro además suma ahí lo que tenga pendiente "Pagos futuros")</h6>
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle mb-2">
             <thead class="table-light">
@@ -219,6 +219,8 @@
                     <th>Macro - Concepto</th>
                     <th class="text-end">Macro - Movimiento</th>
                     <th class="text-end">Macro - Saldo</th>
+                    <th>Nación - Concepto</th>
+                    <th class="text-end">Nación - Movimiento</th>
                     <th class="text-end">Nación - Saldo</th>
                     <th class="text-end">Global - Saldo</th>
                 </tr>
@@ -230,6 +232,8 @@
                     <td>{{ fila.macro_concepto|default:"-" }}</td>
                     <td class="text-end {% if fila.macro_monto != None %}{% if fila.macro_monto < 0 %}text-danger{% else %}text-success{% endif %}{% endif %}">{% if fila.macro_monto != None %}{{ fila.macro_monto|separador_miles }}{% else %}-{% endif %}</td>
                     <td class="text-end {% if fila.saldo_macro != None %}{% if fila.saldo_macro < 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">{% if fila.saldo_macro != None %}{{ fila.saldo_macro|separador_miles }}{% else %}-{% endif %}</td>
+                    <td>{{ fila.nacion_concepto|default:"-" }}</td>
+                    <td class="text-end {% if fila.nacion_monto != None %}{% if fila.nacion_monto < 0 %}text-danger{% else %}text-success{% endif %}{% endif %}">{% if fila.nacion_monto != None %}{{ fila.nacion_monto|separador_miles }}{% else %}-{% endif %}</td>
                     <td class="text-end {% if fila.saldo_nacion != None %}{% if fila.saldo_nacion < 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">{% if fila.saldo_nacion != None %}{{ fila.saldo_nacion|separador_miles }}{% else %}-{% endif %}</td>
                     <td class="text-end fw-semibold {% if fila.saldo_global != None %}{% if fila.saldo_global < 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">{% if fila.saldo_global != None %}{{ fila.saldo_global|separador_miles }}{% else %}-{% endif %}</td>
                 </tr>

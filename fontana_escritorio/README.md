@@ -32,8 +32,8 @@ python app.py
 | Movimientos de Caja | ✅ Hecho (listado/búsqueda, alta, edición, eliminar; libro/hoja/renglón, número, emisor, diferido y concepto opcionales; al dar de alta la ventana precarga el siguiente para carga rápida en lote; Estado de caja con "Calcular" y "Calcular por defecto", exportable a Excel/PDF). Todavía NO incluye la cuenta bancaria del receptor ni `movimiento_caja_reporte`/`movimiento_caja_ranking_entidades` -- ver "Alcance de Movimientos de Caja" más abajo. |
 | Retenciones | ✅ Hecho (listado agrupado, alta/edición/baja del comprobante completo con sus renglones, catálogos Ret. Impuestos/Regímenes, ranking de entidades con exportación a Excel/PDF). Todavía NO incluye la impresión "Constancia de Retención" -- ver "Alcance de Retenciones" más abajo. |
 | Retenciones INYM | ✅ Hecho: alta/edición/baja de un registro, listado, importador del Excel de INYM (con selector de fecha y sin duplicar) y Ranking de Entidades con exportación a Excel/PDF -- todo en Django y acá al mismo tiempo -- ver "Alcance de Retenciones INYM" más abajo. Pendiente: correr el ALTER TABLE del importador en la base de producción (Gastón lo hace al llevar el resto del cambio). |
-| Liquidaciones | ⬜ Pendiente |
-| Remitos | ⬜ Pendiente |
+| Liquidaciones | 🟡 Alcance genérico hecho (alta/edición/listado/baja de la cabecera con selección de ítems y recálculo automático de debe/haber). Todavía NO incluye "Otros movimientos/comprobantes" de otra entidad, impresión PDF/Excel de una liquidación puntual, ni reportes/rankings -- ver "Alcance de Liquidaciones" más abajo. |
+| Remitos | 🟡 Alcance genérico hecho (cabecera + renglones, con la sincronización automática del Movimiento de producto vinculado, y catálogos simples de Vehículo/Acoplado/Condición de venta). Todavía NO incluye impresión sobre el talonario A4 preimpreso ni reportes/exportaciones -- ver "Alcance de Remitos" más abajo. |
 | Cuenta Corriente de Productos | ⬜ Pendiente |
 | Solicitudes de Compra | ⬜ Pendiente |
 | Empleados | ⬜ Pendiente |
@@ -47,9 +47,9 @@ necesitan los catálogos de Entidades/Productos, que ya están listos):
 2. **Comprobantes** -- alcance genérico de la cabecera hecho; sigue con renglones. Lo usan Liquidaciones y Cuenta Corriente de Productos.
 3. ~~**Movimientos de Caja**~~ -- hecho.
 4. ~~**Retenciones + Retenciones INYM**~~ -- hecho.
-5. **Liquidaciones** -- próximo módulo. Usa Comprobantes, Retenciones, Retenciones INYM y Movimientos de Caja (las 4 tablas `liquidacion_*` referencian a las 4).
-6. **Remitos**
-7. **Cuenta Corriente de Productos**
+5. **Liquidaciones** -- alcance genérico hecho; sigue con "Otros movimientos/comprobantes", impresión e informes. Usa Comprobantes, Retenciones, Retenciones INYM y Movimientos de Caja (las 4 tablas `liquidacion_*` referencian a las 4).
+6. **Remitos** -- alcance genérico hecho; sigue con impresión sobre talonario y reportes.
+7. **Cuenta Corriente de Productos** -- próximo módulo sin empezar.
 8. **Solicitudes de Compra**
 9. **Empleados**
 10. **Tipos**
@@ -83,6 +83,12 @@ fontana_escritorio/
 │   ├── repository.py
 │   └── ui.py
 ├── retenciones_inym/
+│   ├── repository.py
+│   └── ui.py
+├── liquidaciones/
+│   ├── repository.py
+│   └── ui.py
+├── remitos/
 │   ├── repository.py
 │   └── ui.py
 └── reportes.py             # exportar_excel / exportar_pdf, reusable por cualquier módulo
@@ -190,12 +196,12 @@ puede dar de alta, editar y listar comprobantes. Por ahora
     `comprobante_tipo_de_cambio` si tenía, y recién ahí el comprobante. El
     chequeo específico que sí tiene la vista Django (no dejar borrar un
     comprobante ya incluido en una Liquidación) NO se replicó todavía acá
-    -- no se investigó aún el modelo de Liquidaciones (módulo pendiente);
-    mientras tanto, si la base tiene una FOREIGN KEY real desde
-    liquidaciones hacia comprobante, el DELETE la va a rechazar igual y se
-    muestra como "no se puede eliminar" (mismo resultado práctico, mensaje
-    más genérico). Antes de dar por bueno del todo este eliminar conviene
-    revisar el modelo real de Liquidaciones cuando se llegue a ese módulo.
+    -- ahora que Liquidaciones ya tiene su modelo investigado (ver más
+    abajo), queda pendiente sumar ese chequeo acá con el mismo patrón que
+    ya usan Retenciones y Retenciones INYM; mientras tanto, si la base
+    tiene una FOREIGN KEY real desde liquidaciones hacia comprobante, el
+    DELETE la va a rechazar igual y se muestra como "no se puede eliminar"
+    (mismo resultado práctico, mensaje más genérico).
 
 Pendiente para una próxima vuelta: renglones de comprobante (con su
 detalle de cantidad/precio/IVA), tipo de cambio para moneda extranjera, y
@@ -461,19 +467,157 @@ tampoco se usan desde ninguna vista Django (la segunda incluso tiene
 comentarios del propio autor del modelo diciendo que no está claro para
 qué se usa), así que tampoco se replican acá.
 
+## Alcance de Liquidaciones (2026-09-15, parcial a propósito)
+
+Una Liquidación (tabla `liquidacion`) es una cabecera (número, fecha,
+entidad, debe, haber) más una selección libre de ítems de otras 4 tablas
+-- Movimientos de Caja recibidos de esa entidad, Comprobantes emitidos
+por ella, Retenciones y Retenciones INYM de esa entidad -- cada uno
+marcado como "Debe" o "Haber" en una tabla intermedia (`liquidacion_
+movimiento` / `liquidacion_comprobante` / `liquidacion_retencion` /
+`liquidacion_retencion_inym`). El `debe`/`haber` de la cabecera **nunca se
+carga a mano**: se recalcula siempre sumando los ítems vinculados
+(`repository.recalcular_totales`, réplica de `Liquidacion.recalcular_
+totales()` en Django), la única fuente de verdad tanto ahí como acá.
+
+- **Listado** con filtros de entidad (nombre/CUIT), ID y fecha, mostrando
+  número, fecha, entidad, debe, haber y diferencia (debe - haber).
+- **Alta / edición** (misma ventana): se elige la entidad y la fecha, y
+  aparecen 4 pestañas (una por categoría) con los ítems de esa entidad que
+  todavía no están en OTRA liquidación -- en modo edición, los que ya
+  están en ESTA aparecen también, marcados. Doble click en un ítem cicla
+  su "Tipo" entre vacío → Debe → Haber → vacío. Al guardar: si es alta,
+  se calcula el próximo id (`MAX(id)+1`) y el número por defecto es
+  `LIQ-<id>` si no se escribió uno; si es edición, se borran los 4
+  vínculos existentes y se recrean con la selección actual (igual que
+  `liquidacion_form` en Django) -- y siempre se recalculan debe/haber al
+  final.
+  - El monto que se ve por cada Comprobante ya viene convertido: si tiene
+    un registro en `comprobante_tipo_de_cambio` (moneda distinta a pesos),
+    se multiplica por ese tipo de cambio; si el tipo de comprobante
+    contiene "nota de credito" en el nombre, el monto se muestra y se suma
+    en negativo -- mismo criterio que `_monto_item` y `Liquidacion.
+    recalcular_totales()` en Django.
+- **Eliminar**: borra los 4 vínculos y después la cabecera.
+- Probado con una base SQLite sintética (movimiento + comprobante en pesos
+  + comprobante en moneda extranjera con tipo de cambio + nota de crédito
+  + retención + retención INYM, mezclando debe y haber) antes de subir
+  nada: los totales calculados coincidieron con lo esperado a mano, y
+  también se probó que editar una liquidación (sacando un ítem de la
+  selección) libera ese ítem para volver a aparecer como disponible.
+
+Fuera de alcance por ahora, a propósito:
+
+- El apartado **"Otros movimientos/comprobantes"** de Django (agregar a
+  mano, desde un buscador global, un ítem de OTRA entidad a la
+  liquidación -- por ejemplo para aplicar un cheque recibido de un
+  tercero). Por ahora acá sólo se pueden elegir ítems de la MISMA entidad
+  de la liquidación.
+- La **impresión de una liquidación puntual en PDF/Excel**
+  (`liquidaciones/documentos.py` del lado Django, un formato de recibo con
+  membrete, mucho más elaborado que el genérico de `reportes.py`).
+- Los **reportes/rankings** (`liquidacion_reporte`,
+  `liquidacion_ranking_entidades`, "Diferencias").
+- El chequeo de "ya incluido en una Liquidación" que sí tienen Retenciones
+  y Retenciones INYM antes de dejar editar/eliminar **todavía no se sumó
+  a Comprobantes ni a Movimientos de Caja** en esta vuelta (ver
+  "Pendiente" en esas secciones) -- ahora que el modelo de Liquidaciones
+  ya está investigado, es una mejora chica para una próxima vuelta.
+
+## Alcance de Remitos (2026-09-15, parcial a propósito)
+
+Un Remito (tabla `remito`) es el comprobante de traslado de mercadería:
+cabecera (tipo Salida/Entrada, punto de venta, número, fecha, condición
+de venta, valor declarado, transportista, chofer, vehículo, acoplado,
+observaciones) más una lista de renglones (`remito_renglon`: producto,
+detalle adicional, cantidad, unidad de medida, kilogramos enviados y
+kilogramos confirmados en destino). A diferencia de las tablas legadas
+(`entidad`, `comprobante`, ...), `remito` y sus tablas relacionadas son
+tablas NUEVAS creadas por el propio Django (`managed=True`), con `id`
+AUTO_INCREMENT real -- igual que `movimiento`, así que acá tampoco se
+calcula el próximo id a mano.
+
+- **Cabecera** (equivalente a `remitos.views.remito_form` /
+  `remito_listado` / `remito_eliminar`):
+  - De cara al usuario hay un único campo "Cliente / Proveedor"
+    (`contraparte`, igual que `RemitoForm.contraparte` en Django): según
+    el tipo elegido (Salida = Fontana emite, Entrada = Fontana recibe), se
+    arma el emisor/receptor real a partir de esa entidad y de la propia
+    Fontana (id 100) -- exactamente igual que la property `Remito.
+    contraparte` / la lógica de `remito_form`.
+  - Alta y edición de los mismos campos que `RemitoForm` (salvo
+    transportista/chofer, ver "Fuera de alcance" más abajo). Al dar de
+    alta, se sugiere el punto de venta y el próximo número tomando como
+    base el último remito que Fontana emitió (tipo Salida), igual que la
+    vista Django -- es sólo un valor sugerido, se puede cambiar.
+  - Se chequea a mano la unicidad (emisor, punto_venta, número) --
+    `UniqueConstraint` del modelo Django -- porque 'emisor' no es un campo
+    que se edite directo (se arma a partir de tipo + contraparte).
+  - Eliminar: borra primero el Movimiento vinculado a cada renglón (si
+    tiene), después los renglones, y por último la cabecera -- igual que
+    `remito_eliminar` en Django.
+- **Renglones** (ventana "Renglones..." desde el listado, equivalente a
+  `remitos.views.remito_renglon_form` / `remito_renglon_eliminar`):
+  alta/edición/eliminación de cada renglón, con sincronización automática
+  del Movimiento de producto vinculado -- réplica exacta de
+  `remitos.views._sincronizar_movimiento_renglon`: se crea un Movimiento
+  la primera vez que se guarda el renglón (con el peso "definitivo": el
+  confirmado si ya se cargó, si no el enviado) y, si más tarde se
+  completa `kilogramos_confirmados` o cambia el producto del renglón, se
+  actualiza el MISMO movimiento en vez de crear uno nuevo (para no
+  duplicar el saldo del producto). Si cambia el producto del renglón, el
+  `numero` del Movimiento se recalcula para el producto nuevo (correlativo
+  por producto, hay una restricción única `(numero, producto)`). El
+  emisor/receptor del Movimiento se toman directo del emisor/receptor de
+  la cabecera del Remito (ya coinciden exactamente con lo que necesita el
+  Movimiento, sin tener que volver a mirar `tipo`).
+  - Editar la cabecera de un Remito (cambiar tipo/contraparte) también
+    resincroniza el Movimiento de cada uno de sus renglones, para que
+    quede con el emisor/receptor nuevo.
+- **Catálogos simples de Vehículo / Acoplado / Condición de venta**
+  (botón "Catálogos..."): alta + edición con el campo activo/a incluido en
+  el mismo formulario (mismo patrón que `VehiculoForm`/`AcopladoForm`/
+  `CondicionVentaForm` en Django) -- no hay una vista de "eliminar" para
+  estos catálogos ni en la propia web, sólo se los desactiva editando.
+- Probado con una base SQLite sintética (remito de Salida y de Entrada,
+  chequeo de unicidad con mismo pv+número pero distinto emisor, alta de
+  renglón con creación de Movimiento, confirmación de kilogramos sin
+  duplicar el Movimiento, cambio de producto de un renglón con
+  recálculo de numero, eliminar renglón/remito borrando sus Movimientos,
+  catálogos, y filtros del listado) antes de subir nada -- todos los
+  cálculos coincidieron con lo esperado a mano.
+
+Fuera de alcance por ahora, a propósito:
+
+- El catálogo **Observación Estándar** (es sólo un ayuda-memoria de UI en
+  Django -- recupera un texto ya guardado para no volver a tipearlo -- no
+  afecta datos).
+- El vínculo **"acoplados habituales"** de Vehículo (M2M, sólo acota las
+  opciones del buscador de acoplado en la web).
+- La **impresión de un remito sobre el talonario A4 preimpreso**
+  (`remito_imprimir_pdf` en Django, con coordenadas milimétricas
+  calibradas a un papel real -- no tiene sentido portarla sin poder probar
+  contra el papel real) y su exportación a Excel.
+- Los buscadores de **transportista/chofer filtrados por rol de entidad**
+  (`ROL_TRANSPORTISTA`/`ROL_CHOFER` en Django): acá se puede elegir
+  cualquier entidad en esos dos campos, no sólo las que ya tengan ese rol
+  asignado.
+- Los **reportes/listados con exportación a Excel/PDF** de remitos
+  (`remito_reporte`, `remito_reporte_excel`/`_pdf`).
+
 ## Decisiones tomadas
 
 - **Sin login propio**: por ahora esta app no tiene pantalla de usuario/
   contraseña (Django sí la tiene). Si hace falta restringir el acceso por
   usuario igual que en la web, avisar para sumarlo.
 - **IDs de tablas legadas**: `entidad`, `producto_detalle`, `comprobante`,
-  `movimiento_caja`, `retencion`, `retencion_tipo_impuesto` y
-  `retencion_tipo_regimen` no se tratan como autoincrementales -- se
-  calcula `MAX(id)+1` a mano antes de cada alta, igual que hace el propio
-  proyecto Django internamente para estas mismas tablas (para no
-  arriesgarse a chocar con un id ya usado si la columna no fuera
-  realmente AUTO_INCREMENT; en `movimiento_caja` puntualmente esto está
-  en el propio `save()` del modelo Django, no en la vista).
+  `movimiento_caja`, `retencion`, `retencion_tipo_impuesto`,
+  `retencion_tipo_regimen` y `liquidacion` no se tratan como
+  autoincrementales -- se calcula `MAX(id)+1` a mano antes de cada alta,
+  igual que hace el propio proyecto Django internamente para estas mismas
+  tablas (para no arriesgarse a chocar con un id ya usado si la columna no
+  fuera realmente AUTO_INCREMENT; en `movimiento_caja` puntualmente esto
+  está en el propio `save()` del modelo Django, no en la vista).
 - **Baja de Entidad = activo=0**, nunca DELETE (mismo criterio que la
   web). Baja de Producto sí es DELETE real, con chequeo previo de uso
   (mismo criterio que `productos.views.producto_eliminar`), pero ese
@@ -484,7 +628,10 @@ qué se usa), así que tampoco se replican acá.
   `entidad`/`producto_detalle`, el modelo Django lo declara como
   `AutoField` (no como `IntegerField(primary_key=True)`), así que acá el
   alta deja que MySQL asigne el id y lo lee con `cursor.lastrowid`, sin
-  calcular `MAX+1` a mano.
+  calcular `MAX+1` a mano. `remito`, `remito_renglon`, `remito_vehiculo`,
+  `remito_acoplado` y `remito_condicion_venta` son igual: tablas nuevas
+  creadas por Django (`managed=True`), también con `id` autoincremental
+  real.
 - **Eliminar un Movimiento** intenta el `DELETE` directo y muestra un
   aviso si la base lo rechaza (por ejemplo por tener pesaje o datos de
   H.V. de Yerba Mate asociados), en vez de borrar a mano de antemano esas
