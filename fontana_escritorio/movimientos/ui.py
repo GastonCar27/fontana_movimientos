@@ -7,13 +7,14 @@ No incluye (todavía, ver README.md) los flujos especiales de H.V. de Yerba
 Mate, pesaje, salida canchada ni los reportes/rankings/exportaciones.
 """
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 import pymysql
 
 from movimientos import repository
 from entidades import repository as entidades_repository
 from productos import repository as productos_repository
+import reportes
 
 COLUMNAS = ('id', 'fecha', 'numero', 'producto', 'emisor', 'receptor', 'total', 'unidad')
 TITULOS = {
@@ -73,11 +74,12 @@ class MovimientosFrame(ttk.Frame):
         ttk.Button(
             acciones, text='Salida Yerba Canchada', command=self.abrir_salida_canchada,
         ).pack(side='left', padx=(8, 0))
-        ttk.Label(
-            acciones,
-            text='(No incluye todavía los reportes/rankings/exportaciones -- ver README)',
-            foreground='#666',
-        ).pack(side='left', padx=(16, 0))
+        ttk.Button(
+            acciones, text='Salida', command=self.abrir_salida,
+        ).pack(side='left', padx=(8, 0))
+        ttk.Button(
+            acciones, text='Ranking de Productores', command=self.abrir_ranking_productores,
+        ).pack(side='left', padx=(8, 0))
 
     def _fila_seleccionada_id(self):
         seleccion = self.tree.selection()
@@ -113,6 +115,12 @@ class MovimientosFrame(ttk.Frame):
 
     def abrir_salida_canchada(self):
         FormularioSalidaYerbaMateCanchada(self, on_guardado=self.refrescar)
+
+    def abrir_salida(self):
+        FormularioSalida(self, on_guardado=self.refrescar)
+
+    def abrir_ranking_productores(self):
+        VentanaRankingProductores(self)
 
     def abrir_edicion(self):
         movimiento_id = self._fila_seleccionada_id()
@@ -629,3 +637,268 @@ class FormularioSalidaYerbaMateCanchada(tk.Toplevel):
             return
         self.destroy()
         self.on_guardado()
+
+
+class FormularioSalida(tk.Toplevel):
+    """Alta de una Salida genérica, igual que la vista Django
+    movimientos.views.salida / forms.SalidaForm: un movimiento de salida
+    simple con fecha, producto, entidad receptora, N° y total -- sin
+    operadores INYM ni pesaje (eso es Salida Yerba Canchada, aparte). El
+    emisor es siempre la propia empresa (misma entidad "Fontana Secadero",
+    operador INYM id=181, que ya usan Recepción y Salida Canchada) y no se
+    pide en el formulario, igual que en la web. A diferencia de Recepción/
+    Salida Canchada, el total NO se calcula solo -- se carga directo, igual
+    que SalidaForm (no tiene bruto/tara/descuento)."""
+
+    def __init__(self, master, on_guardado):
+        super().__init__(master)
+        self.title('Salida')
+        self.resizable(False, False)
+        self.on_guardado = on_guardado
+
+        try:
+            self.productos = productos_repository.listar('')
+        except Exception:  # noqa: BLE001
+            self.productos = []
+        try:
+            self.entidades = entidades_repository.listar('', incluir_inactivas=True)
+        except Exception:  # noqa: BLE001
+            self.entidades = []
+
+        contenedor = ttk.Frame(self, padding=12)
+        contenedor.pack(fill='both', expand=True)
+
+        ttk.Label(
+            contenedor, text='Emisor: Fontana (Secadero) -- fijo',
+            foreground='#666', justify='left',
+        ).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+
+        fila = 1
+        ttk.Label(contenedor, text='Fecha (AAAA-MM-DD):').grid(row=fila, column=0, sticky='w', pady=3)
+        self.entry_fecha = ttk.Entry(contenedor, width=35)
+        self.entry_fecha.grid(row=fila, column=1, pady=3, padx=(6, 0))
+        fila += 1
+
+        ttk.Label(contenedor, text='N°:').grid(row=fila, column=0, sticky='w', pady=3)
+        self.entry_numero = ttk.Entry(contenedor, width=35)
+        self.entry_numero.grid(row=fila, column=1, pady=3, padx=(6, 0))
+        fila += 1
+
+        ttk.Label(contenedor, text='Producto:').grid(row=fila, column=0, sticky='w', pady=3)
+        nombres_productos = [f"{p['id']} - {p['nombre']}" for p in self.productos]
+        self.combo_producto = ttk.Combobox(contenedor, values=nombres_productos, state='readonly', width=32)
+        self.combo_producto.grid(row=fila, column=1, pady=3, padx=(6, 0))
+        fila += 1
+
+        ttk.Label(contenedor, text='Entidad receptora:').grid(row=fila, column=0, sticky='w', pady=3)
+        nombres_entidades = [f"{e['id']} - {e['nombre']}" for e in self.entidades]
+        self.combo_receptor = ttk.Combobox(contenedor, values=nombres_entidades, state='readonly', width=32)
+        self.combo_receptor.grid(row=fila, column=1, pady=3, padx=(6, 0))
+        fila += 1
+
+        ttk.Label(contenedor, text='Total:').grid(row=fila, column=0, sticky='w', pady=3)
+        self.entry_total = ttk.Entry(contenedor, width=35)
+        self.entry_total.grid(row=fila, column=1, pady=3, padx=(6, 0))
+        fila += 1
+
+        botones = ttk.Frame(contenedor)
+        botones.grid(row=fila, column=0, columnspan=2, pady=(10, 0), sticky='e')
+        ttk.Button(botones, text='Cancelar', command=self.destroy).pack(side='right')
+        ttk.Button(botones, text='Guardar', command=self.guardar).pack(side='right', padx=(0, 8))
+
+        self.entry_fecha.focus_set()
+        self.transient(master)
+        self.grab_set()
+
+    def _id_elegido(self, combo, lista):
+        indice = combo.current()
+        if indice < 0:
+            return None
+        return lista[indice]['id']
+
+    def guardar(self):
+        producto_id = self._id_elegido(self.combo_producto, self.productos)
+        receptor_id = self._id_elegido(self.combo_receptor, self.entidades)
+        fecha = self.entry_fecha.get().strip() or None
+        numero_texto = self.entry_numero.get().strip()
+        total_texto = self.entry_total.get().strip()
+
+        if producto_id is None or receptor_id is None:
+            messagebox.showwarning('Faltan datos', 'Producto y entidad receptora son obligatorios.')
+            return
+        if not total_texto:
+            messagebox.showwarning('Faltan datos', 'El total es obligatorio.')
+            return
+        try:
+            total = float(total_texto)
+        except ValueError:
+            messagebox.showwarning('Dato inválido', 'El total tiene que ser un número.')
+            return
+        numero = None
+        if numero_texto:
+            try:
+                numero = int(numero_texto)
+            except ValueError:
+                messagebox.showwarning('Dato inválido', 'El N° tiene que ser un número entero.')
+                return
+
+        try:
+            if repository.existe_numero_producto(numero, producto_id):
+                messagebox.showwarning(
+                    'N° repetido',
+                    'Ya existe otro movimiento con ese mismo N° para ese producto.',
+                )
+                return
+            repository.crear_salida({
+                'id_producto': producto_id, 'id_entidad_receptor': receptor_id,
+                'fecha': fecha, 'numero': numero, 'total': total,
+            })
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error de conexión', f'No se pudo guardar la salida:\n{exc}')
+            return
+        self.destroy()
+        self.on_guardado()
+
+
+class VentanaRankingProductores(tk.Toplevel):
+    """Ranking de productores (entidad emisora) por total entregado, con
+    filtro opcional de rango de fecha y de producto, igual que
+    movimientos.views.movimiento_ranking_productores -- con exportación a
+    Excel y PDF (mismo formato que services/reportes.py del proyecto
+    Django, adaptado para guardar en un archivo local en vez de descargar
+    desde el navegador)."""
+
+    COLUMNAS = ('posicion', 'productor', 'cantidad', 'total', 'porcentaje')
+    TITULOS = {
+        'posicion': '#', 'productor': 'Productor', 'cantidad': 'Entregas',
+        'total': 'Total entregado', 'porcentaje': 'Participación %',
+    }
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title('Ranking de Productores')
+        self.geometry('720x480')
+
+        try:
+            self.productos = productos_repository.listar('')
+        except Exception:  # noqa: BLE001
+            self.productos = []
+
+        self._ultimo_ranking = []
+        self._ultimo_total_general = 0
+
+        contenedor = ttk.Frame(self, padding=10)
+        contenedor.pack(fill='both', expand=True)
+
+        filtros = ttk.Frame(contenedor)
+        filtros.pack(fill='x', pady=(0, 8))
+
+        ttk.Label(filtros, text='Emisión desde (AAAA-MM-DD):').pack(side='left')
+        self.entry_desde = ttk.Entry(filtros, width=12)
+        self.entry_desde.pack(side='left', padx=(4, 8))
+
+        ttk.Label(filtros, text='hasta:').pack(side='left')
+        self.entry_hasta = ttk.Entry(filtros, width=12)
+        self.entry_hasta.pack(side='left', padx=(4, 8))
+
+        ttk.Label(filtros, text='Producto:').pack(side='left')
+        nombres_productos = ['(Todos)'] + [f"{p['id']} - {p['nombre']}" for p in self.productos]
+        self.combo_producto = ttk.Combobox(filtros, values=nombres_productos, state='readonly', width=28)
+        self.combo_producto.current(0)
+        self.combo_producto.pack(side='left', padx=(4, 8))
+
+        ttk.Button(filtros, text='Filtrar', command=self.refrescar).pack(side='left')
+
+        self.tree = ttk.Treeview(contenedor, columns=self.COLUMNAS, show='headings', selectmode='browse')
+        anchos = {'posicion': 40, 'productor': 260, 'cantidad': 80, 'total': 120, 'porcentaje': 100}
+        for col in self.COLUMNAS:
+            self.tree.heading(col, text=self.TITULOS[col])
+            self.tree.column(col, width=anchos[col], anchor='w')
+        self.tree.pack(fill='both', expand=True)
+
+        pie = ttk.Frame(contenedor)
+        pie.pack(fill='x', pady=(8, 0))
+        self.label_total = ttk.Label(pie, text='Total general: 0.00')
+        self.label_total.pack(side='left')
+        ttk.Button(pie, text='Exportar a Excel', command=self.exportar_excel).pack(side='right')
+        ttk.Button(pie, text='Exportar a PDF', command=self.exportar_pdf).pack(side='right', padx=(0, 8))
+
+        self.transient(master)
+        self.refrescar()
+
+    def _producto_id_elegido(self):
+        indice = self.combo_producto.current()
+        if indice <= 0:
+            return None
+        return self.productos[indice - 1]['id']
+
+    def refrescar(self):
+        self.tree.delete(*self.tree.get_children())
+        fecha_desde = self.entry_desde.get().strip() or None
+        fecha_hasta = self.entry_hasta.get().strip() or None
+        producto_id = self._producto_id_elegido()
+        try:
+            ranking, total_general = repository.ranking_productores(
+                fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, producto_id=producto_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error de conexión', f'No se pudo calcular el ranking:\n{exc}')
+            return
+        self._ultimo_ranking = ranking
+        self._ultimo_total_general = total_general
+        for fila in ranking:
+            self.tree.insert('', 'end', values=(
+                fila['posicion'], fila['entidad_emisor_nombre'] or 'Sin nombre',
+                fila['cantidad'], f"{float(fila['total_entregado']):.2f}",
+                f"{fila['porcentaje']:.2f}",
+            ))
+        self.label_total.config(text=f'Total general: {float(total_general):.2f}')
+
+    def _armar_resultado(self):
+        columnas = ['#', 'Productor', 'Entregas', 'Total entregado', 'Participación %']
+        filas = [
+            [
+                fila['posicion'], fila['entidad_emisor_nombre'] or 'Sin nombre', fila['cantidad'],
+                float(fila['total_entregado']) if fila['total_entregado'] is not None else None,
+                float(fila['porcentaje']) if fila['porcentaje'] is not None else None,
+            ]
+            for fila in self._ultimo_ranking
+        ]
+        return {
+            'columnas': columnas, 'filas': filas,
+            'columnas_numericas': {3, 4}, 'anchos': [0.4, 2.2, 1.0, 1.2, 1.2],
+        }
+
+    def exportar_excel(self):
+        if not self._ultimo_ranking:
+            messagebox.showinfo('Ranking de Productores', 'No hay datos para exportar.')
+            return
+        ruta = filedialog.asksaveasfilename(
+            defaultextension='.xlsx', filetypes=[('Excel', '*.xlsx')],
+            initialfile='ranking_productores.xlsx',
+        )
+        if not ruta:
+            return
+        try:
+            reportes.exportar_excel(ruta, self._armar_resultado())
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error al exportar', f'No se pudo generar el Excel:\n{exc}')
+            return
+        messagebox.showinfo('Ranking de Productores', f'Se guardó el Excel en:\n{ruta}')
+
+    def exportar_pdf(self):
+        if not self._ultimo_ranking:
+            messagebox.showinfo('Ranking de Productores', 'No hay datos para exportar.')
+            return
+        ruta = filedialog.asksaveasfilename(
+            defaultextension='.pdf', filetypes=[('PDF', '*.pdf')],
+            initialfile='ranking_productores.pdf',
+        )
+        if not ruta:
+            return
+        try:
+            reportes.exportar_pdf(ruta, 'Ranking de productores por total entregado', self._armar_resultado())
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror('Error al exportar', f'No se pudo generar el PDF:\n{exc}')
+            return
+        messagebox.showinfo('Ranking de Productores', f'Se guardó el PDF en:\n{ruta}')

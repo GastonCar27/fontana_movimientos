@@ -69,12 +69,17 @@
                 <div class="dropdown-menu" aria-labelledby="navbarDropdownRankings">
                     <a class="dropdown-item" href="{% url 'comprobantes:comprobante_ranking_entidades' %}">Comprobantes</a>
                     <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_ranking_entidades' %}">Movimiento de Caja</a>
-                   <a class="dropdown-item" href="{% url 'movimientos_caja:movimiento_caja_estado' %}">Estado de Caja</a>
                     <a class="dropdown-item" href="{% url 'movimientos:movimiento_ranking_productores' %}">Movimientos de Producto</a>
                     <a class="dropdown-item" href="{% url 'liquidaciones:ranking_entidades' %}">Liquidaciones</a>
                     <a class="dropdown-item" href="{% url 'retenciones:ranking_entidades' %}">Retenciones</a>
                     <a class="dropdown-item" href="{% url 'retenciones_inym:ranking_entidades' %}">Retenciones Inym</a>
                 </div>
+             </li>
+             {% endif %}
+
+             {% if puede_ver_rankings %}
+             <li class="nav-item">
+                 <a class="nav-link" href="{% url 'movimientos_caja:movimiento_caja_estado' %}">Estado de Caja</a>
              </li>
              {% endif %}
 
@@ -196,6 +201,22 @@
                             <a class="dropdown-item" href="{% url 'retenciones:tipo_regimen_listado' %}">Listado</a>
                         </div>
                     </div>
+                </div>
+             </li>
+             {% endif %}
+
+             {% if puede_ver_retenciones %}
+             <li class="nav-item dropdown">
+                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownRetencionesInym" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    Retenciones Inym
+                 </a>
+                <div class="dropdown-menu" aria-labelledby="navbarDropdownRetencionesInym">
+                    <a class="dropdown-item" href="{% url 'retenciones_inym:alta' %}">Alta</a>
+                    <a class="dropdown-item" href="{% url 'retenciones_inym:listado' %}">Modificación</a>
+                    <a class="dropdown-item" href="{% url 'retenciones_inym:listado' %}">Listado</a>
+                    <a class="dropdown-item" href="{% url 'retenciones_inym:importar' %}">Importar desde Excel</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{% url 'retenciones_inym:ranking_entidades' %}">Ranking de Entidades</a>
                 </div>
              </li>
              {% endif %}

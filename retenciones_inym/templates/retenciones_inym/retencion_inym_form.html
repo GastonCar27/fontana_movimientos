@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">
+        {% if modo == 'modificar' %}
+            Modificar retención INYM {{ registro.id }}
+        {% else %}
+            Nueva retención INYM
+        {% endif %}
+    </h4>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="form-row">
+                    <div class="form-group col-md-2">
+                        <label>{{ form.fecha.label }}</label>
+                        {{ form.fecha }}
+                        {% if form.fecha.errors %}<div class="text-danger small">{{ form.fecha.errors|join:", " }}</div>{% endif %}
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ form.periodo.label }}</label>
+                        {{ form.periodo }}
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label>{{ form.id_tipo_tarifa.label }}</label>
+                        {{ form.id_tipo_tarifa }}
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ form.eliminacion.label }}</label>
+                        {{ form.eliminacion }}
+                        <small class="form-text text-muted">Fecha en la que INYM anuló/eliminó esta retención en su registro oficial (si corresponde).</small>
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ form.id_certificado_inym.label }}</label>
+                        {{ form.id_certificado_inym }}
+                        <small class="form-text text-muted">Lo completa solo el importador de Excel; cargalo a mano solo si corresponde.</small>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-4">
+                        <label>{{ form.operador_emisor.label }}</label>
+                        {{ form.operador_emisor }}
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label>{{ form.operador_retenido.label }}</label>
+                        {{ form.operador_retenido }}
+                        {% if form.operador_retenido.errors %}<div class="text-danger small">{{ form.operador_retenido.errors|join:", " }}</div>{% endif %}
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-2">
+                        <label>{{ form.kgs.label }}</label>
+                        {{ form.kgs }}
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ form.tarifa.label }}</label>
+                        {{ form.tarifa }}
+                    </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ form.total.label }}</label>
+                        {{ form.total }}
+                        <small class="form-text text-muted">Se calcula solo (Kgs × Tarifa) si cargás los dos; si no, se respeta lo que escribas acá.</small>
+                    </div>
+                </div>
+                {% if form.non_field_errors %}
+                    <div class="text-danger small">{{ form.non_field_errors|join:", " }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a href="{% url 'retenciones_inym:listado' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+
+<script>
+(function () {
+    const kgs = document.getElementById('id_kgs');
+    const tarifa = document.getElementById('id_tarifa');
+    const total = document.getElementById('id_total');
+    if (!kgs || !tarifa || !total) return;
+
+    function recalcular() {
+        const valKgs = parseFloat(kgs.value);
+        const valTarifa = parseFloat(tarifa.value);
+        if (!isNaN(valKgs) && !isNaN(valTarifa)) {
+            total.value = (valKgs * valTarifa).toFixed(2);
+        }
+    }
+    kgs.addEventListener('input', recalcular);
+    tarifa.addEventListener('input', recalcular);
+})();
+</script>
+{% endblock %}

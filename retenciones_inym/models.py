@@ -23,6 +23,18 @@ class RetencionInym(models.Model):
     eliminacion = models.DateField(blank=True, null=True)
     tarifa = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
     agregado_desde = models.CharField(max_length=45, blank=True, null=True)
+    # N° de certificado de INYM (columna IDCERTIFICADO del Excel de importación).
+    # OJO: NO es único por sí solo -- INYM lo numera por separado para cada
+    # id_tipo_tarifa (por eso puede haber un certificado #32 de "Hoja verde" Y
+    # un certificado #32 de "Hoja verde y yerba mate canchada"). La clave real
+    # de no-duplicado al importar es (id_certificado_inym, id_tipo_tarifa).
+    # Se agregó el 2026-09-15 junto con el importador de Excel de INYM; ver
+    # retenciones_inym/importador.py y sql/2026-09-15_agregar_id_certificado_inym.sql
+    # (esta tabla es managed=False, así que la migración de Django solo
+    # actualiza el estado del ORM -- la columna real hay que crearla a mano
+    # con ese script en cada base, primero en la de pruebas y después en
+    # producción).
+    id_certificado_inym = models.IntegerField(blank=True, null=True)
     #id_asiento_contable = models.ForeignKey('AsientoContable', models.DO_NOTHING, db_column='id_asiento_contable', blank=True, null=True)
 
     class Meta:

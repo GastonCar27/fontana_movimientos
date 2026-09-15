@@ -323,3 +323,85 @@ def eliminar(movimiento_id):
         conn.commit()
     finally:
         conn.close()
+
+
+# --- Salida genérica --------------------------------------------------
+# Igual que movimientos.views.salida / forms.SalidaForm: un movimiento de
+# salida simple (fecha, producto, entidad receptora, numero, total), sin
+# operadores INYM ni pesaje. El emisor es siempre la propia empresa (misma
+# entidad que ya se usa como constante en Recepción/Salida Canchada: la del
+# operador INYM id=181, "Fontana Secadero").
+
+def crear_salida(datos):
+    """datos: id_producto, id_entidad_receptor, total y opcionalmente
+    fecha/numero. El emisor se resuelve acá adentro (Fontana), igual que en
+    la vista Django. Devuelve el id_movimiento asignado por MySQL."""
+    operador_fontana = obtener_inym_operador(OPERADOR_FONTANA_SECADERO_ID)
+    id_entidad_emisor = operador_fontana['id_entidad'] if operador_fontana else None
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO movimiento
+                    (id_producto, fecha, total, id_entidad_emisor,
+                     id_entidad_receptor, numero, id_unidad_de_medida, guardado_el)
+                VALUES (%s, %s, %s, %s, %s, %s, NULL, NOW())
+                """,
+                (
+                    datos['id_producto'], datos.get('fecha'), datos['total'],
+                    id_entidad_emisor, datos['id_entidad_receptor'], datos.get('numero'),
+                ),
+            )
+            nuevo_id = cur.lastrowid
+        conn.commit()
+        return nuevo_id
+    finally:
+        conn.close()
+
+
+# --- Ranking de productores --------------------------------------------
+# Igual que movimientos.views._movimientos_ranking_productores_filtrados +
+# _calcular_ranking_productores: agrupa Movimiento por entidad emisora,
+# suma 'total' y cuenta movimientos, de mayor a menor, con filtro opcional
+# de rango de fecha de emisión y de producto. El % de participación se
+# calcula acá mismo, igual que en la vista.
+
+def ranking_productores(fecha_desde=None, fecha_hasta=None, producto_id=None):
+    sql = """
+        SELECT m.id_entidad_emisor, e.nombre AS entidad_emisor_nombre,
+               SUM(m.total) AS total_entregado, COUNT(*) AS cantidad
+          FROM movimiento m
+          LEFT JOIN entidad e ON e.id = m.id_entidad_emisor
+    """
+    condiciones = []
+    parametros = []
+    if fecha_desde:
+        condiciones.append('m.fecha >= %s')
+        parametros.append(fecha_desde)
+    if fecha_hasta:
+        condiciones.append('m.fecha <= %s')
+        parametros.append(fecha_hasta)
+    if producto_id:
+        condiciones.append('m.id_producto = %s')
+        parametros.append(producto_id)
+    if condiciones:
+        sql += ' WHERE ' + ' AND '.join(condiciones)
+    sql += ' GROUP BY m.id_entidad_emisor, e.nombre ORDER BY total_entregado DESC'
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, parametros)
+            filas = cur.fetchall()
+    finally:
+        conn.close()
+
+    total_general = sum((fila['total_entregado'] or 0) for fila in filas)
+    for posicion, fila in enumerate(filas, start=1):
+        fila['posicion'] = posicion
+        fila['porcentaje'] = (
+            float(fila['total_entregado']) / float(total_general) * 100
+            if total_general else 0.0
+        )
+    return filas, total_general

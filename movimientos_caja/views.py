@@ -957,7 +957,14 @@ def _calcular_estado_caja(caja, fecha):
     adelante, los movimientos de ese mismo libro que todavía están
     pendientes (con diferido posterior a la fecha elegida), agrupados por
     día. Devuelve un dict lista para el template y para armar la
-    exportación."""
+    exportación.
+
+    'saldo_a_fecha' (y 'saldo' en la proyección) es el saldo que le
+    debemos al banco: negativo = a favor nuestro, positivo = le debemos al
+    banco. Sale directo de saldo_inicial + la suma de los montos de los
+    movimientos firmes, cada uno con su propio signo (positivo suma,
+    negativo resta) -- el saldo_inicial y los montos ya están cargados en
+    el sistema con esa convención, no hace falta invertir nada más."""
     libro = _ultimo_libro_de_caja(caja)
     movimientos_sin_libro = MovimientoCaja.objects.filter(caja=caja, asiento_libro__isnull=True).count()
 
@@ -971,9 +978,12 @@ def _calcular_estado_caja(caja, fecha):
             'proyeccion': [],
         }
 
+    # Los movimientos ya cargan su propio signo: uno positivo suma al saldo,
+    # uno negativo resta (y viceversa) -- por eso acá siempre se suma la
+    # suma de montos, nunca se resta.
     saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
     total_firme = _movimientos_firmes_de_libro(libro, fecha).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-    saldo_a_fecha = saldo_inicial - total_firme
+    saldo_a_fecha = saldo_inicial + total_firme
 
     pendientes = (
         MovimientoCaja.objects.filter(asiento_libro__libro=libro, movimientocajadiferido__diferido__gt=fecha)
@@ -985,7 +995,7 @@ def _calcular_estado_caja(caja, fecha):
     proyeccion = []
     saldo_corriendo = saldo_a_fecha
     for fila in pendientes:
-        saldo_corriendo = saldo_corriendo - fila['total_dia']
+        saldo_corriendo = saldo_corriendo + fila['total_dia']
         proyeccion.append({
             'fecha': fila['movimientocajadiferido__diferido'],
             'monto_dia': fila['total_dia'],
@@ -1091,7 +1101,7 @@ def _tabla_estado_caja(fecha, resultados):
             entrada = proyeccion_por_caja[indice].get(dia)
             if entrada:
                 saldo_corriente[indice] = entrada['saldo']
-                fila.append(_numero_o_none(-entrada['monto_dia']))
+                fila.append(_numero_o_none(entrada['monto_dia']))
                 fila.append(_numero_o_none(entrada['saldo']))
             else:
                 saldo_actual = saldo_corriente[indice]

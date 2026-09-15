@@ -174,11 +174,24 @@
                 <div class="list-group list-group-flush card-body">
                     <a href="{% url 'comprobantes:comprobante_ranking_entidades' %}" class="list-group-item list-group-item-action">Comprobantes <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'movimientos_caja:movimiento_caja_ranking_entidades' %}" class="list-group-item list-group-item-action">Movimiento de Caja <i class="bi bi-chevron-right"></i></a>
-                    <a href="{% url 'movimientos_caja:movimiento_caja_estado' %}" class="list-group-item list-group-item-action">Estado de Caja <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'movimientos:movimiento_ranking_productores' %}" class="list-group-item list-group-item-action">Movimientos de Producto <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'liquidaciones:ranking_entidades' %}" class="list-group-item list-group-item-action">Liquidaciones <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'retenciones:ranking_entidades' %}" class="list-group-item list-group-item-action">Retenciones <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'retenciones_inym:ranking_entidades' %}" class="list-group-item list-group-item-action">Retenciones Inym <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_rankings %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#0d6efd; --accent-soft:rgba(13,110,253,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-wallet2"></i></div>
+                    <h5>Estado de Caja</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'movimientos_caja:movimiento_caja_estado' %}" class="list-group-item list-group-item-action">Ver estado de caja <i class="bi bi-chevron-right"></i></a>
                 </div>
             </div>
         </div>
@@ -288,6 +301,24 @@
                     <a href="{% url 'retenciones:tipo_regimen_alta' %}" class="list-group-item list-group-item-action item-anidado">Alta <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'retenciones:tipo_regimen_listado' %}" class="list-group-item list-group-item-action item-anidado">Modificación <i class="bi bi-chevron-right"></i></a>
                     <a href="{% url 'retenciones:tipo_regimen_listado' %}" class="list-group-item list-group-item-action item-anidado">Listado <i class="bi bi-chevron-right"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if puede_ver_retenciones %}
+        <div class="col">
+            <div class="card panel-card h-100" style="--accent:#fd7e14; --accent-soft:rgba(253,126,20,.12);">
+                <div class="card-header">
+                    <div class="icon-badge"><i class="bi bi-percent"></i></div>
+                    <h5>Retenciones Inym</h5>
+                </div>
+                <div class="list-group list-group-flush card-body">
+                    <a href="{% url 'retenciones_inym:alta' %}" class="list-group-item list-group-item-action">Alta <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones_inym:listado' %}" class="list-group-item list-group-item-action">Modificación <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones_inym:listado' %}" class="list-group-item list-group-item-action">Listado <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones_inym:importar' %}" class="list-group-item list-group-item-action">Importar desde Excel <i class="bi bi-chevron-right"></i></a>
+                    <a href="{% url 'retenciones_inym:ranking_entidades' %}" class="list-group-item list-group-item-action">Ranking de Entidades <i class="bi bi-chevron-right"></i></a>
                 </div>
             </div>
         </div>

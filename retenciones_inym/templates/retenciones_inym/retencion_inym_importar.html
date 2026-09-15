@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Importar retenciones INYM desde Excel</h4>
+    <p class="text-muted">
+        Subí el Excel que exporta el portal de INYM ("Listado Comprobantes de Retención") y elegí,
+        si querés, un rango de fecha para no reprocesar todo el archivo. No hace falta borrar ni
+        filtrar filas del Excel a mano: las que ya estén cargadas se detectan solas y se omiten.
+    </p>
+
+    <form method="post" enctype="multipart/form-data" class="card mb-4">
+        <div class="card-body">
+            <div class="form-row">
+                <div class="form-group col-md-5">
+                    <label>{{ form.archivo.label }}</label>
+                    {{ form.archivo }}
+                    {% if form.archivo.errors %}<div class="text-danger small">{{ form.archivo.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="form-group col-md-3">
+                    <label>{{ form.fecha_desde.label }}</label>
+                    {{ form.fecha_desde }}
+                </div>
+                <div class="form-group col-md-3">
+                    <label>{{ form.fecha_hasta.label }}</label>
+                    {{ form.fecha_hasta }}
+                    {% if form.fecha_hasta.errors %}<div class="text-danger small">{{ form.fecha_hasta.errors|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+            <small class="form-text text-muted mb-2">
+                Si dejás las fechas vacías, se procesa el Excel completo.
+            </small>
+            <button type="submit" class="btn btn-primary">Importar</button>
+            <a href="{% url 'retenciones_inym:listado' %}" class="btn btn-outline-secondary">Volver al listado</a>
+        </div>
+    </form>
+
+    {% if resultado %}
+    <div class="card">
+        <div class="card-body">
+            <h5 class="card-title">Resultado de la importación</h5>
+            <ul>
+                <li>Filas leídas del Excel: <strong>{{ resultado.total_en_archivo }}</strong></li>
+                <li>Filas dentro del rango de fecha elegido: <strong>{{ resultado.en_rango_fecha }}</strong></li>
+                <li>Retenciones importadas: <strong>{{ resultado.importadas }}</strong></li>
+                <li>Ya estaban cargadas (omitidas): <strong>{{ resultado.duplicadas }}</strong></li>
+            </ul>
+
+            {% if resultado.operadores_creados %}
+            <h6 class="mt-3">Operadores INYM creados automáticamente ({{ resultado.operadores_creados|length }})</h6>
+            <p class="text-muted small">
+                No existían en el sistema; se crearon con los datos que trae el Excel. Revisalos y
+                completales dirección/localidad/etc. si hace falta.
+            </p>
+            <ul class="small">
+                {% for linea in resultado.operadores_creados %}<li>{{ linea }}</li>{% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if resultado.tipos_tarifa_no_encontrados %}
+            <h6 class="mt-3 text-danger">Tipos de tarifa que no existen en el sistema</h6>
+            <p class="text-muted small">
+                Las filas con estos tipos se omitieron. Cargá el tipo de tarifa correspondiente y
+                volvé a importar el mismo Excel (las filas que ya se cargaron no se van a duplicar).
+            </p>
+            <ul class="small">
+                {% for id_tipo, nombre in resultado.tipos_tarifa_no_encontrados %}
+                <li>Id {{ id_tipo }} -- {{ nombre }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if resultado.filas_con_error %}
+            <h6 class="mt-3 text-danger">Filas con error ({{ resultado.filas_con_error|length }})</h6>
+            <ul class="small">
+                {% for fila_excel, mensaje in resultado.filas_con_error %}
+                <li>Fila {{ fila_excel }} del Excel: {{ mensaje }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

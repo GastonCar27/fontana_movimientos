@@ -1,14 +1,182 @@
 from decimal import Decimal
 
-from django.db.models import Count, Sum
-from django.shortcuts import render
+from django.contrib import messages
+from django.db.models import Count, Max, Sum
+from django.shortcuts import render, redirect, get_object_or_404
 
-from services.ordenamiento import aplicar_orden_lista
+from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
 from services.reportes import excel_response, pdf_response
 
-from .forms import RankingEntidadesForm
+from .forms import ImportadorInymForm, RankingEntidadesForm, RetencionInymForm
+from .importador import ErrorImportacion, importar_filas, leer_filas_excel
 from .models import RetencionInym
+
+
+# ---------------------------------------------------------------------------
+# Alta / Modificación / Eliminación / Listado de un registro de Retención
+# INYM. A diferencia de `retenciones` (agrupado por año+número), acá cada
+# fila de `retencion_inym` es un registro completo en sí mismo.
+# ---------------------------------------------------------------------------
+
+def _siguiente_id_retencion_inym():
+    """La tabla 'retencion_inym' no tiene AUTO_INCREMENT en 'id', así que el
+    próximo id se calcula a mano, mismo patrón que
+    retenciones.views._siguiente_id_retencion."""
+    ultimo = RetencionInym.objects.aggregate(Max('id'))['id__max'] or 0
+    return ultimo + 1
+
+
+def _tiene_liquidacion_inym(retencion_inym_id):
+    """True si esta retención INYM ya está incluida en una Liquidación
+    (tabla `liquidacion_retencion_inym`) -- mismo criterio que
+    retenciones.views._tiene_liquidacion, para no dejar modificar/eliminar
+    un registro que una Liquidación ya está usando."""
+    from liquidaciones.models import LiquidacionRetencionInym
+    return LiquidacionRetencionInym.objects.filter(retencion_inym_id=retencion_inym_id).exists()
+
+
+def _form_a_datos(cleaned_data):
+    """Los ModelChoiceField del form devuelven instancias -- achica el
+    diccionario a lo que espera RetencionInym.objects.create()/save()."""
+    return dict(cleaned_data)
+
+
+def retencion_inym_listado(request):
+    q_fecha = request.GET.get('fecha', '').strip()
+    q_retenido = request.GET.get('retenido', '').strip()
+
+    qs = RetencionInym.objects.select_related(
+        'id_tipo_tarifa', 'operador_emisor__entidad', 'operador_retenido__entidad',
+    )
+    if q_fecha:
+        qs = qs.filter(fecha=q_fecha)
+    if q_retenido:
+        qs = qs.filter(operador_retenido__entidad__nombre__icontains=q_retenido)
+
+    qs = qs.order_by('-fecha', '-id')
+    qs = aplicar_orden_queryset(request, qs, {
+        'fecha': 'fecha',
+        'retenido': 'operador_retenido__entidad__nombre',
+        'total': 'total',
+    })
+    registros = list(qs[:500])
+
+    return render(request, 'retenciones_inym/retencion_inym_listado.html', {
+        'registros': registros, 'q_fecha': q_fecha, 'q_retenido': q_retenido,
+    })
+
+
+def retencion_inym_alta(request):
+    if request.method == 'POST':
+        form = RetencionInymForm(request.POST)
+        if form.is_valid():
+            nuevo_id = _siguiente_id_retencion_inym()
+            RetencionInym.objects.create(
+                id=nuevo_id, agregado_desde='retenciones_inym_app',
+                **_form_a_datos(form.cleaned_data),
+            )
+            messages.success(request, 'La retención INYM se guardó correctamente.')
+            return redirect('retenciones_inym:listado')
+    else:
+        form = RetencionInymForm()
+
+    return render(request, 'retenciones_inym/retencion_inym_form.html', {'form': form, 'modo': 'alta'})
+
+
+def retencion_inym_modificar(request, pk):
+    registro = get_object_or_404(RetencionInym, pk=pk)
+
+    if _tiene_liquidacion_inym(registro.id):
+        messages.error(
+            request,
+            f'La retención INYM {registro.id} ya está incluida en una liquidación y no se '
+            'puede modificar desde acá.',
+        )
+        return redirect('retenciones_inym:listado')
+
+    if request.method == 'POST':
+        form = RetencionInymForm(request.POST)
+        if form.is_valid():
+            for campo, valor in _form_a_datos(form.cleaned_data).items():
+                setattr(registro, campo, valor)
+            registro.save()
+            messages.success(request, 'La retención INYM se modificó correctamente.')
+            return redirect('retenciones_inym:listado')
+    else:
+        form = RetencionInymForm(initial={
+            'fecha': registro.fecha,
+            'periodo': registro.periodo,
+            'id_tipo_tarifa': registro.id_tipo_tarifa_id,
+            'operador_emisor': registro.operador_emisor_id,
+            'operador_retenido': registro.operador_retenido_id,
+            'kgs': registro.kgs,
+            'tarifa': registro.tarifa,
+            'total': registro.total,
+            'eliminacion': registro.eliminacion,
+            'id_certificado_inym': registro.id_certificado_inym,
+        })
+
+    return render(request, 'retenciones_inym/retencion_inym_form.html', {
+        'form': form, 'modo': 'modificar', 'registro': registro,
+    })
+
+
+def retencion_inym_eliminar(request, pk):
+    registro = get_object_or_404(RetencionInym, pk=pk)
+
+    if request.method == 'POST':
+        if _tiene_liquidacion_inym(registro.id):
+            messages.error(
+                request,
+                f'La retención INYM {registro.id} ya está incluida en una liquidación y no se '
+                'puede eliminar desde acá.',
+            )
+            return redirect('retenciones_inym:listado')
+        registro.delete()
+        messages.success(request, f'La retención INYM {registro.id} se eliminó correctamente.')
+        return redirect('retenciones_inym:listado')
+
+    return render(request, 'retenciones_inym/retencion_inym_eliminar_confirm.html', {'registro': registro})
+
+
+# ---------------------------------------------------------------------------
+# Importador del Excel de INYM ("Listado Comprobantes de Retención") -- ver
+# retenciones_inym/importador.py para el detalle de cómo se lee el archivo,
+# cómo se arma la clave de no-duplicado y qué hace cuando un operador del
+# Excel todavía no existe en el sistema.
+# ---------------------------------------------------------------------------
+
+def retencion_inym_importar(request):
+    resultado = None
+
+    if request.method == 'POST':
+        form = ImportadorInymForm(request.POST, request.FILES)
+        if form.is_valid():
+            archivo = form.cleaned_data['archivo']
+            try:
+                filas = leer_filas_excel(archivo, archivo.name)
+                resultado = importar_filas(
+                    filas,
+                    fecha_desde=form.cleaned_data.get('fecha_desde'),
+                    fecha_hasta=form.cleaned_data.get('fecha_hasta'),
+                )
+            except ErrorImportacion as exc:
+                form.add_error('archivo', str(exc))
+            else:
+                if resultado['importadas']:
+                    messages.success(
+                        request,
+                        f"Se importaron {resultado['importadas']} retenciones INYM nuevas.",
+                    )
+                else:
+                    messages.info(request, 'No se importó ninguna retención nueva (revisá el detalle abajo).')
+    else:
+        form = ImportadorInymForm()
+
+    return render(request, 'retenciones_inym/retencion_inym_importar.html', {
+        'form': form, 'resultado': resultado,
+    })
 
 
 # ---------------------------------------------------------------------------

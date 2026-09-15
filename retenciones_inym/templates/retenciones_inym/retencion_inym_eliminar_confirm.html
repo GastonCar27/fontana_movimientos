@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar retención INYM</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar la retención INYM <strong>{{ registro.id }}</strong>
+        del <strong>{{ registro.fecha|default:"-" }}</strong>, operador retenido
+        <strong>{{ registro.operador_retenido.entidad.nombre|default:"-" }}</strong>,
+        por un total de <strong>${{ registro.total|separador_miles }}</strong>?
+        <br>
+        Esta acción no se puede deshacer.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'retenciones_inym:listado' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

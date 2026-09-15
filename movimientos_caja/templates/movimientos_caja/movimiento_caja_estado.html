@@ -57,10 +57,10 @@
                     {% if r.libro %}
                     <div class="text-muted small mb-1">Libro: {{ r.libro.nombre|default:r.libro.id }}</div>
                     <div class="text-muted small mb-2">Saldo inicial del libro: {{ r.saldo_inicial|separador_miles }}</div>
-                    <div class="fs-4 fw-bold {% if r.saldo_a_fecha < 0 %}text-danger{% else %}text-success{% endif %}">
+                    <div class="fs-4 fw-bold {% if r.saldo_a_fecha < 0 %}text-success{% else %}text-danger{% endif %}">
                         {{ r.saldo_a_fecha|separador_miles }}
                     </div>
-                    <div class="text-muted small">Saldo disponible al {{ fecha }}</div>
+                    <div class="text-muted small">Saldo al {{ fecha }} (negativo: a favor nuestro · positivo: le debemos al banco)</div>
                     {% else %}
                     <div class="alert alert-warning py-2 px-2 mb-0 small">Esta caja no tiene ningún libro cargado; no se puede calcular el saldo.</div>
                     {% endif %}
@@ -80,7 +80,7 @@
             <div class="card h-100 shadow-sm border-primary">
                 <div class="card-body">
                     <h6 class="card-title">Total</h6>
-                    <div class="fs-4 fw-bold {% if total_saldo < 0 %}text-danger{% else %}text-success{% endif %}">
+                    <div class="fs-4 fw-bold {% if total_saldo < 0 %}text-success{% else %}text-danger{% endif %}">
                         {{ total_saldo|separador_miles }}
                     </div>
                     <div class="text-muted small">Suma de las cajas seleccionadas al {{ fecha }}</div>
@@ -114,7 +114,7 @@
                     <td>{{ fecha }}</td>
                     {% for r in resultados %}
                     <td class="text-end">-</td>
-                    <td class="text-end">{% if r.saldo_a_fecha != None %}{{ r.saldo_a_fecha|separador_miles }}{% else %}-{% endif %}</td>
+                    <td class="text-end {% if r.saldo_a_fecha != None %}{% if r.saldo_a_fecha < 0 %}text-success{% else %}text-danger{% endif %}{% endif %}">{% if r.saldo_a_fecha != None %}{{ r.saldo_a_fecha|separador_miles }}{% else %}-{% endif %}</td>
                     {% endfor %}
                 </tr>
                 {% for fila in filas_proyeccion %}
@@ -122,8 +122,8 @@
                     <td>{{ fila.fecha }}</td>
                     {% for celda in fila.celdas %}
                     {% if celda %}
-                    <td class="text-end text-danger">-{{ celda.monto_dia|separador_miles }}</td>
-                    <td class="text-end">{{ celda.saldo|separador_miles }}</td>
+                    <td class="text-end {% if celda.monto_dia < 0 %}text-danger{% else %}text-success{% endif %}">{{ celda.monto_dia|separador_miles }}</td>
+                    <td class="text-end {% if celda.saldo < 0 %}text-success{% else %}text-danger{% endif %}">{{ celda.saldo|separador_miles }}</td>
                     {% else %}
                     <td class="text-end text-muted">-</td>
                     <td class="text-end text-muted">-</td>

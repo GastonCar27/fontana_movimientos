@@ -18,6 +18,10 @@ from db import probar_conexion
 from entidades.ui import EntidadesFrame
 from productos.ui import ProductosFrame
 from movimientos.ui import MovimientosFrame
+from comprobantes.ui import ComprobantesFrame
+from movimientos_caja.ui import MovimientosCajaFrame
+from retenciones.ui import RetencionesFrame
+from retenciones_inym.ui import RetencionesInymFrame
 
 
 class AppPrincipal(tk.Tk):
@@ -32,13 +36,25 @@ class AppPrincipal(tk.Tk):
         tab_entidades = ttk.Frame(notebook)
         tab_productos = ttk.Frame(notebook)
         tab_movimientos = ttk.Frame(notebook)
+        tab_comprobantes = ttk.Frame(notebook)
+        tab_movimientos_caja = ttk.Frame(notebook)
+        tab_retenciones = ttk.Frame(notebook)
+        tab_retenciones_inym = ttk.Frame(notebook)
         notebook.add(tab_entidades, text='Entidades')
         notebook.add(tab_productos, text='Productos')
         notebook.add(tab_movimientos, text='Movimientos')
+        notebook.add(tab_comprobantes, text='Comprobantes')
+        notebook.add(tab_movimientos_caja, text='Movimientos de Caja')
+        notebook.add(tab_retenciones, text='Retenciones')
+        notebook.add(tab_retenciones_inym, text='Retenciones INYM')
 
         EntidadesFrame(tab_entidades).pack(fill='both', expand=True)
         ProductosFrame(tab_productos).pack(fill='both', expand=True)
         MovimientosFrame(tab_movimientos).pack(fill='both', expand=True)
+        ComprobantesFrame(tab_comprobantes).pack(fill='both', expand=True)
+        MovimientosCajaFrame(tab_movimientos_caja).pack(fill='both', expand=True)
+        RetencionesFrame(tab_retenciones).pack(fill='both', expand=True)
+        RetencionesInymFrame(tab_retenciones_inym).pack(fill='both', expand=True)
 
 
 def main():
