@@ -547,6 +547,7 @@ def _movimientos_reporte_filtrados(request):
     movimientos = (
         MovimientoCaja.objects.select_related(
             'caja', 'tipo', 'receptor', 'rel_numero', 'movimientocajadiferido', 'emisor_relacion__id_entidad',
+            'rel_concepto__concepto_tipo',
         )
         .prefetch_related('liquidaciones__liquidacion')
         .order_by('-emision', '-id')
@@ -557,6 +558,7 @@ def _movimientos_reporte_filtrados(request):
     if form.is_valid():
         caja = form.cleaned_data.get('caja')
         tipo = form.cleaned_data.get('tipo')
+        concepto = form.cleaned_data.get('concepto')
         receptor = form.cleaned_data.get('receptor')
         emisor = form.cleaned_data.get('emisor')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -571,6 +573,8 @@ def _movimientos_reporte_filtrados(request):
             movimientos = movimientos.filter(caja=caja)
         if tipo:
             movimientos = movimientos.filter(tipo=tipo)
+        if concepto:
+            movimientos = movimientos.filter(rel_concepto__concepto_tipo=concepto)
         if receptor:
             movimientos = movimientos.filter(receptor=receptor)
         if emisor:
@@ -594,7 +598,7 @@ def _movimientos_reporte_filtrados(request):
             movimientos = movimientos.filter(efectivizacion__isnull=True)
 
         filtros_activos = any([
-            caja, tipo, receptor, emisor, fecha_desde, fecha_hasta,
+            caja, tipo, concepto, receptor, emisor, fecha_desde, fecha_hasta,
             efectivizacion_desde, efectivizacion_hasta,
             diferido_desde, diferido_hasta, sin_efectivizar,
         ])
@@ -614,6 +618,7 @@ def movimiento_caja_reporte(request):
         'id': 'id',
         'caja': 'caja__nombre',
         'tipo': 'tipo__nombre',
+        'concepto': 'rel_concepto__concepto_tipo__nombre',
         'numero': 'rel_numero__numero',
         'emision': 'emision',
         'emisor': 'emisor_relacion__id_entidad__nombre',
@@ -656,7 +661,7 @@ def _texto_liquidacion(movimiento):
 
 
 def _filas_movimiento_caja_reporte(movimientos):
-    columnas = ['ID', 'Caja', 'Tipo', 'Número', 'Emisión', 'Diferido', 'Emisor', 'Receptor', 'Monto', 'Efectivización', 'Liquidación']
+    columnas = ['ID', 'Caja', 'Tipo', 'Concepto', 'Número', 'Emisión', 'Diferido', 'Emisor', 'Receptor', 'Monto', 'Efectivización', 'Liquidación']
     filas = []
     for m in movimientos:
         try:
@@ -667,6 +672,7 @@ def _filas_movimiento_caja_reporte(movimientos):
             m.id,
             str(m.caja) if m.caja else '',
             str(m.tipo) if m.tipo else '',
+            str(m.concepto) if m.concepto else '',
             m.numero if m.numero is not None else '',
             m.emision,
             diferido,
@@ -679,9 +685,9 @@ def _filas_movimiento_caja_reporte(movimientos):
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {8},  # Monto
-        'columnas_fecha': {4, 5, 9},  # Emisión, Diferido, Efectivización
-        'anchos': [0.5, 1.1, 1.3, 0.8, 0.9, 0.9, 1.6, 1.8, 1.0, 1.0, 1.3],
+        'columnas_numericas': {9},  # Monto
+        'columnas_fecha': {5, 6, 10},  # Emisión, Diferido, Efectivización
+        'anchos': [0.5, 1.1, 1.3, 1.2, 0.8, 0.9, 0.9, 1.6, 1.8, 1.0, 1.0, 1.3],
     }
 
 

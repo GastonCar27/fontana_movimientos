@@ -38,6 +38,10 @@
                     {{ form.tipo }}
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.concepto.label_tag }}
+                    {{ form.concepto }}
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
                     {{ form.receptor.label_tag }}
                     <div class="buscador-wrapper">
                         <input type="text" id="receptor-buscador" autocomplete="off" class="form-control form-control-sm"
@@ -116,6 +120,7 @@
                     <th>{% sort_th 'id' 'ID' %}</th>
                     <th>{% sort_th 'caja' 'Caja' %}</th>
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
+                    <th>{% sort_th 'concepto' 'Concepto' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'emision' 'Emisión' %}</th>
                     <th>{% sort_th 'diferido' 'Diferido' %}</th>
@@ -132,6 +137,7 @@
                     <td>{{ m.id }}</td>
                     <td>{{ m.caja }}</td>
                     <td>{{ m.tipo }}</td>
+                    <td>{{ m.concepto|default:"-" }}</td>
                     <td>{{ m.numero|default:"-" }}</td>
                     <td>{{ m.emision|default:"-" }}</td>
                     <td>{{ m.movimientocajadiferido.diferido|default:"-" }}</td>
@@ -157,13 +163,13 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">No hay resultados para los filtros aplicados.</td>
+                    <td colspan="12" class="text-center text-muted py-4">No hay resultados para los filtros aplicados.</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr class="table-light fw-bold">
-                    <td colspan="8" class="text-end">Total</td>
+                    <td colspan="9" class="text-end">Total</td>
                     <td class="text-end">{{ totales.total_monto|separador_miles }}</td>
                     <td colspan="2"></td>
                 </tr>

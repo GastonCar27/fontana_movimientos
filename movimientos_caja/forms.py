@@ -181,6 +181,12 @@ class MovimientoCajaReporteForm(forms.Form):
         label='Tipo de movimiento',
         widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
     )
+    concepto = forms.ModelChoiceField(
+        queryset=MovimientoCajaConceptoTipo.objects.all().order_by('nombre'),
+        required=False,
+        label='Concepto',
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+    )
     receptor = forms.ModelChoiceField(
         queryset=Entidad.objects.all().order_by('nombre'),
         required=False,
