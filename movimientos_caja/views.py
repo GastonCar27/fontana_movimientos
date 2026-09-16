@@ -1267,14 +1267,16 @@ def _movimientos_firmes_excluyendo_cartera(libro, caja, fecha):
 
 
 def _saldo_base_defecto(caja, fecha):
-    """Primer renglón del cálculo 'por defecto' para una caja: saldo
-    inicial del último libro + TODOS los movimientos ya firmes de ese
-    libro a la fecha elegida (igual que "Calcular" genérico) + los
-    cheques en cartera de esa caja (ver _cheques_en_cartera), sin sumar
-    dos veces los que caen en los dos grupos (ver
-    _movimientos_firmes_excluyendo_cartera). Corregido el 2026-09-15
-    (segunda vuelta del mismo día): antes sólo se sumaba la cartera y se
-    perdían todos los demás movimientos ya firmes del libro."""
+    """Primeros dos renglones del cálculo 'por defecto' para una caja:
+    saldo inicial del último libro + TODOS los movimientos ya firmes de
+    ese libro a la fecha elegida (igual que "Calcular" genérico), en un
+    renglón aparte de los cheques en cartera de esa caja (ver
+    _cheques_en_cartera), sin sumar dos veces los que caen en los dos
+    grupos (ver _movimientos_firmes_excluyendo_cartera). Antes estos dos
+    montos se sumaban y se mostraban en un único renglón; separados a
+    pedido de Gastón el 2026-09-16 para poder ver cada fuente por
+    separado (los dos se siguen sumando al saldo corrido, uno atrás del
+    otro)."""
     libro = _ultimo_libro_de_caja(caja)
     if libro is None:
         return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}
@@ -1282,19 +1284,29 @@ def _saldo_base_defecto(caja, fecha):
     saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
     movimientos_firmes = _movimientos_firmes_excluyendo_cartera(libro, caja, fecha)
     cartera = _cheques_en_cartera(caja)
-    monto_base = movimientos_firmes + cartera
-    saldo = saldo_inicial + monto_base
+
+    saldo_tras_libro = saldo_inicial + movimientos_firmes
+    saldo_tras_cartera = saldo_tras_libro + cartera
+
     return {
         'caja': caja,
         'libro': libro,
         'saldo_inicial': saldo_inicial,
-        'filas': [{
-            'fecha': fecha,
-            'concepto': 'Movimientos del libro + Cheques en cartera',
-            'monto': monto_base,
-            'saldo': saldo,
-        }],
-        'saldo_final': saldo,
+        'filas': [
+            {
+                'fecha': fecha,
+                'concepto': 'Movimientos del libro',
+                'monto': movimientos_firmes,
+                'saldo': saldo_tras_libro,
+            },
+            {
+                'fecha': fecha,
+                'concepto': 'Cheques en cartera',
+                'monto': cartera,
+                'saldo': saldo_tras_cartera,
+            },
+        ],
+        'saldo_final': saldo_tras_cartera,
     }
 
 
@@ -1335,31 +1347,28 @@ def _agregar_proyeccion_diferido(datos_caja, caja, fecha, caja_pagos_futuros=Non
     propios de esa caja (cheques u otros movimientos con diferido que
     todavía no llegó, Macro y Nación por igual) como, sólo cuando se pasa
     `caja_pagos_futuros` (hoy sólo para Macro), los que todavía están en
-    'Pagos Futuros' esperando pasar a esa caja. Si una misma fecha tiene
-    movimientos de las dos fuentes, se suman en un único renglón con las
-    dos etiquetas."""
+    'Pagos Futuros' esperando pasar a esa caja. Antes, si una misma fecha
+    tenía movimientos de las dos fuentes, se sumaban en un único renglón
+    con las dos etiquetas; separados a pedido de Gastón el 2026-09-16 en
+    dos renglones (uno por fuente) para poder verlos por separado -- si
+    coinciden en la misma fecha, el diferido propio va primero."""
     if datos_caja is None or datos_caja['libro'] is None:
         return
 
-    eventos = {}
+    eventos = []
     for evento in _movimientos_diferidos_pendientes(caja, fecha):
-        bucket = eventos.setdefault(evento['fecha'], {'monto': Decimal('0'), 'fuentes': []})
-        bucket['monto'] += evento['monto']
-        bucket['fuentes'].append(ETIQUETA_DIFERIDO_PROPIO)
+        eventos.append((evento['fecha'], 0, ETIQUETA_DIFERIDO_PROPIO, evento['monto']))
     if caja_pagos_futuros is not None:
         for evento in _movimientos_diferidos_pendientes(caja_pagos_futuros, fecha):
-            bucket = eventos.setdefault(evento['fecha'], {'monto': Decimal('0'), 'fuentes': []})
-            bucket['monto'] += evento['monto']
-            bucket['fuentes'].append(ETIQUETA_DIFERIDO_PAGOS_FUTUROS)
+            eventos.append((evento['fecha'], 1, ETIQUETA_DIFERIDO_PAGOS_FUTUROS, evento['monto']))
 
     saldo_corriendo = datos_caja['saldo_final']
-    for f in sorted(eventos):
-        bucket = eventos[f]
-        saldo_corriendo = saldo_corriendo + bucket['monto']
+    for f, _orden, concepto, monto in sorted(eventos, key=lambda e: (e[0], e[1])):
+        saldo_corriendo = saldo_corriendo + monto
         datos_caja['filas'].append({
             'fecha': f,
-            'concepto': ' + '.join(bucket['fuentes']),
-            'monto': bucket['monto'],
+            'concepto': concepto,
+            'monto': monto,
             'saldo': saldo_corriendo,
         })
     datos_caja['saldo_final'] = saldo_corriendo
@@ -1396,8 +1405,20 @@ def _calcular_estado_caja_defecto(fecha):
     _agregar_proyeccion_diferido(macro, caja_macro, fecha, caja_pagos_futuros=caja_pagos_futuros)
     _agregar_proyeccion_diferido(nacion, caja_nacion, fecha)
 
-    macro_filas_por_fecha = {f['fecha']: f for f in macro['filas']} if macro else {}
-    nacion_filas_por_fecha = {f['fecha']: f for f in nacion['filas']} if nacion else {}
+    def _agrupar_por_fecha(datos_caja):
+        """Agrupa `filas` en listas por fecha (no un único renglón por
+        fecha): ahora que _saldo_base_defecto y _agregar_proyeccion_
+        diferido pueden generar más de un renglón para la misma fecha
+        (ej. 'Movimientos del libro' y 'Cheques en cartera' los dos con
+        la fecha elegida), hace falta poder devolver varios."""
+        agrupado = {}
+        if datos_caja:
+            for fila in datos_caja['filas']:
+                agrupado.setdefault(fila['fecha'], []).append(fila)
+        return agrupado
+
+    macro_filas_por_fecha = _agrupar_por_fecha(macro)
+    nacion_filas_por_fecha = _agrupar_por_fecha(nacion)
 
     fechas = {fecha} | set(macro_filas_por_fecha.keys()) | set(nacion_filas_por_fecha.keys())
 
@@ -1405,26 +1426,33 @@ def _calcular_estado_caja_defecto(fecha):
     ultimo_macro = None
     ultimo_nacion = None
     for f in sorted(fechas):
-        fila_macro = macro_filas_por_fecha.get(f)
-        fila_nacion = nacion_filas_por_fecha.get(f)
-        if fila_macro is not None:
-            ultimo_macro = fila_macro['saldo']
-        if fila_nacion is not None:
-            ultimo_nacion = fila_nacion['saldo']
-        total = (
-            ultimo_macro + ultimo_nacion
-            if ultimo_macro is not None and ultimo_nacion is not None else None
-        )
-        filas_global.append({
-            'fecha': f,
-            'macro_concepto': fila_macro['concepto'] if fila_macro else None,
-            'macro_monto': fila_macro['monto'] if fila_macro else None,
-            'nacion_concepto': fila_nacion['concepto'] if fila_nacion else None,
-            'nacion_monto': fila_nacion['monto'] if fila_nacion else None,
-            'saldo_macro': ultimo_macro,
-            'saldo_nacion': ultimo_nacion,
-            'saldo_global': total,
-        })
+        filas_macro_dia = macro_filas_por_fecha.get(f, [])
+        filas_nacion_dia = nacion_filas_por_fecha.get(f, [])
+        # Al menos un renglón por fecha, aunque ninguna de las dos cajas
+        # tenga datos ese día (pasa sólo con la fecha elegida, si ni
+        # Macro ni Nación se pudieron calcular).
+        cantidad_renglones = max(len(filas_macro_dia), len(filas_nacion_dia), 1)
+        for indice in range(cantidad_renglones):
+            fila_macro = filas_macro_dia[indice] if indice < len(filas_macro_dia) else None
+            fila_nacion = filas_nacion_dia[indice] if indice < len(filas_nacion_dia) else None
+            if fila_macro is not None:
+                ultimo_macro = fila_macro['saldo']
+            if fila_nacion is not None:
+                ultimo_nacion = fila_nacion['saldo']
+            total = (
+                ultimo_macro + ultimo_nacion
+                if ultimo_macro is not None and ultimo_nacion is not None else None
+            )
+            filas_global.append({
+                'fecha': f,
+                'macro_concepto': fila_macro['concepto'] if fila_macro else None,
+                'macro_monto': fila_macro['monto'] if fila_macro else None,
+                'nacion_concepto': fila_nacion['concepto'] if fila_nacion else None,
+                'nacion_monto': fila_nacion['monto'] if fila_nacion else None,
+                'saldo_macro': ultimo_macro,
+                'saldo_nacion': ultimo_nacion,
+                'saldo_global': total,
+            })
 
     return {'fecha': fecha, 'macro': macro, 'nacion': nacion, 'filas_global': filas_global, 'errores': errores}
 

@@ -624,7 +624,7 @@ class VentanaEstadoCaja(tk.Toplevel):
         macro = datos['macro']
         nacion = datos['nacion']
         if macro and macro['libro'] is not None:
-            saldo_actual_macro = macro['filas'][0]['saldo']
+            saldo_actual_macro = macro['filas'][1]['saldo']
             self.label_resumen_macro.config(
                 text=(
                     f"Macro ({macro['caja']['nombre']}): "
@@ -635,7 +635,7 @@ class VentanaEstadoCaja(tk.Toplevel):
         else:
             self.label_resumen_macro.config(text='Macro: no se pudo calcular (revisá la caja "Macro" y su libro).')
         if nacion and nacion['libro'] is not None:
-            saldo_actual_nacion = nacion['filas'][0]['saldo']
+            saldo_actual_nacion = nacion['filas'][1]['saldo']
             self.label_resumen_nacion.config(
                 text=(
                     f"Nación ({nacion['caja']['nombre']}): "
