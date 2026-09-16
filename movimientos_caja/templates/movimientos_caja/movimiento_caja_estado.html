@@ -160,13 +160,21 @@
                 <div class="card-body">
                     <h6 class="card-title">Macro</h6>
                     {% if datos_defecto.macro and datos_defecto.macro.libro %}
+                    {% with primera=datos_defecto.macro.filas.0 ultima=datos_defecto.macro.filas|last %}
                     <div class="text-muted small mb-1">Caja: {{ datos_defecto.macro.caja.nombre }}</div>
                     <div class="text-muted small mb-1">Libro: {{ datos_defecto.macro.libro.nombre|default:datos_defecto.macro.libro.id }}</div>
                     <div class="text-muted small mb-2">Saldo inicial del libro: {{ datos_defecto.macro.saldo_inicial|separador_miles }}</div>
+
+                    <div class="fs-5 fw-bold {% if primera.saldo < 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ primera.saldo|separador_miles }}
+                    </div>
+                    <div class="text-muted small mb-2">Saldo actual al {{ datos_defecto.fecha }} (movimientos del libro + cheques en cartera)</div>
+
                     <div class="fs-4 fw-bold {% if datos_defecto.macro.saldo_final < 0 %}text-success{% else %}text-danger{% endif %}">
                         {{ datos_defecto.macro.saldo_final|separador_miles }}
                     </div>
-                    <div class="text-muted small">Saldo al {{ datos_defecto.fecha }} (cheques en cartera + diferidos propios + pagos futuros proyectados)</div>
+                    <div class="text-muted small">Saldo proyectado al {{ ultima.fecha }} (incluye diferidos propios + pagos futuros)</div>
+                    {% endwith %}
                     {% else %}
                     <div class="alert alert-warning py-2 px-2 mb-0 small">No se pudo calcular (revisá que exista la caja "Macro" con un libro cargado).</div>
                     {% endif %}
@@ -178,13 +186,21 @@
                 <div class="card-body">
                     <h6 class="card-title">Nación</h6>
                     {% if datos_defecto.nacion and datos_defecto.nacion.libro %}
+                    {% with primera=datos_defecto.nacion.filas.0 ultima=datos_defecto.nacion.filas|last %}
                     <div class="text-muted small mb-1">Caja: {{ datos_defecto.nacion.caja.nombre }}</div>
                     <div class="text-muted small mb-1">Libro: {{ datos_defecto.nacion.libro.nombre|default:datos_defecto.nacion.libro.id }}</div>
                     <div class="text-muted small mb-2">Saldo inicial del libro: {{ datos_defecto.nacion.saldo_inicial|separador_miles }}</div>
+
+                    <div class="fs-5 fw-bold {% if primera.saldo < 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ primera.saldo|separador_miles }}
+                    </div>
+                    <div class="text-muted small mb-2">Saldo actual al {{ datos_defecto.fecha }} (movimientos del libro + cheques en cartera propios; no incluye los de Macro)</div>
+
                     <div class="fs-4 fw-bold {% if datos_defecto.nacion.saldo_final < 0 %}text-success{% else %}text-danger{% endif %}">
                         {{ datos_defecto.nacion.saldo_final|separador_miles }}
                     </div>
-                    <div class="text-muted small">Saldo al {{ datos_defecto.fecha }} (cheques en cartera propios + diferidos propios; no incluye los de Macro)</div>
+                    <div class="text-muted small">Saldo proyectado al {{ ultima.fecha }} (incluye diferidos propios)</div>
+                    {% endwith %}
                     {% else %}
                     <div class="alert alert-warning py-2 px-2 mb-0 small">No se pudo calcular (revisá que exista la caja "Nación" con un libro cargado).</div>
                     {% endif %}
@@ -210,7 +226,7 @@
         </div>
     </div>
 
-    <h6>Detalle por fecha (Macro y Nación muestran cada uno "Cheques en cartera" y, por fecha, sus propios diferidos; Macro además suma ahí lo que tenga pendiente "Pagos futuros")</h6>
+    <h6>Detalle por fecha (Macro y Nación muestran cada uno un primer renglón con "Movimientos del libro + Cheques en cartera" y, después, un renglón por fecha con sus propios diferidos; Macro además suma ahí lo que tenga pendiente "Pagos futuros")</h6>
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle mb-2">
             <thead class="table-light">
