@@ -16,7 +16,7 @@
             <input type="text" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}">
         </div>
         <div class="form-group col-auto">
-            <label for="id_entidad" class="mb-1">Proveedor</label>
+            <label for="id_entidad" class="mb-1">Entidad</label>
             <input type="text" id="id_entidad" name="entidad" class="form-control form-control-sm" value="{{ q_entidad }}" placeholder="Nombre">
         </div>
         <div class="form-group col-auto">
@@ -31,7 +31,8 @@
                 <tr>
                     <th>{% sort_th 'anio' 'Año' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
-                    <th>{% sort_th 'entidad' 'Proveedor' %}</th>
+                    <th>{% sort_th 'direccion' 'Dirección' %}</th>
+                    <th>{% sort_th 'entidad' 'Entidad' %}</th>
                     <th>{% sort_th 'fecha' 'Fecha' %}</th>
                     <th class="text-center">{% sort_th 'renglones' 'Renglones' %}</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
@@ -43,6 +44,7 @@
                 <tr>
                     <td>{{ g.año }}</td>
                     <td>{{ g.numero }}</td>
+                    <td>{% if g.es_emisor == 0 %}Sufrida{% else %}Practicada{% endif %}</td>
                     <td>{{ g.entidad_nombre }}</td>
                     <td>{{ g.fecha|default:"-" }}</td>
                     <td class="text-center">{{ g.cantidad_renglones }}</td>
@@ -60,7 +62,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted">No se encontraron retenciones.</td>
+                    <td colspan="8" class="text-center text-muted">No se encontraron retenciones.</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -33,6 +33,7 @@
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'fecha' 'Fecha' %}</th>
                     <th>{% sort_th 'entidad' 'Entidad' %}</th>
+                    <th>{% sort_th 'tipo' 'Tipo' %}</th>
                     <th class="text-end">{% sort_th 'debe' 'Debe' %}</th>
                     <th class="text-end">{% sort_th 'haber' 'Haber' %}</th>
                     <th class="text-end">{% sort_th 'diferencia' 'Diferencia' %}</th>
@@ -46,6 +47,7 @@
                     <td>{{ liq.numero }}</td>
                     <td>{{ liq.fecha }}</td>
                     <td>{{ liq.entidad }}</td>
+                    <td>{% if liq.tipo == 'cobro' %}Cobro{% else %}Pago{% endif %}</td>
                     <td class="text-end">{{ liq.debe|separador_miles }}</td>
                     <td class="text-end">{{ liq.haber|separador_miles }}</td>
                     <td class="text-end">{{ liq.diferencia|separador_miles }}</td>
@@ -68,7 +70,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">No hay liquidaciones cargadas.</td>
+                    <td colspan="9" class="text-center text-muted py-4">No hay liquidaciones cargadas.</td>
                 </tr>
                 {% endfor %}
             </tbody>

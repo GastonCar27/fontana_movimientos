@@ -10,8 +10,9 @@ class SinLiquidacionFilter(SinLiquidacionFilterBase):
 
 @admin.register(Retencion)
 class RetencionAdmin(admin.ModelAdmin):
-    list_filter = (SinLiquidacionFilter,)
-    # resto de tu configuración (list_display, search_fields, etc.)
+    list_display = ('id', 'año', 'numero', 'es_emisor', 'entidad', 'total')
+    list_filter = (SinLiquidacionFilter, 'es_emisor')
+    # resto de tu configuración (search_fields, etc.)
 
 
 

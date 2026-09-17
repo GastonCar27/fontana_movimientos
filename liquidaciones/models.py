@@ -10,10 +10,24 @@ from movimientos_caja.models import MovimientoCaja
 
 
 class Liquidacion(models.Model):
+    # Pago: nosotros le pagamos a la entidad (proveedor) -- comportamiento
+    # histórico, el único que existía antes de septiembre de 2026. Cobro:
+    # la entidad (cliente) nos paga a nosotros -- para vincular un recibo
+    # con la factura que nosotros le emitimos. Determina qué comprobantes/
+    # movimientos ofrece _armar_items() (ver liquidaciones/views.py) y qué
+    # textos usan la pantalla y las exportaciones (ver liquidaciones/
+    # documentos.py): "Comprobantes a Pagar"/"Pago" vs "Comprobantes a
+    # Cobrar"/"Cobro". Una vez creada la liquidación, el tipo no se cambia
+    # (los ítems ya vinculados quedarían inconsistentes).
+    TIPO_PAGO = 'pago'
+    TIPO_COBRO = 'cobro'
+    TIPO_CHOICES = [(TIPO_PAGO, 'Pago (nosotros pagamos)'), (TIPO_COBRO, 'Cobro (nos pagan)')]
+
     id = models.IntegerField(primary_key=True)
     numero = models.CharField(max_length=145, blank=True, null=True)
     fecha = models.DateField(blank=True, null=True)
     entidad = models.ForeignKey(Entidad, models.DO_NOTHING, db_column='id_entidad')
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default=TIPO_PAGO)
     debe = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
     haber = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
 

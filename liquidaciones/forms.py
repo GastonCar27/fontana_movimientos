@@ -1,9 +1,12 @@
 from django import forms
 from entidades.models import Entidad
 
+from .models import Liquidacion
+
 
 class LiquidacionSeleccionForm(forms.Form):
-    """Form usado solo para renderizar el <select> de entidades en el template."""
+    """Form usado solo para renderizar el <select> de entidades (y el de
+    tipo pago/cobro) en el template."""
     fecha = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={'type': 'date'})
@@ -11,6 +14,11 @@ class LiquidacionSeleccionForm(forms.Form):
     entidad = forms.ModelChoiceField(
         queryset=Entidad.objects.all().order_by('nombre'),
         required=False,
+    )
+    tipo = forms.ChoiceField(
+        choices=Liquidacion.TIPO_CHOICES,
+        required=False,
+        initial=Liquidacion.TIPO_PAGO,
     )
 
 

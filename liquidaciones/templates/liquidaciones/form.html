@@ -3,7 +3,10 @@
 {% block content %}
 {% include "liquidaciones/menu.html" %}
 
-<h1>{% if liquidacion %}Editar liquidación {{ liquidacion.numero }}{% else %}Nueva liquidación{% endif %}</h1>
+<h1>
+    {% if liquidacion %}Editar liquidación {{ liquidacion.numero }}{% else %}Nueva liquidación{% endif %}
+    {% if entidad %}({% if tipo_liquidacion == 'cobro' %}Cobro{% else %}Pago{% endif %}){% endif %}
+</h1>
 
 {% if messages %}
 <ul>
@@ -11,8 +14,20 @@
 </ul>
 {% endif %}
 
-<!-- Paso 1: solo entidad. Al elegir un resultado del buscador, se recarga la página (GET) con sus ítems -->
+<!-- Paso 1: tipo + entidad. Al elegir un resultado del buscador (o cambiar
+     el tipo), se recarga la página (GET) con los ítems que correspondan. -->
 <form method="get" id="form-seleccion">
+    <label>Tipo:
+        <select name="tipo" id="tipo-liquidacion"
+                {% if es_edicion %}disabled{% else %}onchange="document.getElementById('form-seleccion').submit()"{% endif %}>
+            {% for valor, etiqueta in tipo_choices %}
+            <option value="{{ valor }}" {% if valor == tipo_liquidacion %}selected{% endif %}>{{ etiqueta }}</option>
+            {% endfor %}
+        </select>
+        {% if es_edicion %}
+        <span class="text-muted small">(no se puede cambiar una vez creada la liquidación)</span>
+        {% endif %}
+    </label>
     <label>Entidad:
         <div class="entidad-buscador-wrapper">
             <input type="text" id="entidad-buscador" autocomplete="off"
@@ -87,6 +102,7 @@
 <form method="post" id="form-items">
     {% csrf_token %}
     <input type="hidden" name="entidad" value="{{ entidad.pk }}">
+    <input type="hidden" name="tipo" value="{{ tipo_liquidacion }}">
 
     <label>Fecha:
         <input type="date" name="fecha" value="{{ fecha|date:'Y-m-d'|default:'' }}" required>

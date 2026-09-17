@@ -9,9 +9,29 @@ from django.db import models
 from entidades.models import Entidad
 
 class Retencion(models.Model):
+    # Ver comentario del campo es_emisor más abajo.
+    ES_EMISOR = 1
+    NO_ES_EMISOR = 0
+
     id = models.IntegerField(primary_key=True)
     entidad = models.ForeignKey(Entidad, models.DO_NOTHING, db_column='id_entidad', blank=True, null=True)
     entidad_nombre = models.CharField(max_length=345, blank=True, null=True)
+    # es_emisor = 1 o vacío (default, comportamiento histórico): Fontana
+    # practicó/emitió esta retención -- se la retuvo a 'entidad' al pagarle
+    # (por eso el PDF/Excel dice "CONSTANCIA DE RETENCIÓN" y trae firma: es
+    # un documento que Fontana emite). es_emisor = 0: 'entidad' le practicó
+    # la retención a Fontana al pagarle a Fontana (retención sufrida) -- acá
+    # el PDF/Excel es solo un registro interno, no un comprobante que
+    # Fontana emite. Mismo criterio y mismos choices que Comprobante.es_emisor
+    # (ver comprobantes/models.py), agregado para que liquidaciones pueda
+    # ofrecer las retenciones correctas según el tipo (pago/cobro) de cada
+    # liquidación -- ver liquidaciones/views.py::_armar_items.
+    es_emisor = models.IntegerField(
+        blank=False,
+        null=True,
+        default=1,
+        choices=[(1, 'Sí'), (0, 'No')],
+    )
     subtotal = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
     porcentaje = models.FloatField(blank=True, null=True)
     total = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)

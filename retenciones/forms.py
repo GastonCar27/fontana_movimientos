@@ -47,8 +47,8 @@ class RegimenChoiceField(forms.ModelChoiceField):
 
 class RetencionHeaderForm(forms.Form):
     """Datos comunes a todo el comprobante de retención (todos los renglones
-    del formset comparten estos valores: proveedor, impuesto/régimen y
-    número de comprobante)."""
+    del formset comparten estos valores: entidad, dirección, impuesto/
+    régimen y número de comprobante)."""
 
     entidad = forms.ModelChoiceField(
         queryset=Entidad.objects.all(),
@@ -57,13 +57,29 @@ class RetencionHeaderForm(forms.Form):
     )
     entidad_nombre = forms.CharField(
         required=False,
-        label='Proveedor',
+        label='Entidad',
         widget=forms.TextInput(attrs={
             'class': 'form-control form-control-sm',
             'id': 'entidad-buscador',
             'autocomplete': 'off',
             'placeholder': 'Buscar por nombre o CUIT...',
         }),
+    )
+    # Dirección de la retención: 1/Sí (default) = Fontana se la practicó a
+    # la entidad al pagarle (comportamiento histórico, "Proveedor" en el
+    # PDF/Excel); 0/No = la entidad se la practicó a Fontana al pagarle a
+    # Fontana (retención sufrida, "Cliente" en el PDF/Excel). Ver
+    # Retencion.es_emisor en models.py.
+    es_emisor = forms.TypedChoiceField(
+        choices=(
+            (1, 'Practicada por Fontana (se la retuvimos a la entidad)'),
+            (0, 'Sufrida (la entidad nos la retuvo a nosotros)'),
+        ),
+        coerce=int,
+        required=True,
+        initial=1,
+        label='Dirección',
+        widget=forms.Select(attrs={'class': 'form-control form-control-sm', 'id': 'id_es_emisor'}),
     )
     id_impuesto = ImpuestoChoiceField(
         queryset=RetencionTipoImpuesto.objects.all().order_by('nombre'),

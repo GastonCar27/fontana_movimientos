@@ -21,6 +21,28 @@ from .forms import (
 )
 from .models import Retencion, RetencionTipoImpuesto, RetencionTipoRegimen
 
+# Textos que cambian según la dirección de la retención (Retencion.es_emisor
+# -- ver el comentario del campo en models.py). Mismo criterio que
+# liquidaciones/documentos.py::_TEXTOS_POR_TIPO.
+_TEXTOS_POR_DIRECCION = {
+    Retencion.ES_EMISOR: {
+        'entidad_label': 'Proveedor',
+        'titulo': 'CONSTANCIA DE RETENCIÓN',
+        'hoja_excel': 'Constancia de Retención',
+        'mostrar_firma': True,
+    },
+    Retencion.NO_ES_EMISOR: {
+        'entidad_label': 'Cliente',
+        'titulo': 'RETENCIÓN RECIBIDA (registro interno)',
+        'hoja_excel': 'Retención recibida',
+        'mostrar_firma': False,
+    },
+}
+
+
+def _textos_retencion(es_emisor):
+    return _TEXTOS_POR_DIRECCION.get(es_emisor, _TEXTOS_POR_DIRECCION[Retencion.ES_EMISOR])
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,6 +175,7 @@ def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
     entidad_nombre = header_form.cleaned_data.get('entidad_nombre') or (entidad.nombre if entidad else '')
     id_impuesto = header_form.cleaned_data.get('id_impuesto')
     id_regimen = header_form.cleaned_data.get('id_regimen')
+    es_emisor = header_form.cleaned_data.get('es_emisor', Retencion.ES_EMISOR)
     anio = header_form.cleaned_data['año']
     numero = header_form.cleaned_data['numero']
 
@@ -174,6 +197,7 @@ def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
             id=siguiente_id,
             entidad=entidad,
             entidad_nombre=entidad_nombre,
+            es_emisor=es_emisor,
             subtotal=subtotal,
             porcentaje=porcentaje,
             total=total,
@@ -226,6 +250,7 @@ def retencion_alta(request):
         header_form = RetencionHeaderForm(initial={
             'año': anio_actual,
             'numero': _siguiente_numero_retencion(anio_actual),
+            'es_emisor': Retencion.ES_EMISOR,
         })
         formset = RetencionRenglonFormSet(prefix='form')
 
@@ -285,6 +310,7 @@ def retencion_modificar(request, anio, numero):
             'entidad_nombre': primera.entidad_nombre or (primera.entidad.nombre if primera.entidad else ''),
             'id_impuesto': primera.id_impuesto,
             'id_regimen': primera.id_regimen,
+            'es_emisor': primera.es_emisor if primera.es_emisor is not None else Retencion.ES_EMISOR,
             'año': primera.año,
             'numero': primera.numero,
         })
@@ -362,6 +388,7 @@ def retencion_listado(request):
                 'fecha': r.fecha,
                 'cantidad_renglones': 0,
                 'total': Decimal('0'),
+                'es_emisor': r.es_emisor if r.es_emisor is not None else Retencion.ES_EMISOR,
             }
         grupos[clave]['cantidad_renglones'] += 1
         grupos[clave]['total'] += (r.total or Decimal('0'))
@@ -375,6 +402,7 @@ def retencion_listado(request):
         'fecha': lambda g: g['fecha'],
         'renglones': lambda g: g['cantidad_renglones'],
         'total': lambda g: g['total'],
+        'direccion': lambda g: g['es_emisor'],
     }
     if request.GET.get('orden') in campos_orden:
         lista = aplicar_orden_lista(request, list(grupos.values()), campos_orden)
@@ -407,6 +435,7 @@ def _contexto_impresion(anio, numero):
         l.texto_factura = _texto_comprobante_origen(l, tipos_por_id)
 
     total = sum((l.total or Decimal('0')) for l in lineas)
+    es_emisor = primera.es_emisor if primera.es_emisor is not None else Retencion.ES_EMISOR
 
     return {
         'anio': anio,
@@ -418,6 +447,8 @@ def _contexto_impresion(anio, numero):
         'regimen': primera.id_regimen,
         'lineas': lineas,
         'total': total,
+        'es_emisor': es_emisor,
+        'textos': _textos_retencion(es_emisor),
     }
 
 
@@ -447,9 +478,10 @@ def retencion_pdf(request, anio, numero):
     subtitulo_estilo = ParagraphStyle('subtitulo_retencion', parent=estilos['Normal'], alignment=1, fontSize=9)
 
     regimen_nombre = str(contexto['regimen']) if contexto['regimen'] else ''
+    textos = contexto['textos']
 
     elementos = [
-        Paragraph('CONSTANCIA DE RETENCIÓN', titulo_estilo),
+        Paragraph(textos['titulo'], titulo_estilo),
     ]
     if regimen_nombre:
         elementos.append(Paragraph(regimen_nombre, subtitulo_estilo))
@@ -459,7 +491,7 @@ def retencion_pdf(request, anio, numero):
     elementos.append(Spacer(1, 0.5 * cm))
 
     datos_proveedor = [
-        ['Proveedor', contexto['entidad_nombre']],
+        [textos['entidad_label'], contexto['entidad_nombre']],
         ['Domicilio', contexto['domicilio']],
         ['CUIT Nº', contexto['cuit']],
     ]
@@ -511,8 +543,15 @@ def retencion_pdf(request, anio, numero):
     ]))
     elementos.append(tabla_total)
     elementos.append(Spacer(1, 1.2 * cm))
-    elementos.append(Paragraph('_' * 30, estilos['Normal']))
-    elementos.append(Paragraph('FIRMA', ParagraphStyle('firma', parent=estilos['Normal'], alignment=1)))
+    if textos['mostrar_firma']:
+        elementos.append(Paragraph('_' * 30, estilos['Normal']))
+        elementos.append(Paragraph('FIRMA', ParagraphStyle('firma', parent=estilos['Normal'], alignment=1)))
+    else:
+        elementos.append(Paragraph(
+            'Registro interno de una retención que nos practicó la entidad -- '
+            'no reemplaza la constancia que debe emitir ella.',
+            ParagraphStyle('nota_sufrida', parent=estilos['Normal'], fontSize=8, textColor=colors.grey),
+        ))
 
     doc.build(elementos)
     return response
@@ -529,17 +568,18 @@ def retencion_excel(request, anio, numero):
         messages.error(request, f'No se encontró el comprobante de retención {anio}-{numero:04d}.')
         return redirect('retenciones:listado')
 
+    textos = contexto['textos']
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = 'Constancia de Retención'
+    ws.title = textos['hoja_excel']
 
     regimen_nombre = str(contexto['regimen']) if contexto['regimen'] else ''
-    ws.append(['CONSTANCIA DE RETENCIÓN'])
+    ws.append([textos['titulo']])
     if regimen_nombre:
         ws.append([regimen_nombre])
     ws.append([f'COMPROBANTE Nº {anio}- {numero:04d}'])
     ws.append([''])
-    ws.append(['Proveedor', contexto['entidad_nombre']])
+    ws.append([textos['entidad_label'], contexto['entidad_nombre']])
     ws.append(['Domicilio', contexto['domicilio']])
     ws.append(['CUIT Nº', contexto['cuit']])
     ws.append([''])

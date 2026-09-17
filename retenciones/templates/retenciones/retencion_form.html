@@ -15,8 +15,12 @@
         <div class="card mb-3">
             <div class="card-body">
                 <div class="form-row">
-                    <div class="form-group col-md-4 position-relative">
-                        <label>{{ header_form.entidad_nombre.label }}</label>
+                    <div class="form-group col-md-3">
+                        <label>{{ header_form.es_emisor.label }}</label>
+                        {{ header_form.es_emisor }}
+                    </div>
+                    <div class="form-group col-md-3 position-relative">
+                        <label id="label-entidad-buscador">{{ header_form.entidad_nombre.label }}</label>
                         {{ header_form.entidad_nombre }}
                         {{ header_form.entidad }}
                         <div id="entidad-resultados" class="entidad-resultados"></div>
@@ -28,7 +32,7 @@
                         <label>{{ header_form.id_impuesto.label }}</label>
                         {{ header_form.id_impuesto }}
                     </div>
-                    <div class="form-group col-md-3">
+                    <div class="form-group col-md-2">
                         <label>{{ header_form.id_regimen.label }}</label>
                         {{ header_form.id_regimen }}
                     </div>
@@ -36,7 +40,7 @@
                         <label>{{ header_form.año.label }}</label>
                         {{ header_form.año }}
                     </div>
-                    <div class="form-group col-md-2">
+                    <div class="form-group col-md-1">
                         <label>{{ header_form.numero.label }}</label>
                         {{ header_form.numero }}
                     </div>
@@ -137,7 +141,19 @@
 
 <script>
 (function () {
-    // --- Buscador de entidad con autocompletado (Proveedor) ---
+    // --- Etiqueta dinámica "Proveedor"/"Cliente" según la dirección elegida ---
+    const selectDireccion = document.getElementById('id_es_emisor');
+    const labelEntidad = document.getElementById('label-entidad-buscador');
+    function actualizarEtiquetaEntidad() {
+        if (!selectDireccion || !labelEntidad) return;
+        labelEntidad.textContent = selectDireccion.value === '0' ? 'Cliente' : 'Proveedor';
+    }
+    if (selectDireccion) {
+        selectDireccion.addEventListener('change', actualizarEtiquetaEntidad);
+        actualizarEtiquetaEntidad();
+    }
+
+    // --- Buscador de entidad con autocompletado (Proveedor / Cliente, según dirección) ---
     const input = document.getElementById('entidad-buscador');
     const hidden = document.getElementById('id_entidad');
     const resultados = document.getElementById('entidad-resultados');

@@ -45,6 +45,34 @@ DEBE_HEADERS = ['Id', 'Fecha', 'Comprobante', 'Entidad', 'Total']
 HABER_HEADERS = ['Id', 'Fecha', 'F.diferido', 'Detalle', 'Entidad', 'Total']
 RENGLONES_HEADERS = ['Id', 'Producto', 'Cantidad', 'U. De Medida', 'Precio Unitario', 'Iva Tipo', 'Sector']
 
+# Textos que cambian según liquidacion.tipo ('pago': nosotros le pagamos a
+# la entidad -- comportamiento histórico; 'cobro': la entidad nos paga a
+# nosotros). Ver Liquidacion.TIPO_CHOICES en liquidaciones/models.py.
+_TEXTOS_POR_TIPO = {
+    'pago': {
+        'entidad_label': 'Proveedor',
+        'debe_titulo': 'Comprobantes a Pagar',
+        'debe_total_pdf': 'Total a Pagar:',
+        'debe_total_excel': 'Total a Pagar (Debe)',
+        'haber_titulo': 'Pago',
+        'haber_total_pdf': 'Total de Pago:',
+        'haber_total_excel': 'Total de Pago (Haber)',
+    },
+    'cobro': {
+        'entidad_label': 'Cliente',
+        'debe_titulo': 'Comprobantes a Cobrar',
+        'debe_total_pdf': 'Total a Cobrar:',
+        'debe_total_excel': 'Total a Cobrar (Debe)',
+        'haber_titulo': 'Cobro',
+        'haber_total_pdf': 'Total de Cobro:',
+        'haber_total_excel': 'Total de Cobro (Haber)',
+    },
+}
+
+
+def _textos(liquidacion):
+    return _TEXTOS_POR_TIPO.get(liquidacion.tipo, _TEXTOS_POR_TIPO['pago'])
+
 # static/images/logo_fsa.jpg, relativo a la raíz del proyecto (este archivo
 # vive en <raiz>/liquidaciones/documentos.py).
 LOGO_PATH = os.path.join(
@@ -353,6 +381,7 @@ def generar_pdf_liquidacion(liquidacion, completa=False):
     tabla_haber = _tabla_pdf(HABER_HEADERS, filas_haber)
 
     entidad = liquidacion.entidad
+    textos = _textos(liquidacion)
 
     story = []
     if os.path.exists(LOGO_PATH):
@@ -367,13 +396,13 @@ def generar_pdf_liquidacion(liquidacion, completa=False):
     if entidad:
         cuit_texto = _cuit_con_guiones(entidad.cuit) if entidad.cuit else ''
         story.append(Paragraph(
-            f'Proveedor:  ({entidad.id}) Cuit: {cuit_texto} {entidad.nombre}', estilo_titulo,
+            f'{textos["entidad_label"]}:  ({entidad.id}) Cuit: {cuit_texto} {entidad.nombre}', estilo_titulo,
         ))
 
-    story.append(Paragraph('Comprobantes a Pagar', estilo_cabecera))
+    story.append(Paragraph(textos['debe_titulo'], estilo_cabecera))
     story.append(tabla_debe)
     story.append(Spacer(0, 5))
-    story.append(Paragraph(f'Total a Pagar:   {separador_miles(total_debe)}', estilo_pie))
+    story.append(Paragraph(f'{textos["debe_total_pdf"]}   {separador_miles(total_debe)}', estilo_pie))
     story.append(Spacer(0, 10))
 
     if completa:
@@ -385,10 +414,10 @@ def generar_pdf_liquidacion(liquidacion, completa=False):
             story.append(_tabla_renglones_pdf(filas_renglones_debe, hay_mas_debe))
             story.append(Spacer(0, 10))
 
-    story.append(Paragraph('Pago', estilo_cabecera))
+    story.append(Paragraph(textos['haber_titulo'], estilo_cabecera))
     story.append(tabla_haber)
     story.append(Spacer(0, 5))
-    story.append(Paragraph(f'Total de Pago:  {separador_miles(total_haber)}', estilo_pie))
+    story.append(Paragraph(f'{textos["haber_total_pdf"]}  {separador_miles(total_haber)}', estilo_pie))
     story.append(Spacer(0, 10))
 
     if completa:
@@ -453,15 +482,16 @@ def generar_excel_liquidacion(liquidacion, completa=False):
     entidad = liquidacion.entidad
     filas_debe, total_debe = _filas_debe(liquidacion)
     filas_haber, total_haber = _filas_haber(liquidacion)
+    textos = _textos(liquidacion)
 
     ws_resumen = wb.active
     ws_resumen.title = 'Resumen'
     ws_resumen.append(['Liquidación N°', liquidacion.numero or liquidacion.id])
     ws_resumen.append(['Fecha', liquidacion.fecha])
-    ws_resumen.append(['Proveedor', f'({entidad.id}) {entidad.nombre}' if entidad else ''])
+    ws_resumen.append([textos['entidad_label'], f'({entidad.id}) {entidad.nombre}' if entidad else ''])
     ws_resumen.append(['Cuit', _cuit_con_guiones(entidad.cuit) if entidad and entidad.cuit else ''])
-    ws_resumen.append(['Total a Pagar (Debe)', _numero_o_none(total_debe)])
-    ws_resumen.append(['Total de Pago (Haber)', _numero_o_none(total_haber)])
+    ws_resumen.append([textos['debe_total_excel'], _numero_o_none(total_debe)])
+    ws_resumen.append([textos['haber_total_excel'], _numero_o_none(total_haber)])
     ws_resumen.append(['Diferencia', _numero_o_none(total_debe - total_haber)])
     for fila_idx in (5, 6, 7):
         ws_resumen.cell(row=fila_idx, column=2).number_format = FORMATO_MILES_EXCEL

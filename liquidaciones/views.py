@@ -27,6 +27,8 @@ from .models import (
     LiquidacionMovimiento,
 )
 
+TIPOS_LIQUIDACION_VALIDOS = {Liquidacion.TIPO_PAGO, Liquidacion.TIPO_COBRO}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,12 +52,27 @@ def _monto_item(item_obj):
     return total
 
 
-def _armar_items(entidad, liquidacion_actual=None):
+def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     """
     Devuelve, para la entidad dada, los movimientos/comprobantes/retenciones/
     retenciones_inym que no tienen liquidación asociada. Si se pasa
     liquidacion_actual (modo edición), también incluye los ítems que ya
     están vinculados a ESA liquidación, marcados como seleccionados.
+
+    'tipo' (Liquidacion.TIPO_PAGO o TIPO_COBRO) decide qué movimientos y
+    comprobantes se ofrecen, porque son direcciones distintas de la misma
+    entidad:
+      - TIPO_PAGO (nosotros le pagamos a la entidad): comprobantes que la
+        entidad nos emitió (es_emisor=1, facturas de compra) y movimientos
+        de caja donde la entidad es la receptora (pagos salientes).
+      - TIPO_COBRO (la entidad nos paga a nosotros): comprobantes que
+        nosotros le emitimos a la entidad (es_emisor=0, facturas de venta)
+        y movimientos de caja donde la entidad es la emisora -- vía
+        movimiento_caja_emisor, el mismo mecanismo que ya usa el comando
+        mover_receptor_a_emisor -- y nosotros (ENTIDAD_PROPIA_ID) la
+        receptora (cobros / recibos entrantes).
+    Las retenciones y retenciones INYM no tienen ese mismo concepto de
+    dirección todavía, así que se ofrecen igual para los dos tipos.
 
     Además, en modo edición, devuelve por separado ('movimientos_otros' /
     'comprobantes_otros') los movimientos_caja / comprobantes que ya están
@@ -82,8 +99,14 @@ def _armar_items(entidad, liquidacion_actual=None):
     # --- Movimientos de caja ---
     mov_excl = excluidos(LiquidacionMovimiento, 'movimiento_caja_id')
     mov_tipo = tipo_actual(LiquidacionMovimiento, 'movimiento_caja_id')
+    if tipo == Liquidacion.TIPO_COBRO:
+        movimientos_qs = MovimientoCaja.objects.filter(
+            emisor_relacion__id_entidad=entidad, receptor_id=ENTIDAD_PROPIA_ID,
+        )
+    else:
+        movimientos_qs = MovimientoCaja.objects.filter(receptor=entidad)
     movimientos = list(
-        MovimientoCaja.objects.filter(receptor=entidad)
+        movimientos_qs
         .exclude(id__in=mov_excl)
         .select_related('tipo', 'rel_numero')
         .order_by('-emision')
@@ -96,8 +119,14 @@ def _armar_items(entidad, liquidacion_actual=None):
     # --- Comprobantes ---
     comp_excl = excluidos(LiquidacionComprobante, 'comprobante_id')
     comp_tipo = tipo_actual(LiquidacionComprobante, 'comprobante_id')
+    if tipo == Liquidacion.TIPO_COBRO:
+        comprobantes_qs = Comprobante.objects.filter(entidad_emisor=entidad, es_emisor=0)
+    else:
+        comprobantes_qs = Comprobante.objects.filter(entidad_emisor=entidad).filter(
+            Q(es_emisor=1) | Q(es_emisor__isnull=True)
+        )
     comprobantes = list(
-        Comprobante.objects.filter(entidad_emisor=entidad)
+        comprobantes_qs
         .exclude(id__in=comp_excl)
         .select_related('tipo_de_cambio', 'tipo_comprobante')
         .order_by('-fecha')
@@ -108,10 +137,21 @@ def _armar_items(entidad, liquidacion_actual=None):
         c.seleccionado = c.id in comp_tipo
 
     # --- Retenciones ---
+    # Igual criterio direccional que Comprobante.es_emisor: TIPO_PAGO ->
+    # retenciones que Fontana le PRACTICÓ a la entidad al pagarle (es_emisor=1
+    # o vacío, comportamiento histórico). TIPO_COBRO -> retenciones que la
+    # entidad le practicó a FONTANA al pagarle a Fontana (es_emisor=0,
+    # "sufridas" -- ver Retencion.es_emisor en retenciones/models.py).
     ret_excl = excluidos(LiquidacionRetencion, 'retencion_id')
     ret_tipo = tipo_actual(LiquidacionRetencion, 'retencion_id')
+    if tipo == Liquidacion.TIPO_COBRO:
+        retenciones_qs = Retencion.objects.filter(entidad=entidad, es_emisor=Retencion.NO_ES_EMISOR)
+    else:
+        retenciones_qs = Retencion.objects.filter(entidad=entidad).filter(
+            Q(es_emisor=Retencion.ES_EMISOR) | Q(es_emisor__isnull=True)
+        )
     retenciones = list(
-        Retencion.objects.filter(entidad=entidad)
+        retenciones_qs
         .exclude(id__in=ret_excl)
         .select_related('id_regimen', 'id_impuesto')
         .order_by('-fecha')
@@ -121,11 +161,27 @@ def _armar_items(entidad, liquidacion_actual=None):
         r.tipo_actual = ret_tipo.get(r.id)
         r.seleccionado = r.id in ret_tipo
 
-    # --- Retenciones INYM (la entidad se llega vía operador_retenido) ---
+    # --- Retenciones INYM ---
+    # operador_emisor = quién practicó la retención, operador_retenido = a
+    # quién se la retuvieron (ver retenciones_inym/importador.py). TIPO_PAGO
+    # -> Fontana practicó, la entidad la sufrió (comportamiento histórico).
+    # TIPO_COBRO -> la entidad practicó, FONTANA la sufrió (mismo caso que ya
+    # contempla, por ejemplo, retenciones_inym.views con
+    # 'operador_retenido__entidad_id=ENTIDAD_PROPIA_ID' al excluir a Fontana
+    # del ranking -- la tabla ya venía soportando ambas direcciones, acá solo
+    # se filtra por la que corresponde según el tipo de la liquidación).
     retinym_excl = excluidos(LiquidacionRetencionInym, 'retencion_inym_id')
     retinym_tipo = tipo_actual(LiquidacionRetencionInym, 'retencion_inym_id')
+    if tipo == Liquidacion.TIPO_COBRO:
+        retenciones_inym_qs = RetencionInym.objects.filter(
+            operador_emisor__entidad=entidad, operador_retenido__entidad_id=ENTIDAD_PROPIA_ID,
+        )
+    else:
+        retenciones_inym_qs = RetencionInym.objects.filter(
+            operador_retenido__entidad=entidad, operador_emisor__entidad_id=ENTIDAD_PROPIA_ID,
+        )
     retenciones_inym = list(
-        RetencionInym.objects.filter(operador_retenido__entidad=entidad)
+        retenciones_inym_qs
         .exclude(id__in=retinym_excl)
         .order_by('-fecha')
     )
@@ -135,12 +191,22 @@ def _armar_items(entidad, liquidacion_actual=None):
         ri.seleccionado = ri.id in retinym_tipo
 
     # --- Movimientos / comprobantes de OTRA entidad, ya vinculados a esta liquidación ---
+    # "Pertenece a esta entidad" depende del tipo (misma lógica de arriba):
+    # para no perder de vista, al editar, un ítem que quedó vinculado con
+    # la dirección que no corresponde al tipo actual de la liquidación.
     movimientos_otros = []
     comprobantes_otros = []
     if liquidacion_actual:
+        if tipo == Liquidacion.TIPO_COBRO:
+            es_de_esta_entidad_mov = Q(
+                movimiento_caja__receptor_id=ENTIDAD_PROPIA_ID,
+                movimiento_caja__emisor_relacion__id_entidad=entidad,
+            )
+        else:
+            es_de_esta_entidad_mov = Q(movimiento_caja__receptor=entidad)
         mov_otros_tipo = dict(
             LiquidacionMovimiento.objects.filter(liquidacion=liquidacion_actual)
-            .exclude(movimiento_caja__receptor=entidad)
+            .exclude(es_de_esta_entidad_mov)
             .values_list('movimiento_caja_id', 'tipo')
         )
         if mov_otros_tipo:
@@ -154,9 +220,15 @@ def _armar_items(entidad, liquidacion_actual=None):
                 m.tipo_actual = mov_otros_tipo.get(m.id)
                 m.seleccionado = True
 
+        if tipo == Liquidacion.TIPO_COBRO:
+            es_de_esta_entidad_comp = Q(comprobante__entidad_emisor=entidad, comprobante__es_emisor=0)
+        else:
+            es_de_esta_entidad_comp = Q(comprobante__entidad_emisor=entidad) & (
+                Q(comprobante__es_emisor=1) | Q(comprobante__es_emisor__isnull=True)
+            )
         comp_otros_tipo = dict(
             LiquidacionComprobante.objects.filter(liquidacion=liquidacion_actual)
-            .exclude(comprobante__entidad_emisor=entidad)
+            .exclude(es_de_esta_entidad_comp)
             .values_list('comprobante_id', 'tipo')
         )
         if comp_otros_tipo:
@@ -342,6 +414,7 @@ def liquidacion_list(request):
         'numero': 'numero',
         'fecha': 'fecha',
         'entidad': 'entidad__nombre',
+        'tipo': 'tipo',
         'debe': 'debe',
         'haber': 'haber',
         'diferencia': F('debe') - F('haber'),
@@ -373,29 +446,38 @@ def liquidacion_form(request, pk=None):
     entidad = None
     fecha = None
     items = None
+    # El tipo (pago/cobro) se elige sólo al crear la liquidación; en
+    # edición queda fijo al que ya tiene (cambiarlo dejaría inconsistentes
+    # los ítems ya vinculados, que se ofrecieron para la dirección
+    # original). Ver Liquidacion.TIPO_CHOICES.
+    tipo_liquidacion = liquidacion.tipo if liquidacion else Liquidacion.TIPO_PAGO
 
     if request.method == 'POST':
         fecha = request.POST.get('fecha')
         entidad_id = request.POST.get('entidad')
         entidad = get_object_or_404(Entidad, pk=entidad_id) if entidad_id else None
+        if liquidacion is None:
+            tipo_post = request.POST.get('tipo')
+            if tipo_post in TIPOS_LIQUIDACION_VALIDOS:
+                tipo_liquidacion = tipo_post
 
         if not fecha or not entidad:
             messages.error(request, 'Debe indicar fecha y entidad.')
         else:
-            a_crear = []  # (modelo_intermedio, fk_name, item_id, tipo)
+            a_crear = []  # (modelo_intermedio, fk_name, item_id, tipo_item)
 
             for campo_sel, campo_tipo, modelo_item, modelo_intermedio, fk_name in CONFIG_ITEMS.values():
                 for item_id in request.POST.getlist(campo_sel):
-                    tipo = request.POST.get(f'{campo_tipo}_{item_id}')
-                    if tipo not in ('debe', 'haber'):
+                    tipo_item = request.POST.get(f'{campo_tipo}_{item_id}')
+                    if tipo_item not in ('debe', 'haber'):
                         continue
-                    a_crear.append((modelo_intermedio, fk_name, item_id, tipo))
+                    a_crear.append((modelo_intermedio, fk_name, item_id, tipo_item))
 
             if not a_crear:
                 messages.error(request, 'Debe seleccionar al menos un ítem para la liquidación.')
             else:
                 if liquidacion is None:
-                    liquidacion = Liquidacion(id=_siguiente_id_liquidacion())
+                    liquidacion = Liquidacion(id=_siguiente_id_liquidacion(), tipo=tipo_liquidacion)
                 else:
                     LiquidacionMovimiento.objects.filter(liquidacion=liquidacion).delete()
                     LiquidacionComprobante.objects.filter(liquidacion=liquidacion).delete()
@@ -408,10 +490,10 @@ def liquidacion_form(request, pk=None):
                     liquidacion.numero = f'LIQ-{liquidacion.id}'
                 liquidacion.save()
 
-                for modelo_intermedio, fk_name, item_id, tipo in a_crear:
+                for modelo_intermedio, fk_name, item_id, tipo_item in a_crear:
                     modelo_intermedio.objects.create(
                         liquidacion=liquidacion,
-                        tipo=tipo,
+                        tipo=tipo_item,
                         **{f'{fk_name}_id': int(item_id)},
                     )
 
@@ -434,14 +516,18 @@ def liquidacion_form(request, pk=None):
         if fecha_get:
             fecha = fecha_get
 
+        tipo_get = request.GET.get('tipo')
+        if not liquidacion and tipo_get in TIPOS_LIQUIDACION_VALIDOS:
+            tipo_liquidacion = tipo_get
+
     if entidad:
-        items = _armar_items(entidad, liquidacion)
+        items = _armar_items(entidad, tipo=tipo_liquidacion, liquidacion_actual=liquidacion)
 
     entidad_texto = ''
     if entidad:
         entidad_texto = f'{entidad.nombre} (CUIT {entidad.cuit})' if entidad.cuit else entidad.nombre
 
-    form = LiquidacionSeleccionForm(initial={'fecha': fecha, 'entidad': entidad})
+    form = LiquidacionSeleccionForm(initial={'fecha': fecha, 'entidad': entidad, 'tipo': tipo_liquidacion})
 
     return render(request, 'liquidaciones/form.html', {
         'form': form,
@@ -450,6 +536,9 @@ def liquidacion_form(request, pk=None):
         'entidad_texto': entidad_texto,
         'fecha': fecha,
         'items': items,
+        'tipo_liquidacion': tipo_liquidacion,
+        'tipo_choices': Liquidacion.TIPO_CHOICES,
+        'es_edicion': liquidacion is not None,
     })
 
 

@@ -12,8 +12,8 @@ from .models import (
 
 @admin.register(Liquidacion)
 class LiquidacionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'numero', 'fecha', 'entidad', 'debe', 'haber', 'saldo')
-    list_filter = ('entidad',)
+    list_display = ('id', 'numero', 'fecha', 'entidad', 'tipo', 'debe', 'haber', 'saldo')
+    list_filter = ('tipo', 'entidad')
     search_fields = ('numero',)
 
     def get_queryset(self, request):
