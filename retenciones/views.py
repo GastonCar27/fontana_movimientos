@@ -3,10 +3,11 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 
-from comprobantes.models import ComprobanteTipo
+from comprobantes.models import Comprobante, ComprobanteTipo
 from entidades.models import Entidad
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
@@ -162,6 +163,75 @@ def _armar_formset_inicial(lineas, tipos_por_id):
             'total': r.total,
         })
     return inicial
+
+
+def comprobante_buscar_para_retencion(request):
+    """Devuelve, en JSON, comprobantes ya cargados para elegir como renglón
+    de 'Detalle de las operaciones' en vez de tipear a mano tipo/punto de
+    venta/número/fecha/importe. Se filtran según la entidad elegida en el
+    encabezado y la dirección de la retención (?entidad= id de Entidad,
+    ?es_emisor= '1' o '0', mismos valores que Retencion.es_emisor):
+
+      - Practicada por Fontana (es_emisor=1): comprobantes que la entidad
+        NOS emitió (Comprobante.entidad_emisor=entidad, con
+        Comprobante.es_emisor=1 o vacío -- comportamiento histórico) --
+        son las facturas de compra sobre las que Fontana le retiene al
+        pagarle.
+      - Sufrida (es_emisor=0): comprobantes que NOSOTROS le emitimos a la
+        entidad (Comprobante.entidad_emisor=entidad,
+        Comprobante.es_emisor=0) -- son las facturas de venta sobre las
+        que la entidad nos retiene al pagarnos.
+
+    Ojo: Comprobante.entidad_emisor SIEMPRE guarda la contraparte (nunca a
+    Fontana); Comprobante.es_emisor es lo que indica si esa entidad fue la
+    que realmente emitió el comprobante, o la que lo recibió (nosotros lo
+    emitimos). Mismo criterio direccional que ya usa
+    liquidaciones.views._armar_items para ofrecer comprobantes según el
+    tipo (pago/cobro) de una liquidación."""
+    from movimientos.templatetags.movimientos_extras import separador_miles
+
+    entidad_id = request.GET.get('entidad', '').strip()
+    es_emisor_retencion = request.GET.get('es_emisor', '').strip()
+    q = request.GET.get('q', '').strip()
+
+    if not entidad_id.isdigit() or es_emisor_retencion not in ('0', '1'):
+        return JsonResponse({'resultados': []})
+
+    comprobantes = Comprobante.objects.filter(entidad_emisor_id=int(entidad_id))
+    if es_emisor_retencion == '1':
+        # Practicada: la entidad nos emitió el comprobante (compra).
+        comprobantes = comprobantes.filter(Q(es_emisor=1) | Q(es_emisor__isnull=True))
+    else:
+        # Sufrida: nosotros le emitimos el comprobante a la entidad (venta).
+        comprobantes = comprobantes.filter(es_emisor=0)
+
+    if q:
+        filtro = Q(comprobante_string__icontains=q) | Q(tipo_comprobante__nombre__icontains=q)
+        if q.isdigit():
+            filtro |= Q(numero=int(q)) | Q(id=int(q))
+        comprobantes = comprobantes.filter(filtro)
+
+    comprobantes = comprobantes.select_related('tipo_comprobante').order_by('-fecha', '-id')[:20]
+
+    resultados = []
+    for c in comprobantes:
+        identificador = _combinar_comprobante_origen(c.punto_de_venta, c.numero) or (c.comprobante_string or '')
+        partes_texto = [
+            c.tipo_comprobante.abreviatura or c.tipo_comprobante.nombre if c.tipo_comprobante else None,
+            identificador or None,
+            c.fecha.strftime('%d/%m/%Y') if c.fecha else None,
+            f'${separador_miles(c.total)}' if c.total is not None else None,
+        ]
+        resultados.append({
+            'id': c.id,
+            'text': ' - '.join(p for p in partes_texto if p),
+            'tipo_comp_origen': c.tipo_comprobante_id,
+            'punto_venta': c.punto_de_venta,
+            'numero_comprobante': c.numero,
+            'fecha_comp_origen': c.fecha.isoformat() if c.fecha else '',
+            'subtotal': str(c.total) if c.total is not None else '',
+        })
+    return JsonResponse({'resultados': resultados})
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ app_name = 'retenciones'
 urlpatterns = [
     path('', views.retencion_listado, name='listado'),
     path('alta/', views.retencion_alta, name='alta'),
+    path('comprobante-buscar/', views.comprobante_buscar_para_retencion, name='comprobante_buscar'),
     path('ranking-entidades/', views.retencion_ranking_entidades, name='ranking_entidades'),
     path('ranking-entidades/excel/', views.retencion_ranking_entidades_excel, name='ranking_entidades_excel'),
     path('ranking-entidades/pdf/', views.retencion_ranking_entidades_pdf, name='ranking_entidades_pdf'),

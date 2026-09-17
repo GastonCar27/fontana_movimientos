@@ -63,6 +63,7 @@
             <table class="table table-sm table-bordered align-middle" id="tabla-renglones">
                 <thead class="thead-light">
                     <tr>
+                        <th style="min-width:220px;">Buscar factura</th>
                         <th style="min-width:160px;">Tipo de factura</th>
                         <th style="min-width:110px;">Punto de venta</th>
                         <th style="min-width:110px;">Número</th>
@@ -76,6 +77,11 @@
                 <tbody>
                     {% for form in formset %}
                     <tr class="renglon-row">
+                        <td class="position-relative">
+                            <input type="text" class="form-control form-control-sm comprobante-buscador"
+                                   placeholder="Buscar factura ya cargada..." autocomplete="off">
+                            <div class="comprobante-resultados"></div>
+                        </td>
                         <td>{{ form.tipo_comp_origen }}</td>
                         <td>{{ form.punto_venta }}</td>
                         <td>{{ form.numero_comprobante }}</td>
@@ -85,7 +91,7 @@
                         <td>{{ form.total }}</td>
                         <td class="text-center">{{ form.DELETE }}</td>
                         {% if form.non_field_errors %}
-                        <td colspan="8" class="text-danger small">{{ form.non_field_errors|join:", " }}</td>
+                        <td colspan="9" class="text-danger small">{{ form.non_field_errors|join:", " }}</td>
                         {% endif %}
                     </tr>
                     {% endfor %}
@@ -96,6 +102,11 @@
         <!-- fila plantilla oculta, usada por JS para agregar renglones nuevos -->
         <table style="display:none;"><tbody>
             <tr id="fila-plantilla">
+                <td class="position-relative">
+                    <input type="text" class="form-control form-control-sm comprobante-buscador"
+                           placeholder="Buscar factura ya cargada..." autocomplete="off">
+                    <div class="comprobante-resultados"></div>
+                </td>
                 <td>{{ formset.empty_form.tipo_comp_origen }}</td>
                 <td>{{ formset.empty_form.punto_venta }}</td>
                 <td>{{ formset.empty_form.numero_comprobante }}</td>
@@ -136,6 +147,34 @@
 }
 .entidad-resultados div:hover {
     background: #f0f0f0;
+}
+.comprobante-resultados {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    font-size: 0.85rem;
+}
+.comprobante-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.comprobante-resultados div:hover {
+    background: #f0f0f0;
+}
+.comprobante-resultados div.comprobante-resultado-vacio {
+    cursor: default;
+    color: #6c757d;
+    font-style: italic;
+}
+.comprobante-resultados div.comprobante-resultado-vacio:hover {
+    background: transparent;
 }
 </style>
 
@@ -280,10 +319,110 @@
         }
     }
 
+    // --- Buscador de "factura ya cargada" por renglón: según la entidad
+    // elegida arriba y la dirección de la retención, ofrece los
+    // comprobantes que corresponden (ver
+    // retenciones.views.comprobante_buscar_para_retencion) y, al elegir
+    // uno, completa Tipo/Punto de venta/Número/Fecha/Importe de esa fila
+    // en vez de tipearlos a mano. ---
+    function buscarComprobantesFila(fila) {
+        const input = fila.querySelector('.comprobante-buscador');
+        const resultados = fila.querySelector('.comprobante-resultados');
+        if (!input || !resultados) return;
+
+        const entidadId = hidden ? hidden.value : '';
+        resultados.innerHTML = '';
+
+        if (!entidadId) {
+            const aviso = document.createElement('div');
+            aviso.className = 'comprobante-resultado-vacio';
+            aviso.textContent = 'Elegí primero la entidad, arriba.';
+            resultados.appendChild(aviso);
+            resultados.style.display = 'block';
+            return;
+        }
+
+        const esEmisorValor = selectDireccion ? selectDireccion.value : '1';
+        const q = input.value.trim();
+
+        fetch(
+            `{% url 'retenciones:comprobante_buscar' %}?entidad=${encodeURIComponent(entidadId)}`
+            + `&es_emisor=${encodeURIComponent(esEmisorValor)}&q=${encodeURIComponent(q)}`
+        )
+            .then(resp => resp.json())
+            .then(data => {
+                resultados.innerHTML = '';
+                if (data.resultados.length === 0) {
+                    const vacio = document.createElement('div');
+                    vacio.className = 'comprobante-resultado-vacio';
+                    vacio.textContent = 'No se encontraron facturas para esa entidad/dirección.';
+                    resultados.appendChild(vacio);
+                    resultados.style.display = 'block';
+                    return;
+                }
+                data.resultados.forEach(function (item) {
+                    const div = document.createElement('div');
+                    div.textContent = item.text;
+                    div.addEventListener('click', function () {
+                        input.value = item.text;
+
+                        const selectTipo = fila.querySelector('select[name$="-tipo_comp_origen"]');
+                        const inputPuntoVenta = fila.querySelector('input[name$="-punto_venta"]');
+                        const inputNumero = fila.querySelector('input[name$="-numero_comprobante"]');
+                        const inputFecha = fila.querySelector('input[name$="-fecha_comp_origen"]');
+                        const inputImporte = fila.querySelector('.importe-input');
+
+                        if (selectTipo && item.tipo_comp_origen) {
+                            selectTipo.value = String(item.tipo_comp_origen);
+                        }
+                        if (inputPuntoVenta && item.punto_venta !== null && item.punto_venta !== undefined) {
+                            inputPuntoVenta.value = item.punto_venta;
+                        }
+                        if (inputNumero && item.numero_comprobante !== null && item.numero_comprobante !== undefined) {
+                            inputNumero.value = item.numero_comprobante;
+                        }
+                        if (inputFecha && item.fecha_comp_origen) {
+                            inputFecha.value = item.fecha_comp_origen;
+                        }
+                        if (inputImporte && item.subtotal) {
+                            inputImporte.value = item.subtotal;
+                            inputImporte.dispatchEvent(new Event('input'));
+                        }
+
+                        resultados.style.display = 'none';
+                    });
+                    resultados.appendChild(div);
+                });
+                resultados.style.display = 'block';
+            });
+    }
+
+    function conectarBuscadorComprobante(fila) {
+        const input = fila.querySelector('.comprobante-buscador');
+        const resultados = fila.querySelector('.comprobante-resultados');
+        if (!input || !resultados) return;
+        let timeoutId = null;
+
+        input.addEventListener('focus', function () {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(function () { buscarComprobantesFila(fila); }, 150);
+        });
+        input.addEventListener('input', function () {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(function () { buscarComprobantesFila(fila); }, 250);
+        });
+        document.addEventListener('click', function (e) {
+            if (!resultados.contains(e.target) && e.target !== input) {
+                resultados.style.display = 'none';
+            }
+        });
+    }
+
     function conectarFila(fila) {
         fila.querySelectorAll('.importe-input, .porcentaje-input').forEach(function (el) {
             el.addEventListener('input', function () { recalcularFila(fila); });
         });
+        conectarBuscadorComprobante(fila);
     }
 
     document.querySelectorAll('#tabla-renglones tbody tr.renglon-row').forEach(conectarFila);
