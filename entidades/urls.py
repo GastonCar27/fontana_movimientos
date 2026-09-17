@@ -11,6 +11,9 @@ urlpatterns=[
     path('reportes/', views.entidad_reporte, name='reportes'),
     path('reportes/excel/', views.entidad_reporte_excel, name='reporte_excel'),
     path('reportes/pdf/', views.entidad_reporte_pdf, name='reporte_pdf'),
+    path('duplicados/', views.entidad_duplicados, name='duplicados'),
+    path('duplicados/excel/', views.entidad_duplicados_excel, name='duplicados_excel'),
+    path('duplicados/pdf/', views.entidad_duplicados_pdf, name='duplicados_pdf'),
 
     # --- Alta / Modificación / Listado de tipos de entidad (Rol) ---
     path('tipo-entidad/alta/', views.rol_alta, name='rol_alta'),

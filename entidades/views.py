@@ -189,26 +189,69 @@ from django.shortcuts import render
 # Create your views here.
 
 
+def _entidades_duplicadas(cuit, documento_nro, excluir_pk=None):
+    """Busca otras entidades que ya tengan cargado el mismo CUIT o el mismo
+    DNI (documento_nro) que se está por guardar. La usan tanto la
+    advertencia de alta/edición (ver entidad_alta/entidad_editar, acá
+    abajo) como, apoyándose en el mismo criterio de "mismo valor = mismo
+    dato", el listado de duplicados ya existentes en la base (ver
+    entidad_duplicados más abajo).
+
+    Devuelve una lista de tuplas (entidad, campo, valor); una misma
+    entidad puede aparecer dos veces si coincide tanto en CUIT como en DNI.
+    No filtra por 'activo': una entidad dada de baja sigue siendo un
+    duplicado real a los fines de esta advertencia. 'excluir_pk' se usa en
+    la edición para no compararse contra una misma."""
+    coincidencias = []
+    if cuit:
+        qs = Entidad.objects.filter(cuit=cuit)
+        if excluir_pk is not None:
+            qs = qs.exclude(pk=excluir_pk)
+        coincidencias += [(ent, 'CUIT', cuit) for ent in qs]
+    if documento_nro:
+        qs = Entidad.objects.filter(documento_nro=documento_nro)
+        if excluir_pk is not None:
+            qs = qs.exclude(pk=excluir_pk)
+        coincidencias += [(ent, 'DNI', documento_nro) for ent in qs]
+    return coincidencias
+
+
 def entidad_alta(request):
     """Alta de una Entidad nueva: el id lo asigna solo la vista (ver
     siguiente_id_entidad), y se pueden elegir uno o más "tipos de entidad"
-    (Rol) además de los datos básicos."""
+    (Rol) además de los datos básicos.
+
+    Si el CUIT o el DNI cargado ya lo tiene otra entidad, no se bloquea el
+    alta (el pedido fue una "advertencia", no una validación dura): se
+    vuelve a mostrar el formulario con el aviso y, si igual se quiere
+    continuar, un botón "Guardar de todos modos" que reenvía el mismo POST
+    con 'confirmar_duplicado=1' (ver entidad_form.html)."""
+    duplicados = []
     if request.method == 'POST':
         form = EntidadAltaForm(request.POST)
         if form.is_valid():
-            entidad = form.save(commit=False)
-            entidad.id = siguiente_id_entidad()
-            entidad.save()
-            # 'roles' es la relación inversa M2M (declarada en Rol, no en
-            # Entidad): un ModelForm normal no la guarda solo, hay que
-            # asignarla a mano después de tener el id de la entidad.
-            entidad.roles.set(form.cleaned_data['roles'])
-            messages.success(request, f'Entidad "{entidad}" creada correctamente (id {entidad.id}).')
-            return redirect('entidades:alta')
+            cuit = (form.cleaned_data.get('cuit') or '').strip()
+            documento_nro = form.cleaned_data.get('documento_nro')
+            duplicados = _entidades_duplicadas(cuit, documento_nro)
+            confirmar_duplicado = request.POST.get('confirmar_duplicado') == '1'
+
+            if not duplicados or confirmar_duplicado:
+                entidad = form.save(commit=False)
+                entidad.id = siguiente_id_entidad()
+                entidad.save()
+                # 'roles' es la relación inversa M2M (declarada en Rol, no
+                # en Entidad): un ModelForm normal no la guarda solo, hay
+                # que asignarla a mano después de tener el id de la
+                # entidad.
+                entidad.roles.set(form.cleaned_data['roles'])
+                messages.success(request, f'Entidad "{entidad}" creada correctamente (id {entidad.id}).')
+                return redirect('entidades:alta')
     else:
         form = EntidadAltaForm(initial={'activo': True})
 
-    return render(request, 'entidades/entidad_form.html', {'form': form, 'modo': 'alta'})
+    return render(request, 'entidades/entidad_form.html', {
+        'form': form, 'modo': 'alta', 'duplicados': duplicados,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -260,22 +303,33 @@ def entidad_listado(request):
 
 
 def entidad_editar(request, pk):
+    """Edición de una Entidad existente. Misma advertencia (no bloqueante)
+    de CUIT/DNI duplicado que entidad_alta, excluyendo a la propia entidad
+    de la comparación (si no, siempre "chocaría" contra sí misma)."""
     entidad = get_object_or_404(Entidad, pk=pk)
+    duplicados = []
 
     if request.method == 'POST':
         form = EntidadAltaForm(request.POST, instance=entidad)
         if form.is_valid():
-            form.save()
-            # 'roles' es la relación inversa M2M: no la guarda el ModelForm
-            # solo, hay que asignarla a mano (ver también entidad_alta).
-            entidad.roles.set(form.cleaned_data['roles'])
-            messages.success(request, f'Entidad "{entidad}" se modificó correctamente.')
-            return redirect('entidades:listado')
+            cuit = (form.cleaned_data.get('cuit') or '').strip()
+            documento_nro = form.cleaned_data.get('documento_nro')
+            duplicados = _entidades_duplicadas(cuit, documento_nro, excluir_pk=entidad.pk)
+            confirmar_duplicado = request.POST.get('confirmar_duplicado') == '1'
+
+            if not duplicados or confirmar_duplicado:
+                form.save()
+                # 'roles' es la relación inversa M2M: no la guarda el
+                # ModelForm solo, hay que asignarla a mano (ver también
+                # entidad_alta).
+                entidad.roles.set(form.cleaned_data['roles'])
+                messages.success(request, f'Entidad "{entidad}" se modificó correctamente.')
+                return redirect('entidades:listado')
     else:
         form = EntidadAltaForm(instance=entidad, initial={'roles': entidad.roles.all()})
 
     return render(request, 'entidades/entidad_form.html', {
-        'form': form, 'modo': 'modificar', 'entidad': entidad,
+        'form': form, 'modo': 'modificar', 'entidad': entidad, 'duplicados': duplicados,
     })
 
 
@@ -330,6 +384,84 @@ def entidad_reporte_pdf(request):
     entidades, _q, _tipo_id, _solo_activas = _entidades_filtradas(request)
     resultado = _filas_reporte_entidad(entidades)
     return pdf_response('entidades', 'Entidades', resultado)
+
+
+# ---------------------------------------------------------------------------
+# Entidades con CUIT/DNI duplicado (datos ya cargados a revisar/corregir)
+# ---------------------------------------------------------------------------
+
+def _grupos_entidades_duplicadas():
+    """Recorre TODA la base (sin los filtros de búsqueda de
+    _entidades_filtradas: esto es un reporte de "cosas para revisar", no
+    una pantalla de trabajo diario) y arma un grupo por cada valor de CUIT
+    que se repite en más de una entidad, y otro por cada valor de DNI
+    (documento_nro) que se repite. Usado por entidad_duplicados y su
+    exportación a Excel/PDF."""
+    grupos = []
+
+    cuits_repetidos = (
+        Entidad.objects.exclude(cuit__isnull=True).exclude(cuit='')
+        .values('cuit').annotate(cantidad=Count('id')).filter(cantidad__gt=1)
+        .order_by('cuit')
+    )
+    for fila in cuits_repetidos:
+        entidades = Entidad.objects.filter(cuit=fila['cuit']).prefetch_related('roles').order_by('id')
+        grupos.append({'campo': 'CUIT', 'valor': fila['cuit'], 'entidades': list(entidades)})
+
+    documentos_repetidos = (
+        Entidad.objects.exclude(documento_nro__isnull=True)
+        .values('documento_nro').annotate(cantidad=Count('id')).filter(cantidad__gt=1)
+        .order_by('documento_nro')
+    )
+    for fila in documentos_repetidos:
+        entidades = Entidad.objects.filter(documento_nro=fila['documento_nro']).prefetch_related('roles').order_by('id')
+        grupos.append({'campo': 'DNI', 'valor': fila['documento_nro'], 'entidades': list(entidades)})
+
+    return grupos
+
+
+def entidad_duplicados(request):
+    """Listado de entidades ya cargadas que comparten CUIT o DNI con otra
+    (dato ya existente en la base, a diferencia de la advertencia de
+    alta/edición -- ver _entidades_duplicadas -- que compara contra lo que
+    se está por guardar)."""
+    grupos = _grupos_entidades_duplicadas()
+    return render(request, 'entidades/entidad_duplicados.html', {'grupos': grupos})
+
+
+def _filas_reporte_duplicados(grupos):
+    columnas = ['Campo duplicado', 'Valor', 'ID', 'Nombre', 'Localidad', 'Tipos', 'Activo']
+    filas = [
+        [
+            grupo['campo'],
+            grupo['valor'],
+            ent.id,
+            ent.nombre or '-',
+            ent.localidad or '-',
+            ', '.join(rol.nombre for rol in ent.roles.all()) or '-',
+            'Sí' if ent.activo else 'No',
+        ]
+        for grupo in grupos
+        for ent in grupo['entidades']
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': set(),
+        'anchos': [1.3, 1.5, 0.7, 2.3, 1.7, 2.0, 0.8],
+    }
+
+
+def entidad_duplicados_excel(request):
+    grupos = _grupos_entidades_duplicadas()
+    resultado = _filas_reporte_duplicados(grupos)
+    return excel_response('entidades_duplicadas', resultado)
+
+
+def entidad_duplicados_pdf(request):
+    grupos = _grupos_entidades_duplicadas()
+    resultado = _filas_reporte_duplicados(grupos)
+    return pdf_response('entidades_duplicadas', 'Entidades con CUIT/DNI duplicado', resultado)
 
 
 # ---------------------------------------------------------------------------

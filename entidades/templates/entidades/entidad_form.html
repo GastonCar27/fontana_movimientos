@@ -15,6 +15,23 @@
     </ul>
     {% endif %}
 
+    {% if duplicados %}
+    <div class="alert alert-warning">
+        <strong>¡Atención! Ya existe otra entidad cargada con el mismo dato:</strong>
+        <ul class="mb-2">
+            {% for ent, campo, valor in duplicados %}
+            <li>
+                {{ campo }} {{ valor }}: entidad
+                <a href="{% url 'entidades:editar' ent.id %}" target="_blank">{{ ent.id }} - {{ ent.nombre|default:"(sin nombre)" }}</a>
+                {% if not ent.activo %}<span class="badge bg-secondary">inactiva</span>{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        Revisá los datos antes de continuar. Si igual querés guardar esta entidad tal cual, hacé click en
+        "Guardar de todos modos".
+    </div>
+    {% endif %}
+
     <form method="post">
         {% csrf_token %}
         {% for field in form %}
@@ -33,7 +50,11 @@
         </div>
         {% endfor %}
 
+        {% if duplicados %}
+        <button type="submit" name="confirmar_duplicado" value="1" class="btn btn-warning btn-sm">Guardar de todos modos</button>
+        {% else %}
         <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        {% endif %}
         <a href="{% url 'entidades:listado' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
     </form>
 </div>

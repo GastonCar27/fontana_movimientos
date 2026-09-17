@@ -9,6 +9,8 @@
                    href="{% url 'entidades:listado' %}">Modificación</a>
                 <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'reportes' %}active{% endif %}"
                    href="{% url 'entidades:reportes' %}">Reportes</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'duplicados' %}active{% endif %}"
+                   href="{% url 'entidades:duplicados' %}">Duplicados</a>
             </div>
         </div>
     </div>
