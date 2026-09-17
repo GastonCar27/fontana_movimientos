@@ -650,6 +650,21 @@ def vincular_por_bloques(request):
         # correr el comando. Es exactamente la diferencia que causó el caso
         # Bukay Olivia Eugenia (renglón facturaba menos que lo vinculado) y
         # también detecta el caso opuesto (renglón factura de más).
+        #
+        # Bug corregido el 2026-09-17 (caso real: entidad Sauder Bernardo,
+        # Factura C 54): acá se sumaba v.movimiento.total (el total COMPLETO
+        # de cada movimiento vinculado), no v.cantidad_kg (lo que ESTE
+        # vínculo puntual cubre de ese renglón). Si un movimiento está
+        # repartido entre varios renglones (ver docstring de
+        # ComprobanteRenglonMovimiento.cantidad_kg), eso le sumaba al
+        # renglón el total completo del movimiento en vez de solo la
+        # porción que realmente le corresponde, inflando la diferencia y
+        # ocultando renglones con capacidad sin usar real (terminaban con
+        # una diferencia positiva falsa, que _calcular_pendientes_por_
+        # producto descarta por considerarla "ya contada del lado
+        # pendiente"). Un vínculo viejo con cantidad_kg=null se sigue
+        # tratando como si cubriera el movimiento completo (mismo criterio
+        # que el resto del archivo).
         capacidad_por_renglon = {}
         suma_por_renglon = {}
         for vinculo in vinculos_existentes:
@@ -661,7 +676,8 @@ def vincular_por_bloques(request):
                 detalle.cantidad if detalle and detalle.cantidad is not None else None
             )
             suma_por_renglon[renglon_id] = sum(
-                (v.movimiento.total or Decimal('0')) for v in vinculo.renglon.vinculos_movimiento.all()
+                (v.cantidad_kg if v.cantidad_kg is not None else (v.movimiento.total or Decimal('0')))
+                for v in vinculo.renglon.vinculos_movimiento.all()
             )
 
         for vinculo in vinculos_existentes:
@@ -1199,11 +1215,13 @@ def _kg_pendiente_movimiento_corregido(movimiento, asignado_null):
 
 def _diferencia_kg_renglon(renglon):
     """
-    Suma de Kg (Movimiento.total) de TODOS los movimientos vinculados a
-    este renglón, menos lo que factura el renglón (ComprobanteRenglonDetalle
-    .cantidad). None si el renglón no tiene cargada esa cantidad (no hay
-    con qué comparar). Mismo cálculo que ya usa "Vincular por bloques" en
-    su columna "Diferencia (renglón)".
+    Suma de Kg que los vínculos de este renglón realmente le cubren (ver
+    ComprobanteRenglonMovimiento.cantidad_kg -- no el total completo de
+    cada movimiento, que puede estar repartido entre varios renglones),
+    menos lo que factura el renglón (ComprobanteRenglonDetalle.cantidad).
+    None si el renglón no tiene cargada esa cantidad (no hay con qué
+    comparar). Mismo cálculo que ya usa "Vincular por bloques" en su
+    columna "Diferencia (renglón)".
 
     Positivo = el renglón tiene vinculado más Kg de los que factura (caso
     Bukay Olivia Eugenia) -- eso ya queda reflejado del lado "pendiente"
@@ -1215,13 +1233,27 @@ def _diferencia_kg_renglon(renglon):
     columna aparte "Capacidad de renglón sin usar" (agregado 2026-09-09 a
     pedido del usuario, sin volver a mezclarlo con el saldo pendiente:
     mezclarlos en un solo número fue justamente el bug del caso Bukay).
+
+    Bug corregido el 2026-09-17 (caso real: entidad Sauder Bernardo,
+    Factura C 54): acá se sumaba v.movimiento.total (el total COMPLETO de
+    cada movimiento vinculado) en vez de v.cantidad_kg (lo que ESE vínculo
+    puntual cubre de ESTE renglón). Cuando un movimiento está repartido
+    entre varios renglones, eso inflaba la suma con el total completo del
+    movimiento en cada uno de los renglones que lo comparten, dando una
+    diferencia positiva falsa (en vez de la negativa real) y haciendo que
+    el renglón desapareciera de "Capacidad de renglón sin usar" -- se
+    descartaba por parecer "vinculado de más" cuando en realidad tenía
+    capacidad sin usar de verdad. Un vínculo viejo con cantidad_kg=null se
+    sigue tratando como si cubriera el movimiento completo (mismo criterio
+    que el resto del archivo).
     """
     detalle = getattr(renglon, 'renglon_detalle_comprobante', None)
     capacidad = detalle.cantidad if detalle and detalle.cantidad is not None else None
     if capacidad is None:
         return None
     suma = sum(
-        (v.movimiento.total or Decimal('0')) for v in renglon.vinculos_movimiento.all()
+        (v.cantidad_kg if v.cantidad_kg is not None else (v.movimiento.total or Decimal('0')))
+        for v in renglon.vinculos_movimiento.all()
     )
     return suma - capacidad
 
