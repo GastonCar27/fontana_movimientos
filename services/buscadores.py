@@ -1,8 +1,13 @@
 """Helpers para los buscadores con autocompletado (AJAX) de entidad /
-empleado / producto: el texto que se muestra en el campo cuando ya hay
-algo elegido (alta con errores de validación, o edición). Reutilizado por
-las vistas de varias apps para no repetir la misma lógica de armado de
-texto en cada una."""
+producto: el texto que se muestra en el campo cuando ya hay algo elegido
+(alta con errores de validación, o edición). Reutilizado por las vistas de
+varias apps para no repetir la misma lógica de armado de texto en cada una.
+
+Nota: ya no hay un texto_empleado_buscador aparte -- los "empleados" pasaron
+a ser Entidad con un tipo de entidad (Rol) puntual (ver
+solicitudes_compra/models.py y entidades/migrations/0009_seed_tipos_entidad_empleado.py),
+así que usan texto_entidad_buscador(entidad, campo_documento='documento_nro')
+como cualquier otra entidad identificada por DNI."""
 
 
 def texto_entidad_buscador(entidad, campo_documento='cuit'):
@@ -22,11 +27,6 @@ def texto_entidad_buscador(entidad, campo_documento='cuit'):
     if entidad.cuit:
         return f'{entidad.nombre} (CUIT {entidad.cuit})'
     return entidad.nombre or ''
-
-
-def texto_empleado_buscador(empleado):
-    """Texto a mostrar en el buscador para un empleado ya seleccionado."""
-    return str(empleado) if empleado else ''
 
 
 def texto_producto_buscador(producto):

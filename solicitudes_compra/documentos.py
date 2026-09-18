@@ -37,10 +37,10 @@ def _entidad_propia():
     return Entidad.objects.filter(id=ENTIDAD_PROPIA_ID).first()
 
 
-def _nombre_completo(empleado):
-    if not empleado:
+def _nombre_completo(entidad):
+    if not entidad:
         return ''
-    return f'{empleado.nombre} {empleado.apellido}'.strip().upper()
+    return (entidad.nombre or '').strip().upper()
 
 
 def _formatear_cantidad(valor):
@@ -189,7 +189,7 @@ def generar_pdf_solicitud(solicitud):
             ('Dirección:', propia.direccion if propia else '', 'Tel:', TELEFONO_EMPRESA),
             (
                 'Autorizado:', _nombre_completo(solicitud.responsable_retiro),
-                'DNI:', solicitud.responsable_retiro.documento or '',
+                'DNI:', solicitud.responsable_retiro.documento_nro or '',
             ),
         ]),
         Spacer(1, 0.4 * cm),
@@ -238,7 +238,7 @@ def generar_excel_solicitud(solicitud):
     ws.append(['Dirección', propia.direccion if propia else '', 'Tel', TELEFONO_EMPRESA])
     ws.append([
         'Autorizado a retirar', _nombre_completo(solicitud.responsable_retiro),
-        'DNI', solicitud.responsable_retiro.documento or '',
+        'DNI', solicitud.responsable_retiro.documento_nro or '',
     ])
     ws.append([])
 

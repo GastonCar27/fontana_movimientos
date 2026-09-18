@@ -52,8 +52,8 @@
                     <td>{{ sol.numero }}</td>
                     <td>{{ sol.fecha }}</td>
                     <td>{{ sol.entidad }}</td>
-                    <td>{{ sol.solicitante }}</td>
-                    <td>{{ sol.responsable_retiro }}</td>
+                    <td>{{ sol.solicitante.nombre }}</td>
+                    <td>{{ sol.responsable_retiro.nombre }}</td>
                     <td>{{ sol.get_estado_display }}</td>
                     <td>{{ sol.creado_por.username|default:"—" }}</td>
                     <td class="text-center text-nowrap">

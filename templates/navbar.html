@@ -262,18 +262,6 @@
              </li>
              {% endif %}
 
-             {% if puede_ver_empleados %}
-             <li class="nav-item dropdown">
-                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownEmpleados" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                    Empleados
-                 </a>
-                <div class="dropdown-menu" aria-labelledby="navbarDropdownEmpleados">
-                    <a class="dropdown-item" href="{% url 'empleados:alta' %}">Nuevo empleado</a>
-                    <a class="dropdown-item" href="{% url 'empleados:listado' %}">Listado</a>
-                </div>
-             </li>
-             {% endif %}
-
              {% if puede_ver_otros %}
              <li class="nav-item dropdown">
                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownOtros" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">

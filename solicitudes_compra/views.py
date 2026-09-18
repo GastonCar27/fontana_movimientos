@@ -4,9 +4,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 from comprobantes.models import ComprobanteRenglon
-from empleados.models import Empleado
 from entidades.models import Entidad
-from services.buscadores import texto_empleado_buscador, texto_entidad_buscador
+from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_queryset
 
 from . import documentos
@@ -105,9 +104,15 @@ def solicitud_form(request, pk=None):
     entidad_id = form['entidad'].value()
     entidad_texto = texto_entidad_buscador(Entidad.objects.filter(pk=entidad_id).first()) if entidad_id else ''
     solicitante_id = form['solicitante'].value()
-    solicitante_texto = texto_empleado_buscador(Empleado.objects.filter(pk=solicitante_id).first()) if solicitante_id else ''
+    solicitante_texto = (
+        texto_entidad_buscador(Entidad.objects.filter(pk=solicitante_id).first(), campo_documento='documento_nro')
+        if solicitante_id else ''
+    )
     responsable_id = form['responsable_retiro'].value()
-    responsable_texto = texto_empleado_buscador(Empleado.objects.filter(pk=responsable_id).first()) if responsable_id else ''
+    responsable_texto = (
+        texto_entidad_buscador(Entidad.objects.filter(pk=responsable_id).first(), campo_documento='documento_nro')
+        if responsable_id else ''
+    )
 
     return render(request, 'solicitudes_compra/form.html', {
         'form': form,

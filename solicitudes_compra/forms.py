@@ -2,7 +2,6 @@ from django import forms
 from django.forms import inlineformset_factory
 
 from comprobantes.models import ComprobanteUnidadDeMedida, SectorTipo
-from empleados.models import Empleado
 from entidades.models import Entidad
 from productos.models import ProductoDetalle
 
@@ -29,9 +28,17 @@ class SolicitudCompraForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['entidad'].queryset = Entidad.objects.order_by('nombre')
         self.fields['entidad'].label = 'Proveedor'
-        empleados_activos = Empleado.objects.filter(activo=True).order_by('apellido', 'nombre')
-        self.fields['solicitante'].queryset = empleados_activos
-        self.fields['responsable_retiro'].queryset = empleados_activos
+        # Cada campo se restringe a las entidades que tengan el tipo de
+        # entidad (Rol) correspondiente -- ver SolicitudCompra.ROL_* en
+        # models.py. No se exige 'activo=True' porque Entidad no tiene ese
+        # concepto separado de "empleado activo": se maneja dándole/
+        # quitándole el rol desde Entidades -> Modificación.
+        self.fields['solicitante'].queryset = Entidad.objects.filter(
+            roles__nombre=SolicitudCompra.ROL_AUTORIZADO_SOLICITAR,
+        ).order_by('nombre')
+        self.fields['responsable_retiro'].queryset = Entidad.objects.filter(
+            roles__nombre=SolicitudCompra.ROL_AUTORIZADO_RETIRO,
+        ).order_by('nombre')
 
 
 class SolicitudCompraRenglonForm(forms.ModelForm):

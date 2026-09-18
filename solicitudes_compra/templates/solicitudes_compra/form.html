@@ -23,20 +23,42 @@
                 <label class="form-label small text-muted">{{ form.solicitante.label }}</label>
                 <div class="buscador-wrapper">
                     <input type="text" id="solicitante-buscador" autocomplete="off" class="form-control form-control-sm"
-                           placeholder="Buscar por nombre o apellido..." value="{{ solicitante_texto }}">
+                           placeholder="Buscar por nombre o DNI..." value="{{ solicitante_texto }}">
                     {{ form.solicitante }}
                     <div id="solicitante-resultados" class="buscador-resultados"></div>
                 </div>
+                <!-- Select rápido, además del buscador: lista directo a las
+                     entidades con rol "Autorizado a solicitar" (mismo
+                     queryset que ya filtra SolicitudCompraForm), para no
+                     tener que tipear cuando son pocas. -->
+                <select id="solicitante-select" class="form-select form-select-sm mt-1">
+                    <option value="">-- Elegir de la lista --</option>
+                    {% for entidad_op in form.solicitante.field.queryset %}
+                    <option value="{{ entidad_op.pk }}" {% if form.solicitante.value|stringformat:"s" == entidad_op.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ entidad_op.nombre }}{% if entidad_op.documento_nro %} (DNI {{ entidad_op.documento_nro }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
                 {% if form.solicitante.errors %}<div class="text-danger small">{{ form.solicitante.errors|striptags }}</div>{% endif %}
             </div>
             <div class="col-md-4">
                 <label class="form-label small text-muted">{{ form.responsable_retiro.label }}</label>
                 <div class="buscador-wrapper">
                     <input type="text" id="responsable-buscador" autocomplete="off" class="form-control form-control-sm"
-                           placeholder="Buscar por nombre o apellido..." value="{{ responsable_texto }}">
+                           placeholder="Buscar por nombre o DNI..." value="{{ responsable_texto }}">
                     {{ form.responsable_retiro }}
                     <div id="responsable-resultados" class="buscador-resultados"></div>
                 </div>
+                <!-- Select rápido, además del buscador: lista directo a las
+                     entidades con rol "Autorizado a retirar". -->
+                <select id="responsable-select" class="form-select form-select-sm mt-1">
+                    <option value="">-- Elegir de la lista --</option>
+                    {% for entidad_op in form.responsable_retiro.field.queryset %}
+                    <option value="{{ entidad_op.pk }}" {% if form.responsable_retiro.value|stringformat:"s" == entidad_op.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ entidad_op.nombre }}{% if entidad_op.documento_nro %} (DNI {{ entidad_op.documento_nro }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
                 {% if form.responsable_retiro.errors %}<div class="text-danger small">{{ form.responsable_retiro.errors|striptags }}</div>{% endif %}
             </div>
             {% for field in form %}
@@ -121,10 +143,34 @@
 document.addEventListener('DOMContentLoaded', function () {
     inicializarBuscador('entidad-buscador', '{{ form.entidad.id_for_label }}', 'entidad-resultados',
         '{% url "entidades:entidad_buscar" %}');
+    // 'solicitante' y 'responsable_retiro' son Entidad filtrada por tipo de
+    // entidad (Rol): cada buscador sólo debe mostrar las entidades que
+    // tengan el rol correspondiente (ver SolicitudCompra.ROL_* en
+    // models.py y el queryset de SolicitudCompraForm en forms.py).
+    // 'mostrar=documento_nro' hace que el buscador muestre el DNI en vez
+    // del CUIT, porque son personas, no empresas.
     inicializarBuscador('solicitante-buscador', '{{ form.solicitante.id_for_label }}', 'solicitante-resultados',
-        '{% url "empleados:buscar" %}');
+        '{% url "entidades:entidad_buscar" %}?rol={{ "Autorizado a solicitar"|urlencode }}&mostrar=documento_nro');
     inicializarBuscador('responsable-buscador', '{{ form.responsable_retiro.id_for_label }}', 'responsable-resultados',
-        '{% url "empleados:buscar" %}');
+        '{% url "entidades:entidad_buscar" %}?rol={{ "Autorizado a retirar"|urlencode }}&mostrar=documento_nro');
+
+    // Select rápido: al elegir una opción, completa el mismo input/hidden
+    // que llena el buscador, como si se hubiera elegido ese resultado
+    // buscándolo (no reemplaza al buscador, es un atajo más para cuando la
+    // lista de autorizados es corta).
+    function conectarSelectRapido(selectId, inputId, hiddenId) {
+        var select = document.getElementById(selectId);
+        var input = document.getElementById(inputId);
+        var hidden = document.getElementById(hiddenId);
+        if (!select || !input || !hidden) { return; }
+        select.addEventListener('change', function () {
+            if (!select.value) { return; }
+            input.value = select.options[select.selectedIndex].text.trim();
+            hidden.value = select.value;
+        });
+    }
+    conectarSelectRapido('solicitante-select', 'solicitante-buscador', '{{ form.solicitante.id_for_label }}');
+    conectarSelectRapido('responsable-select', 'responsable-buscador', '{{ form.responsable_retiro.id_for_label }}');
 
     function inicializarBuscadorProductoEnFila(fila) {
         var input = fila.querySelector('.producto-buscador');

@@ -1455,6 +1455,24 @@ def movimiento_eliminar(request, pk):
     declarado en los modelos, arrastra también el pesaje asociado
     (movimiento_pesaje) y, si era de H.V. de Yerba Mate, esa fila hija
     también (mismo criterio que movimiento_hv_yerba_mate_eliminar).
+
+    Chequeo agregado el 2026-09-18 (a pedido de Gastón): si el movimiento
+    ya tiene algún vínculo (ComprobanteRenglonMovimiento, ver
+    cuenta_corriente_productos.models -- se crea desde "Vincular por
+    bloques" o "Vincular renglón") a un renglón de factura, no se deja
+    borrar, esté o no ese renglón ya incluido en una liquidación. Sin este
+    chequeo, borrar el movimiento se colaba por al lado de la protección
+    que sí existe para "desvincular" un renglón ya liquidado: la relación
+    ComprobanteRenglonMovimiento.movimiento es on_delete=CASCADE (no
+    PROTECT), así que la base no rechaza nada -- el vínculo se borraba en
+    silencio, sin ProtectedError/IntegrityError y sin ningún aviso, y se
+    perdía el rastro de qué kg respaldaban ese renglón.
+
+    Ojo: por ahora esto bloquea el borrado por CUALQUIER vínculo, incluso
+    uno todavía no liquidado (a diferencia de "desvincular", que sólo
+    bloquea si ya está liquidado) -- decisión explícita de Gastón del
+    2026-09-18, queda pendiente de revisar más adelante si conviene
+    distinguir los dos casos acá también.
     """
     from django.db import IntegrityError
     from django.db.models import ProtectedError
@@ -1462,6 +1480,15 @@ def movimiento_eliminar(request, pk):
     movimiento = get_object_or_404(Movimiento, pk=pk)
 
     if request.method == 'POST':
+        if movimiento.vinculos_comprobante.exists():
+            messages.error(
+                request,
+                f'El movimiento {pk} no se puede eliminar: ya está vinculado a un renglón de '
+                'factura (Cuenta Corriente de Productos → Vincular por bloques / Vincular '
+                'renglón). Para eliminar este movimiento hay que desvincularlo primero.'
+            )
+            return redirect('movimientos:movimiento_modificar')
+
         numero = movimiento.numero
         try:
             movimiento.delete()

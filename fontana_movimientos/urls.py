@@ -21,7 +21,6 @@ urlpatterns =[
     path('retenciones/', include('retenciones.urls')),
     path('retenciones-inym/', include('retenciones_inym.urls')),
     path('tipos/', include('tipos.urls')),
-    path('empleados/', include('empleados.urls')),
     path('solicitudes-compra/', include('solicitudes_compra.urls')),
     path('productos/', include('productos.urls')),
     path('cuenta-corriente-productos/', include('cuenta_corriente_productos.urls')),

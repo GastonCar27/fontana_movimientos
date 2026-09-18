@@ -2,7 +2,6 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from empleados.models import Empleado
 from entidades.models import Entidad
 
 
@@ -12,7 +11,18 @@ class SolicitudCompra(models.Model):
     más renglones (SolicitudCompraRenglon) con lo que se va a retirar,
     descripto tal como lo pide quien arma la solicitud — que muchas veces no
     coincide con el nombre exacto con el que el proveedor factura eso mismo
-    (ver SolicitudCompraRenglonComprobanteRenglon)."""
+    (ver SolicitudCompraRenglonComprobanteRenglon).
+
+    'solicitante' y 'responsable_retiro' son Entidad (no un modelo Empleado
+    aparte): se filtran en el form/buscador por tipo de entidad (Rol) --
+    'Autorizado a solicitar' y 'Autorizado a retirar' respectivamente,
+    ver ROL_AUTORIZADO_SOLICITAR / ROL_AUTORIZADO_RETIRO acá abajo y
+    services/buscadores.py + entidades/migrations/0009_seed_tipos_entidad_empleado.py.
+    La categoría 'Empleado' es sólo descriptiva y no habilita por sí sola
+    ninguno de estos dos campos."""
+
+    ROL_AUTORIZADO_SOLICITAR = 'Autorizado a solicitar'
+    ROL_AUTORIZADO_RETIRO = 'Autorizado a retirar'
 
     ESTADO_PENDIENTE = 'pendiente'
     ESTADO_RETIRADA = 'retirada'
@@ -31,11 +41,11 @@ class SolicitudCompra(models.Model):
         Entidad, on_delete=models.PROTECT, related_name='solicitudes_compra', verbose_name='Proveedor',
     )
     solicitante = models.ForeignKey(
-        Empleado, on_delete=models.PROTECT, related_name='solicitudes_como_solicitante',
+        Entidad, on_delete=models.PROTECT, related_name='solicitudes_como_solicitante',
         verbose_name='Solicitante (autoriza el pedido)',
     )
     responsable_retiro = models.ForeignKey(
-        Empleado, on_delete=models.PROTECT, related_name='solicitudes_como_responsable_retiro',
+        Entidad, on_delete=models.PROTECT, related_name='solicitudes_como_responsable_retiro',
         verbose_name='Autorizado a retirar',
     )
     estado = models.CharField(max_length=12, choices=ESTADO_CHOICES, default=ESTADO_PENDIENTE)

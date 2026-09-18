@@ -48,7 +48,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'productos',
     'entidades',
-    'empleados',
     'movimientos',
     'django_select2',
     'comprobantes',

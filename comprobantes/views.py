@@ -1051,7 +1051,18 @@ def _calcular_ranking_entidades(comprobantes):
     total general. El monto de los comprobantes de tipo 'nota de credito'
     -que se guardan siempre en positivo- se resta en vez de sumarse, mismo
     criterio de signo que liquidaciones.views.suma_comprobantes. Devuelve
-    (ranking, total_general)."""
+    (ranking, total_general).
+
+    Se agrupa SÓLO por 'entidad_emisor_id' (no por 'entidad_emisor__nombre'
+    en el mismo .values(), como se hacía antes): el campo entidad_emisor no
+    está declarado null=True en el modelo, así que Django arma un INNER
+    JOIN contra 'entidad' para resolver el nombre -- eso descartaba en
+    silencio del ranking a cualquier comprobante con id_entidad NULL (pasa
+    sobre todo con los cargados desde el CSV de AFIP, cuando no se pudo
+    matchear la entidad). Agrupando sólo por el id (sin relación) no hace
+    falta ningún JOIN, así que esos comprobantes quedan agrupados aparte
+    (entidad_emisor_id=None) en vez de desaparecer. El nombre se resuelve
+    después, con un único SELECT extra."""
     monto_signado = Case(
         When(tipo_comprobante__nombre__icontains='nota de credito', then=-F('total')),
         default=F('total'),
@@ -1059,10 +1070,15 @@ def _calcular_ranking_entidades(comprobantes):
     )
     ranking = list(
         comprobantes.annotate(monto_signado=monto_signado)
-        .values('entidad_emisor_id', 'entidad_emisor__nombre')
+        .values('entidad_emisor_id')
         .annotate(total_monto=Sum('monto_signado'), cantidad=Count('id'))
         .order_by('-total_monto')
     )
+
+    ids_entidades = [fila['entidad_emisor_id'] for fila in ranking if fila['entidad_emisor_id'] is not None]
+    nombres_por_id = dict(Entidad.objects.filter(id__in=ids_entidades).values_list('id', 'nombre'))
+    for fila in ranking:
+        fila['entidad_emisor__nombre'] = nombres_por_id.get(fila['entidad_emisor_id'])
 
     total_general = sum(
         (fila['total_monto'] for fila in ranking if fila['total_monto'] is not None), Decimal('0')
@@ -1105,7 +1121,7 @@ def _filas_ranking_entidades(ranking):
     filas = [
         [
             fila['posicion'],
-            fila['entidad_emisor__nombre'] or 'Sin nombre',
+            fila['entidad_emisor__nombre'] or 'Sin entidad',
             fila['cantidad'],
             float(fila['total_monto']) if fila['total_monto'] is not None else None,
             float(fila['porcentaje']) if fila['porcentaje'] is not None else None,

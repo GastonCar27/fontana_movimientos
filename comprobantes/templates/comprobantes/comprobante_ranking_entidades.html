@@ -84,7 +84,7 @@
                         {{ fila.posicion }}
                         {% endif %}
                     </td>
-                    <td>{{ fila.entidad_emisor__nombre|default:"Sin nombre" }}</td>
+                    <td>{{ fila.entidad_emisor__nombre|default:"Sin entidad" }}</td>
                     <td class="text-center">{{ fila.cantidad }}</td>
                     <td class="text-end fw-semibold">{{ fila.total_monto|separador_miles }}</td>
                     <td>

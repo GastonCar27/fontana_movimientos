@@ -362,21 +362,6 @@
         </div>
         {% endif %}
 
-        {% if puede_ver_empleados %}
-        <div class="col">
-            <div class="card panel-card h-100" style="--accent:#0a58ca; --accent-soft:rgba(10,88,202,.12);">
-                <div class="card-header">
-                    <div class="icon-badge"><i class="bi bi-people"></i></div>
-                    <h5>Empleados</h5>
-                </div>
-                <div class="list-group list-group-flush card-body">
-                    <a href="{% url 'empleados:alta' %}" class="list-group-item list-group-item-action">Nuevo empleado <i class="bi bi-chevron-right"></i></a>
-                    <a href="{% url 'empleados:listado' %}" class="list-group-item list-group-item-action">Listado <i class="bi bi-chevron-right"></i></a>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
         {% if puede_ver_otros %}
         <div class="col">
             <div class="card panel-card h-100" style="--accent:#343a40; --accent-soft:rgba(52,58,64,.12);">

@@ -11,7 +11,6 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("comprobantes", "__first__"),
-        ("empleados", "0001_initial"),
         ("entidades", "__first__"),
         ("productos", "__first__"),
     ]
@@ -61,7 +60,7 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.PROTECT,
                         related_name="solicitudes_como_responsable_retiro",
-                        to="empleados.empleado",
+                        to="entidades.entidad",
                         verbose_name="Autorizado a retirar",
                     ),
                 ),
@@ -70,7 +69,7 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.PROTECT,
                         related_name="solicitudes_como_solicitante",
-                        to="empleados.empleado",
+                        to="entidades.entidad",
                         verbose_name="Solicitante (autoriza el pedido)",
                     ),
                 ),
