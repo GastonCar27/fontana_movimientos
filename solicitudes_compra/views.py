@@ -161,6 +161,11 @@ def solicitud_form(request, pk=None):
         'form': form,
         'formset': formset,
         'solicitud': solicitud,
+        # Opciones para el <select> "Aplicar a todos" (ver form.html):
+        # mismas opciones que el estado de cada renglón (SolicitudCompra.
+        # ESTADO_CHOICES, reutilizadas también por SolicitudCompraRenglon.
+        # estado en models.py).
+        'estados_renglon': SolicitudCompra.ESTADO_CHOICES,
         'entidad_texto': entidad_texto,
         'solicitante_texto': solicitante_texto,
         'responsable_texto': responsable_texto,

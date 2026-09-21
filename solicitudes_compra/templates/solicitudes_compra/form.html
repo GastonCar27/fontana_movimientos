@@ -73,6 +73,18 @@
         </div>
 
         <h6 class="mt-4 mb-2">Renglones</h6>
+        <div class="d-flex align-items-end gap-2 mb-2">
+            <div>
+                <label for="estado-masivo" class="form-label small text-muted mb-1">Aplicar un estado a todos los renglones</label>
+                <select id="estado-masivo" class="form-select form-select-sm">
+                    <option value="">-- Elegir estado --</option>
+                    {% for valor, etiqueta in estados_renglon %}
+                    <option value="{{ valor }}">{{ etiqueta }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="button" id="btn-aplicar-estado-masivo" class="btn btn-sm btn-outline-secondary">Aplicar a todos</button>
+        </div>
         {{ formset.management_form }}
         {% if formset.non_form_errors %}
         <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
@@ -84,6 +96,7 @@
                         <th style="width:8%">Cantidad</th>
                         <th style="width:11%">U. de Medida</th>
                         <th style="width:9%">Prioridad</th>
+                        <th style="width:10%">Estado</th>
                         <th style="width:10%">Sector</th>
                         <th>Descripción</th>
                         <th style="width:18%">Producto de catálogo (opcional)</th>
@@ -100,6 +113,7 @@
                         </td>
                         <td>{{ renglon_form.unidad_medida }}</td>
                         <td>{{ renglon_form.prioridad }}</td>
+                        <td>{{ renglon_form.estado }}</td>
                         <td>{{ renglon_form.sector }}</td>
                         <td>
                             <div class="buscador-wrapper">
@@ -195,48 +209,103 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.fila-renglon').forEach(inicializarBuscadorProductoEnFila);
     document.querySelectorAll('.fila-renglon').forEach(inicializarAutocompleteDescripcionEnFila);
 
+    // "Aplicar a todos": atajo para poner el mismo estado (ej. Retirada,
+    // Facturada) en todos los renglones de una, sin tener que ir fila por
+    // fila -- no reemplaza poder elegir el estado de cada renglón por
+    // separado, sólo lo completa a todos de entrada. Se consultan las
+    // filas recién al hacer clic (no se guarda una lista fija), así
+    // también alcanza a los renglones agregados después con "+Agregar
+    // renglón".
+    var btnAplicarEstadoMasivo = document.getElementById('btn-aplicar-estado-masivo');
+    if (btnAplicarEstadoMasivo) {
+        btnAplicarEstadoMasivo.addEventListener('click', function () {
+            var estadoElegido = document.getElementById('estado-masivo').value;
+            if (!estadoElegido) { return; }
+            document.querySelectorAll('.renglon-estado').forEach(function (select) {
+                select.value = estadoElegido;
+            });
+        });
+    }
+
     var totalForms = document.getElementById('id_renglones-TOTAL_FORMS');
     var cuerpo = document.getElementById('cuerpo-renglones');
     var btnAgregar = document.getElementById('btn-agregar-renglon');
+
+    // Renumera TODAS las filas visibles (renglones-0-, renglones-1-, ...)
+    // según su orden actual en la tabla, y ajusta TOTAL_FORMS acorde. Hace
+    // falta llamarla cada vez que se agrega o se saca una fila: si sólo se
+    // saca la fila del HTML (fila.remove()) sin renumerar ni bajar
+    // TOTAL_FORMS, queda un "hueco" en los índices -- ej. si se sacaba la
+    // fila renglones-3, ese índice dejaba de existir en el POST pero
+    // TOTAL_FORMS le seguía diciendo a Django que esperara 1 formulario
+    // más de los que en realidad había. Como Prioridad y U. de Medida
+    // tienen un valor por defecto que no es "vacío" (ej. 'media'), Django
+    // interpretaba ese hueco como "un formulario con datos" (nunca como
+    // uno vacío que se puede ignorar) y exigía completar Cantidad y
+    // Descripción ahí -- aunque esa fila ya no existiera en pantalla, y
+    // sin importar si el usuario había tocado algo de esa fila o no. Al
+    // renumerar sin huecos, cada índice 0..TOTAL_FORMS-1 corresponde
+    // siempre a una fila real que sigue en pantalla.
+    function reindexarFilas() {
+        var filas = cuerpo.querySelectorAll('.fila-renglon');
+        filas.forEach(function (fila, indice) {
+            fila.querySelectorAll('input, select, label').forEach(function (campo) {
+                ['name', 'id', 'for'].forEach(function (atributo) {
+                    var valor = campo.getAttribute(atributo);
+                    if (valor && /renglones-\d+-/.test(valor)) {
+                        campo.setAttribute(atributo, valor.replace(/renglones-\d+-/, 'renglones-' + indice + '-'));
+                    }
+                });
+            });
+        });
+        totalForms.value = filas.length;
+    }
 
     function activarBotonQuitar(fila) {
         var boton = fila.querySelector('.btn-quitar-fila');
         if (boton) {
             boton.addEventListener('click', function () {
                 fila.remove();
+                reindexarFilas();
             });
         }
     }
 
     if (btnAgregar) {
         btnAgregar.addEventListener('click', function () {
-            var indice = parseInt(totalForms.value, 10);
             var filaBase = cuerpo.querySelector('.fila-renglon');
             var filaNueva = filaBase.cloneNode(true);
 
             filaNueva.querySelectorAll('input, select').forEach(function (campo) {
-                var nombreOriginal = campo.getAttribute('name');
-                if (!nombreOriginal) { return; }
-                var nombreNuevo = nombreOriginal.replace(/renglones-(\d+)-/, 'renglones-' + indice + '-');
-                var idNuevo = campo.id ? campo.id.replace(/renglones-(\d+)-/, 'renglones-' + indice + '-') : '';
-                campo.setAttribute('name', nombreNuevo);
-                if (idNuevo) { campo.id = idNuevo; }
                 if (campo.type === 'checkbox') {
                     campo.checked = false;
                 } else if (campo.tagName !== 'SELECT') {
                     // Los <select> (U. de Medida, Prioridad) se dejan con la
                     // opción que ya traía clonada la fila (en blanco o el
                     // valor por defecto del modelo), en vez de forzar un
-                    // value='' que no coincide con ninguna <option>.
+                    // value='' que no coincide con ninguna <option>. Esto
+                    // también vacía el <input type="hidden"> con el id del
+                    // renglón, si la fila clonada como base era, ella sí,
+                    // un renglón ya guardado -- la fila nueva nunca debe
+                    // arrastrar el id de otro renglón.
                     campo.value = '';
                 }
             });
+            // La fila nueva nunca es un renglón ya guardado en la base, así
+            // que siempre debe poder sacarse con "×" -- si la fila clonada
+            // como base venía con el checkbox "Borrar" (por ser, ella sí,
+            // un renglón ya guardado de una solicitud que se está
+            // editando), se reemplaza acá por el botón "×" para no clonar
+            // por error los controles de un renglón existente en una fila
+            // que todavía no existe en la base.
+            var celdaAcciones = filaNueva.querySelector('td:last-child');
+            celdaAcciones.innerHTML = '<button type="button" class="btn btn-sm btn-outline-danger btn-quitar-fila">×</button>';
 
             cuerpo.appendChild(filaNueva);
             activarBotonQuitar(filaNueva);
             inicializarBuscadorProductoEnFila(filaNueva);
             inicializarAutocompleteDescripcionEnFila(filaNueva);
-            totalForms.value = indice + 1;
+            reindexarFilas();
         });
     }
 

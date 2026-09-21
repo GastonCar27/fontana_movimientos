@@ -100,6 +100,16 @@ class SolicitudCompraRenglon(models.Model):
     prioridad = models.CharField(
         'Prioridad', max_length=10, choices=PRIORIDAD_CHOICES, default=PRIORIDAD_MEDIA,
     )
+    # Estado propio del renglón (independiente del estado general de la
+    # solicitud, SolicitudCompra.estado): reutiliza las mismas opciones,
+    # porque un renglón puede ir avanzando de a uno (ej. uno ya retirado y
+    # otro todavía pendiente dentro de la misma solicitud). El form
+    # (form.html) suma además un control para aplicar un mismo estado a
+    # todos los renglones de una, como atajo -- no reemplaza poder
+    # cambiarlos uno por uno.
+    estado = models.CharField(
+        'Estado', max_length=12, choices=SolicitudCompra.ESTADO_CHOICES, default=SolicitudCompra.ESTADO_PENDIENTE,
+    )
     descripcion = models.CharField(max_length=255)
     sector = models.ForeignKey(
         'comprobantes.SectorTipo', on_delete=models.SET_NULL, null=True, blank=True,

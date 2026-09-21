@@ -44,7 +44,7 @@ class SolicitudCompraForm(forms.ModelForm):
 class SolicitudCompraRenglonForm(forms.ModelForm):
     class Meta:
         model = SolicitudCompraRenglon
-        fields = ['cantidad', 'unidad_medida', 'prioridad', 'sector', 'descripcion', 'producto_sugerido']
+        fields = ['cantidad', 'unidad_medida', 'prioridad', 'estado', 'sector', 'descripcion', 'producto_sugerido']
         widgets = {
             'cantidad': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01'}),
             # 'descripcion-input' se usa para engancharle el autocompletado
@@ -53,6 +53,10 @@ class SolicitudCompraRenglonForm(forms.ModelForm):
             # que si no molesta tapando las sugerencias propias.
             'descripcion': forms.TextInput(attrs={'class': 'form-control form-control-sm descripcion-input', 'autocomplete': 'off'}),
             'prioridad': forms.Select(attrs={'class': 'form-select form-select-sm'}),
+            # 'renglon-estado' se usa desde JS para poder aplicarle un mismo
+            # estado a todos los renglones de una (ver el botón "Aplicar a
+            # todos" en form.html).
+            'estado': forms.Select(attrs={'class': 'form-select form-select-sm renglon-estado'}),
             'sector': forms.Select(attrs={'class': 'form-select form-select-sm'}),
             # Reemplazado por un buscador con autocompletado (ver form.html);
             # este campo queda oculto y lo completa el JS del buscador.
@@ -95,6 +99,7 @@ class SolicitudCompraRenglonForm(forms.ModelForm):
         self.fields['unidad_medida'] = forms.ChoiceField(
             choices=choices,
             required=False,
+            initial='Unidad',
             label='U. de Medida',
             widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
         )
