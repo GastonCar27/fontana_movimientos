@@ -102,7 +102,10 @@
                         <td>{{ renglon_form.prioridad }}</td>
                         <td>{{ renglon_form.sector }}</td>
                         <td>
-                            {{ renglon_form.descripcion }}
+                            <div class="buscador-wrapper">
+                                {{ renglon_form.descripcion }}
+                                <div class="descripcion-resultados buscador-resultados"></div>
+                            </div>
                             {% if renglon_form.descripcion.errors %}<div class="text-danger small">{{ renglon_form.descripcion.errors|striptags }}</div>{% endif %}
                         </td>
                         <td>
@@ -179,7 +182,18 @@ document.addEventListener('DOMContentLoaded', function () {
         inicializarBuscadorEnElementos(input, hidden, resultados, '{% url "productos:buscar" %}', null, 1);
     }
 
+    // Autocompletado de 'Descripción' con descripciones ya usadas antes
+    // (ProductoGenerico, catálogo propio -- no el de productos): sólo
+    // sugiere, no hay campo oculto ni restricción sobre lo tipeado (ver
+    // inicializarAutocompleteTexto en buscador_ajax.js).
+    function inicializarAutocompleteDescripcionEnFila(fila) {
+        var input = fila.querySelector('.descripcion-input');
+        var resultados = fila.querySelector('.descripcion-resultados');
+        inicializarAutocompleteTexto(input, resultados, '{% url "solicitudes_compra:producto_generico_buscar" %}');
+    }
+
     document.querySelectorAll('.fila-renglon').forEach(inicializarBuscadorProductoEnFila);
+    document.querySelectorAll('.fila-renglon').forEach(inicializarAutocompleteDescripcionEnFila);
 
     var totalForms = document.getElementById('id_renglones-TOTAL_FORMS');
     var cuerpo = document.getElementById('cuerpo-renglones');
@@ -221,6 +235,7 @@ document.addEventListener('DOMContentLoaded', function () {
             cuerpo.appendChild(filaNueva);
             activarBotonQuitar(filaNueva);
             inicializarBuscadorProductoEnFila(filaNueva);
+            inicializarAutocompleteDescripcionEnFila(filaNueva);
             totalForms.value = indice + 1;
         });
     }

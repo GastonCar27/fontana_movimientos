@@ -47,7 +47,11 @@ class SolicitudCompraRenglonForm(forms.ModelForm):
         fields = ['cantidad', 'unidad_medida', 'prioridad', 'sector', 'descripcion', 'producto_sugerido']
         widgets = {
             'cantidad': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01'}),
-            'descripcion': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+            # 'descripcion-input' se usa para engancharle el autocompletado
+            # de descripciones ya usadas (ver ProductoGenerico en models.py
+            # y el JS de form.html); autocomplete='off' es el del navegador,
+            # que si no molesta tapando las sugerencias propias.
+            'descripcion': forms.TextInput(attrs={'class': 'form-control form-control-sm descripcion-input', 'autocomplete': 'off'}),
             'prioridad': forms.Select(attrs={'class': 'form-select form-select-sm'}),
             'sector': forms.Select(attrs={'class': 'form-select form-select-sm'}),
             # Reemplazado por un buscador con autocompletado (ver form.html);

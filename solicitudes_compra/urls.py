@@ -6,6 +6,7 @@ app_name = 'solicitudes_compra'
 
 urlpatterns = [
     path('', views.solicitud_list, name='listado'),
+    path('producto-generico-buscar/', views.producto_generico_buscar, name='producto_generico_buscar'),
     path('alta/', views.solicitud_form, name='alta'),
     path('<int:pk>/editar/', views.solicitud_form, name='editar'),
     path('<int:pk>/eliminar/', views.solicitud_eliminar, name='eliminar'),

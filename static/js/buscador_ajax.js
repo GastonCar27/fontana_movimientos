@@ -130,3 +130,64 @@ function inicializarBuscador(inputId, hiddenId, resultadosId, urlBusqueda, onSel
 function inicializarBuscadorEnElementos(input, hidden, resultados, urlBusqueda, onSeleccionar, minCaracteres) {
     _inicializarBuscadorEnElementos(input, hidden, resultados, urlBusqueda, onSeleccionar, minCaracteres);
 }
+
+/*
+ * Autocompletado simple de texto libre: sólo sugiere valores ya usados
+ * antes (ej. descripciones de renglón de Solicitud de Compra) y, al elegir
+ * uno, completa el mismo <input> visible con ese texto. A diferencia de
+ * inicializarBuscador/inicializarBuscadorEnElementos de acá arriba, NO hay
+ * ningún campo oculto que completar (el campo real ES el texto tipeado) y
+ * no se restaura nada en el 'blur': el usuario tiene que poder seguir
+ * escribiendo lo que quiera -- las sugerencias son sólo un atajo para no
+ * volver a tipear algo ya cargado antes, nunca una restricción sobre lo
+ * que se puede escribir.
+ */
+function inicializarAutocompleteTexto(input, resultados, urlBusqueda, minCaracteres) {
+    if (!input || !resultados || !urlBusqueda) {
+        return;
+    }
+    var minimo = minCaracteres === undefined ? 2 : minCaracteres;
+    var timeoutId = null;
+
+    input.addEventListener('input', function () {
+        var q = input.value.trim();
+
+        clearTimeout(timeoutId);
+        if (q.length < minimo) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+
+        timeoutId = setTimeout(function () {
+            var url = typeof urlBusqueda === 'function' ? urlBusqueda() : urlBusqueda;
+            var separador = url.indexOf('?') === -1 ? '?' : '&';
+            fetch(url + separador + 'q=' + encodeURIComponent(q))
+                .then(function (resp) { return resp.json(); })
+                .then(function (data) {
+                    resultados.innerHTML = '';
+                    var lista = data.resultados || [];
+                    if (lista.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    lista.forEach(function (item) {
+                        var div = document.createElement('div');
+                        div.textContent = item.text;
+                        div.addEventListener('click', function () {
+                            input.value = item.text;
+                            resultados.style.display = 'none';
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+}

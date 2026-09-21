@@ -124,6 +124,33 @@ class SolicitudCompraRenglon(models.Model):
         return self.vinculos.exists()
 
 
+class ProductoGenerico(models.Model):
+    """Catálogo propio y liviano de descripciones ya usadas en renglones de
+    Solicitud de Compra (ej. "gasoil"), para poder reutilizarlas por
+    autocompletado en vez de tipearlas de nuevo cada vez -- ver el buscador
+    'producto_generico_buscar' en views.py y su uso en form.html.
+
+    A propósito NO es el catálogo formal de productos (productos.ProductoDetalle,
+    ligado a lo que se factura/AFIP y usado por comprobantes): acá entra
+    cualquier texto "vulgar" que se haya tipeado en una descripción, así que
+    mezclarlo con ese catálogo lo ensuciaría. Tampoco tiene relación (FK)
+    con SolicitudCompraRenglon.descripcion, que sigue siendo texto libre --
+    este catálogo sólo alimenta las sugerencias del buscador, y se completa
+    solo (ver _registrar_productos_genericos en views.py) cada vez que se
+    guarda una solicitud con una descripción nueva. Arrancó con un backfill
+    de las descripciones ya cargadas (ver migración 0006_producto_generico)."""
+
+    nombre = models.CharField(max_length=255, unique=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'solicitud_compra_producto_generico'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
 class SolicitudCompraRenglonComprobanteRenglon(models.Model):
     """Vínculo manual entre un renglón de una solicitud de compra (nombre
     "vulgar", ej. "gasoil") y el renglón real de la factura que después

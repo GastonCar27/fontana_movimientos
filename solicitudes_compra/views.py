@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.db.models import Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
@@ -10,7 +11,12 @@ from services.ordenamiento import aplicar_orden_queryset
 
 from . import documentos
 from .forms import SolicitudCompraForm, SolicitudCompraRenglonFormSet
-from .models import SolicitudCompra, SolicitudCompraRenglon, SolicitudCompraRenglonComprobanteRenglon
+from .models import (
+    ProductoGenerico,
+    SolicitudCompra,
+    SolicitudCompraRenglon,
+    SolicitudCompraRenglonComprobanteRenglon,
+)
 
 FORMSET_PREFIX = 'renglones'
 
@@ -60,6 +66,42 @@ def solicitud_list(request):
 
 
 # ---------------------------------------------------------------------------
+# Buscador de descripciones ya usadas (autocompletado del renglón)
+# ---------------------------------------------------------------------------
+
+def producto_generico_buscar(request):
+    """Devuelve, en JSON, hasta 20 descripciones ya usadas antes en algún
+    renglón de Solicitud de Compra (catálogo propio ProductoGenerico, no el
+    catálogo formal de productos) cuyo nombre coincida con el texto
+    buscado. Usado por el autocompletado del campo 'Descripción' de cada
+    renglón (ver form.html); a diferencia del buscador de 'producto de
+    catálogo', acá no hay selección de un id -- sólo se sugiere el texto."""
+    q = request.GET.get('q', '').strip()
+    resultados = []
+    if q:
+        productos = ProductoGenerico.objects.filter(nombre__icontains=q).order_by('nombre')[:20]
+        resultados = [{'id': p.id, 'text': p.nombre} for p in productos]
+    return JsonResponse({'resultados': resultados})
+
+
+def _registrar_productos_genericos(formset):
+    """Después de guardar una solicitud, guarda en ProductoGenerico las
+    descripciones nuevas de sus renglones (si no existían ya, sin importar
+    mayúsculas/minúsculas), para que el autocompletado las ofrezca la
+    próxima vez. Se suma a lo que ya haya cargado la migración de backfill
+    0006_producto_generico con las descripciones anteriores a este
+    catálogo."""
+    for renglon_form in formset.forms:
+        if not renglon_form.cleaned_data or renglon_form.cleaned_data.get('DELETE'):
+            continue
+        texto = (renglon_form.cleaned_data.get('descripcion') or '').strip()
+        if not texto:
+            continue
+        if not ProductoGenerico.objects.filter(nombre__iexact=texto).exists():
+            ProductoGenerico.objects.create(nombre=texto)
+
+
+# ---------------------------------------------------------------------------
 # Alta / Edición (misma vista, pk=None para alta)
 # ---------------------------------------------------------------------------
 
@@ -81,6 +123,7 @@ def solicitud_form(request, pk=None):
             solicitud.save()
             formset.instance = solicitud
             formset.save()
+            _registrar_productos_genericos(formset)
             messages.success(request, f'Solicitud {solicitud.numero} guardada correctamente.')
 
             # El formulario tiene tres botones de guardar (name="accion"):
