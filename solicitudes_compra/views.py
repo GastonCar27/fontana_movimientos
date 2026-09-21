@@ -16,6 +16,7 @@ from .models import (
     SolicitudCompra,
     SolicitudCompraRenglon,
     SolicitudCompraRenglonComprobanteRenglon,
+    siguiente_numero_solicitud,
 )
 
 FORMSET_PREFIX = 'renglones'
@@ -138,7 +139,14 @@ def solicitud_form(request, pk=None):
                 destino += '&abrir=excel'
             return redirect(destino)
     else:
-        form = SolicitudCompraForm(instance=solicitud)
+        # Sólo para una solicitud NUEVA se sugiere el próximo número
+        # correlativo (ver siguiente_numero_solicitud en models.py); al
+        # editar una ya existente, se muestra tal cual la tiene guardada
+        # (instance=solicitud ya la trae en form.initial).
+        form = SolicitudCompraForm(
+            instance=solicitud,
+            initial={'numero': siguiente_numero_solicitud()} if solicitud is None else None,
+        )
         formset = SolicitudCompraRenglonFormSet(instance=solicitud, prefix=FORMSET_PREFIX)
 
     # Texto a mostrar en cada buscador: lo ya elegido (edición), o lo que

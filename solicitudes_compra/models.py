@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -35,7 +37,7 @@ class SolicitudCompra(models.Model):
         (ESTADO_CANCELADA, 'Cancelada'),
     ]
 
-    numero = models.CharField(max_length=20, blank=True)
+    numero = models.CharField('Número', max_length=20, unique=True, blank=True)
     fecha = models.DateField(default=timezone.localdate)
     entidad = models.ForeignKey(
         Entidad, on_delete=models.PROTECT, related_name='solicitudes_compra', verbose_name='Proveedor',
@@ -71,11 +73,33 @@ class SolicitudCompra(models.Model):
         return self.numero or f'Solicitud {self.pk}'
 
     def save(self, *args, **kwargs):
-        es_nueva = self.pk is None
+        # El form (SolicitudCompraForm) ya viene con el número sugerido
+        # precargado (ver siguiente_numero_solicitud más abajo y
+        # views.solicitud_form), así que en el uso normal esto casi nunca
+        # hace falta -- queda como red de seguridad para que una solicitud
+        # nueva nunca se guarde con 'numero' vacío (chocaría con la
+        # siguiente, porque el campo es unique=True).
+        if self.pk is None and not self.numero:
+            self.numero = siguiente_numero_solicitud()
         super().save(*args, **kwargs)
-        if es_nueva and not self.numero:
-            self.numero = f'OC-{self.pk}'
-            super().save(update_fields=['numero'])
+
+
+def siguiente_numero_solicitud():
+    """Calcula el próximo número correlativo para una solicitud nueva:
+    busca el mayor número ya usado -- mirando sólo los dígitos de 'numero',
+    para que no importe que las solicitudes anteriores a este cambio hayan
+    quedado con el prefijo histórico 'OC-' (ej. 'OC-125') -- y le suma 1.
+    Devuelve un string simple, sin prefijo (ej. '126'), que es el formato
+    que se usa de acá en adelante; las solicitudes viejas conservan su
+    'OC-125' tal cual, no se tocan. Usado tanto para precargar el campo en
+    el form (views.solicitud_form) como de red de seguridad en el save()
+    de acá arriba."""
+    maximo = 0
+    for numero in SolicitudCompra.objects.exclude(numero='').values_list('numero', flat=True):
+        digitos = re.sub(r'\D', '', numero or '')
+        if digitos:
+            maximo = max(maximo, int(digitos))
+    return str(maximo + 1)
 
 
 class SolicitudCompraRenglon(models.Model):

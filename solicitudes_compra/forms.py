@@ -11,8 +11,13 @@ from .models import SolicitudCompra, SolicitudCompraRenglon
 class SolicitudCompraForm(forms.ModelForm):
     class Meta:
         model = SolicitudCompra
-        fields = ['fecha', 'entidad', 'solicitante', 'responsable_retiro', 'estado', 'observaciones']
+        fields = ['numero', 'fecha', 'entidad', 'solicitante', 'responsable_retiro', 'estado', 'observaciones']
         widgets = {
+            # Se precarga con el siguiente número correlativo sugerido (ver
+            # siguiente_numero_solicitud en models.py y la vista
+            # solicitud_form), pero queda editable por si hace falta
+            # corregirlo a mano.
+            'numero': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'inputmode': 'numeric'}),
             'fecha': forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
             # Los <select> de entidad/empleado se reemplazan por buscadores
             # con autocompletado (ver form.html); estos campos quedan
@@ -26,6 +31,12 @@ class SolicitudCompraForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # A diferencia del resto de los campos con blank=True en el modelo
+        # (que se dejó así para no bloquear al admin de Django ni a datos
+        # viejos), acá sí se exige en el form: el número es un dato que el
+        # usuario tiene que ver y confirmar, no algo que deba poder quedar
+        # en blanco silenciosamente.
+        self.fields['numero'].required = True
         self.fields['entidad'].queryset = Entidad.objects.order_by('nombre')
         self.fields['entidad'].label = 'Proveedor'
         # Cada campo se restringe a las entidades que tengan el tipo de
@@ -99,10 +110,25 @@ class SolicitudCompraRenglonForm(forms.ModelForm):
         self.fields['unidad_medida'] = forms.ChoiceField(
             choices=choices,
             required=False,
-            initial='Unidad',
             label='U. de Medida',
             widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
         )
+
+        # Renglón nuevo (todavía sin guardar): que el <select> arranque en
+        # "Unidad" en vez de en "---------", buscando el valor tal cual está
+        # cargado en la tabla (comparación sin importar mayúsculas/
+        # minúsculas, porque puede estar cargado como "Unidad" o "UNIDAD"
+        # según quién lo haya tipeado). No se toca si el renglón ya existía:
+        # no hay que pisarle el valor real que ya tiene guardado. Se asigna
+        # en self.initial (y no en el 'initial' del field de arriba) porque
+        # Form.get_initial_for_field() siempre prioriza self.initial por
+        # sobre el initial del field cuando ambos están presentes.
+        if not (self.instance and self.instance.pk):
+            valor_default_unidad = next(
+                (nombre for nombre in nombres if nombre.strip().lower() == 'unidad'), None,
+            )
+            if valor_default_unidad:
+                self.initial['unidad_medida'] = valor_default_unidad
 
 
 SolicitudCompraRenglonFormSet = inlineformset_factory(
