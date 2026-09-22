@@ -742,7 +742,10 @@ def retencion_tipo_impuesto_alta(request):
         form = RetencionTipoImpuestoForm(request.POST)
         if form.is_valid():
             impuesto = form.save(commit=False)
-            impuesto.id = _siguiente_id_tipo_impuesto()
+            # Si Gastón cargó un ID a mano (para que coincida con el código
+            # que ya tiene en AFIP u otro sistema), se respeta ese; si no,
+            # se asigna el próximo disponible como hasta ahora.
+            impuesto.id = form.cleaned_data.get('id') or _siguiente_id_tipo_impuesto()
             impuesto.save(force_insert=True)
             messages.success(request, f'El impuesto "{impuesto.nombre}" se creó correctamente.')
             return redirect('retenciones:tipo_impuesto_listado')
@@ -828,7 +831,17 @@ def retencion_tipo_regimen_alta(request):
         form = RetencionTipoRegimenForm(request.POST)
         if form.is_valid():
             regimen = form.save(commit=False)
-            regimen.id = _siguiente_id_tipo_regimen()
+            # Mismo criterio que en el alta de Impuestos: si se cargó un ID
+            # a mano se respeta (para que coincida con AFIP u otro sistema),
+            # si no se asigna el próximo disponible.
+            regimen.id = form.cleaned_data.get('id') or _siguiente_id_tipo_regimen()
+            # La columna legacy id_impuesto sigue siendo NOT NULL en la base
+            # real (aunque el modelo la declare opcional) -- hay que
+            # completarla igual al crear un régimen nuevo o la base rechaza
+            # el INSERT. Se usa el primero de los impuestos tildados como
+            # valor de resguardo; el vínculo real, que sí permite varios, se
+            # guarda aparte en la tabla M2M (guardar_impuestos, más abajo).
+            regimen.impuesto = form.cleaned_data['impuestos'][0]
             regimen.save(force_insert=True)
             form.guardar_impuestos(regimen)
             messages.success(request, f'El régimen "{regimen.nombre}" se creó correctamente.')

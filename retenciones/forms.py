@@ -225,6 +225,21 @@ class ImpuestosMultipleChoiceField(forms.ModelMultipleChoiceField):
 
 
 class RetencionTipoImpuestoForm(forms.ModelForm):
+    # El id NO está en Meta.fields a propósito: al ser la clave primaria, si
+    # Django lo tratara como un campo de modelo común, form.save() podría
+    # intentar reasignarle el pk a una instancia ya guardada (editar el ID
+    # de un impuesto existente rompería los vínculos con Ret. Regímenes y
+    # con las retenciones que ya lo usan). Se maneja a mano: sólo se ofrece
+    # al dar de ALTA (se saca del form en __init__ si ya hay instancia), y
+    # la vista es la que lo asigna a la instancia nueva.
+    id = forms.IntegerField(
+        required=False,
+        min_value=1,
+        label='ID',
+        help_text='Opcional: si este impuesto ya tiene un código propio en AFIP (u otro sistema) y querés guardarlo con ese mismo número, cargalo acá. Si se deja vacío, se asigna automáticamente el próximo disponible.',
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+
     class Meta:
         model = RetencionTipoImpuesto
         fields = ['nombre']
@@ -234,6 +249,20 @@ class RetencionTipoImpuestoForm(forms.ModelForm):
         labels = {
             'nombre': 'Nombre del impuesto',
         }
+
+    field_order = ['nombre', 'id']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            # Ya existe: el ID no se puede tocar al editar.
+            del self.fields['id']
+
+    def clean_id(self):
+        id_elegido = self.cleaned_data.get('id')
+        if id_elegido and RetencionTipoImpuesto.objects.filter(pk=id_elegido).exists():
+            raise forms.ValidationError('Ya existe un impuesto con ese ID.')
+        return id_elegido
 
 
 class RetencionTipoRegimenForm(forms.ModelForm):
@@ -249,6 +278,17 @@ class RetencionTipoRegimenForm(forms.ModelForm):
         label='Impuestos relacionados',
         widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
     )
+    # El id NO está en Meta.fields a propósito (mismo motivo que en
+    # RetencionTipoImpuestoForm): es la clave primaria, así que sólo se
+    # ofrece al dar de ALTA (se saca del form en __init__ si ya hay
+    # instancia) y la vista es la que lo asigna a mano.
+    id = forms.IntegerField(
+        required=False,
+        min_value=1,
+        label='ID',
+        help_text='Opcional: si este régimen ya tiene un código propio en AFIP (u otro sistema) y querés guardarlo con ese mismo número, cargalo acá. Si se deja vacío, se asigna automáticamente el próximo disponible.',
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
+    )
 
     class Meta:
         model = RetencionTipoRegimen
@@ -260,9 +300,13 @@ class RetencionTipoRegimenForm(forms.ModelForm):
             'nombre': 'Nombre del régimen',
         }
 
+    field_order = ['nombre', 'id', 'impuestos']
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
+            # Ya existe: el ID no se puede tocar al editar.
+            del self.fields['id']
             vinculados = list(self.instance.impuestos.values_list('id', flat=True))
             if not vinculados and self.instance.impuesto_id is not None:
                 # Régimen viejo, todavía no migrado a la relación M2M
@@ -270,6 +314,12 @@ class RetencionTipoRegimenForm(forms.ModelForm):
                 # campo legacy, para no perder ese dato al editar.
                 vinculados = [self.instance.impuesto_id]
             self.fields['impuestos'].initial = vinculados
+
+    def clean_id(self):
+        id_elegido = self.cleaned_data.get('id')
+        if id_elegido and RetencionTipoRegimen.objects.filter(pk=id_elegido).exists():
+            raise forms.ValidationError('Ya existe un régimen con ese ID.')
+        return id_elegido
 
     def guardar_impuestos(self, regimen):
         """Guarda el M2M. Hay que llamarlo a mano desde la vista, después
