@@ -441,6 +441,47 @@
         conectarFila(nuevaFila);
         totalFormsInput.value = indice + 1;
     });
+
+    // --- Aviso si "Retención" no coincide con lo calculado (Importe x
+    // Porcentaje / 100) --- el campo queda editable a mano a propósito
+    // (puede haber una diferencia de centavos con lo que realmente retuvo
+    // la otra parte, por su propio redondeo), pero antes de guardar se
+    // avisa por si la diferencia fue sin querer. No bloquea el guardado:
+    // el usuario decide si sigue o corrige.
+    document.getElementById('form-retencion').addEventListener('submit', function (e) {
+        const diferencias = [];
+        document.querySelectorAll('#tabla-renglones tbody tr.renglon-row').forEach(function (fila, indice) {
+            const importe = fila.querySelector('.importe-input');
+            const porcentaje = fila.querySelector('.porcentaje-input');
+            const total = fila.querySelector('.total-input');
+            if (!importe || !porcentaje || !total) return;
+            const valImporte = parseFloat(importe.value);
+            const valPorcentaje = parseFloat(porcentaje.value);
+            const valTotal = parseFloat(total.value);
+            if (isNaN(valImporte) || isNaN(valPorcentaje) || isNaN(valTotal)) return;
+
+            const calculado = Number((valImporte * valPorcentaje / 100).toFixed(2));
+            const cargado = Number(valTotal.toFixed(2));
+            const diferencia = Number((cargado - calculado).toFixed(2));
+            if (Math.abs(diferencia) >= 0.01) {
+                diferencias.push(
+                    `Renglón ${indice + 1}: calculado $${calculado.toFixed(2)}, cargado $${cargado.toFixed(2)} `
+                    + `(diferencia de $${diferencia.toFixed(2)})`
+                );
+            }
+        });
+
+        if (diferencias.length > 0) {
+            const seguir = window.confirm(
+                'Hay diferencia entre la retención calculada (Importe x Porcentaje / 100) y la '
+                + 'cargada en estos renglones:\n\n' + diferencias.join('\n')
+                + '\n\n¿Guardar igual?'
+            );
+            if (!seguir) {
+                e.preventDefault();
+            }
+        }
+    });
 })();
 </script>
 {% endblock %}

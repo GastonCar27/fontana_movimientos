@@ -160,7 +160,13 @@ class RetencionRenglonForm(forms.Form):
         label='Retención',
         max_digits=20,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm total-input', 'step': '0.01', 'readonly': 'readonly'}),
+        # Se autocompleta con Importe x Porcentaje / 100 (ver JS de
+        # retencion_form.html), pero queda editable a mano: puede haber una
+        # diferencia de centavos entre lo calculado y lo que realmente
+        # retuvo la otra parte (por su propio redondeo), y en ese caso se
+        # carga el monto real -- el JS avisa antes de guardar si hay una
+        # diferencia, pero no lo bloquea.
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm total-input', 'step': '0.01'}),
     )
 
     def clean(self):

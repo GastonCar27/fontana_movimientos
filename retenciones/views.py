@@ -229,7 +229,10 @@ def comprobante_buscar_para_retencion(request):
             'punto_venta': c.punto_de_venta,
             'numero_comprobante': c.numero,
             'fecha_comp_origen': c.fecha.isoformat() if c.fecha else '',
-            'subtotal': str(c.total) if c.total is not None else '',
+            # El "Importe" que se precarga es la base sobre la que se
+            # calcula la retención: el neto gravado del comprobante (no el
+            # total, que incluye IVA y no es la base imponible).
+            'subtotal': str(c.neto_gravado) if c.neto_gravado is not None else '',
         })
     return JsonResponse({'resultados': resultados})
 
@@ -261,7 +264,14 @@ def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
         numero_comprobante = datos.get('numero_comprobante')
         subtotal = datos.get('subtotal')
         porcentaje = datos.get('porcentaje')
-        total = _calcular_total(subtotal, porcentaje)
+        # El campo "Retención" (total) se autocompleta en el JS con Importe
+        # x Porcentaje / 100, pero queda editable a mano (puede haber una
+        # diferencia de centavos con lo que realmente retuvo la otra
+        # parte). Se respeta lo que vino cargado en el form; sólo se
+        # recalcula acá como red de seguridad si llegara vacío.
+        total = datos.get('total')
+        if total is None:
+            total = _calcular_total(subtotal, porcentaje)
 
         Retencion.objects.create(
             id=siguiente_id,
