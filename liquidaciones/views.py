@@ -1,4 +1,6 @@
+import datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist
@@ -142,7 +144,18 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     # o vacío, comportamiento histórico). TIPO_COBRO -> retenciones que la
     # entidad le practicó a FONTANA al pagarle a Fontana (es_emisor=0,
     # "sufridas" -- ver Retencion.es_emisor en retenciones/models.py).
-    ret_excl = excluidos(LiquidacionRetencion, 'retencion_id')
+    #
+    # Cada Retencion es un RENGLÓN de un comprobante de retención -- varios
+    # renglones comparten año+numero (y misma entidad/dirección), ver
+    # retenciones/views.py::_guardar_grupo. Acá se agrupan por año+numero
+    # para ofrecer UN solo ítem por comprobante completo, con el total
+    # sumado de todos sus renglones -- igual que ya se agrupan en el
+    # listado de Retenciones (retencion_listado) -- en vez de un ítem por
+    # renglón (que mostraba sólo el total parcial de ESE renglón, no el de
+    # la retención completa). Al seleccionar el ítem se vinculan todos los
+    # renglones del comprobante juntos (ver liquidacion_form más abajo);
+    # no se puede liquidar sólo una parte de una misma retención.
+    ret_excl = set(excluidos(LiquidacionRetencion, 'retencion_id'))
     ret_tipo = tipo_actual(LiquidacionRetencion, 'retencion_id')
     if tipo == Liquidacion.TIPO_COBRO:
         retenciones_qs = Retencion.objects.filter(entidad=entidad, es_emisor=Retencion.NO_ES_EMISOR)
@@ -150,16 +163,43 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
         retenciones_qs = Retencion.objects.filter(entidad=entidad).filter(
             Q(es_emisor=Retencion.ES_EMISOR) | Q(es_emisor__isnull=True)
         )
-    retenciones = list(
+    renglones_retencion = list(
         retenciones_qs
-        .exclude(id__in=ret_excl)
         .select_related('id_regimen', 'id_impuesto')
-        .order_by('-fecha')
+        .order_by('fecha')
     )
-    for r in retenciones:
-        r.monto_mostrar = _monto_item(r)
-        r.tipo_actual = ret_tipo.get(r.id)
-        r.seleccionado = r.id in ret_tipo
+    grupos_retencion = {}
+    for r in renglones_retencion:
+        clave = (r.año, r.numero)
+        grupo = grupos_retencion.get(clave)
+        if grupo is None:
+            grupo = grupos_retencion[clave] = SimpleNamespace(
+                pk=r.id,
+                fecha=r.fecha,
+                comprobante_string=r.comprobante_string,
+                año=r.año,
+                numero=r.numero,
+                id_regimen=r.id_regimen,
+                id_impuesto=r.id_impuesto,
+                monto_mostrar=Decimal('0'),
+                ids_renglones=[],
+            )
+        grupo.ids_renglones.append(r.id)
+        grupo.monto_mostrar += _monto_item(r)
+        if r.fecha and (grupo.fecha is None or r.fecha > grupo.fecha):
+            grupo.fecha = r.fecha
+
+    retenciones = [
+        g for g in grupos_retencion.values()
+        # Si CUALQUIER renglón del comprobante ya está vinculado a OTRA
+        # liquidación, no se ofrece el grupo entero (no se puede partir un
+        # mismo comprobante de retención entre liquidaciones distintas).
+        if not any(rid in ret_excl for rid in g.ids_renglones)
+    ]
+    for g in retenciones:
+        g.tipo_actual = ret_tipo.get(g.pk)
+        g.seleccionado = g.pk in ret_tipo
+    retenciones.sort(key=lambda g: g.fecha or datetime.date.min, reverse=True)
 
     # --- Retenciones INYM ---
     # operador_emisor = quién practicó la retención, operador_retenido = a
@@ -471,7 +511,30 @@ def liquidacion_form(request, pk=None):
                     tipo_item = request.POST.get(f'{campo_tipo}_{item_id}')
                     if tipo_item not in ('debe', 'haber'):
                         continue
-                    a_crear.append((modelo_intermedio, fk_name, item_id, tipo_item))
+                    if modelo_item is Retencion:
+                        # El checkbox representa el COMPROBANTE de retención
+                        # completo (ver _armar_items más abajo: se agrupan
+                        # todos los renglones que comparten año+numero), no
+                        # un renglón individual -- item_id es sólo el id de
+                        # uno (el representante) de esos renglones. Al
+                        # guardar hay que vincular TODOS los renglones del
+                        # mismo comprobante, si no la liquidación quedaría
+                        # con el total parcial de un solo renglón.
+                        representante = Retencion.objects.filter(pk=item_id).only(
+                            'id', 'entidad_id', 'año', 'numero', 'es_emisor',
+                        ).first()
+                        if not representante:
+                            continue
+                        ids_grupo = Retencion.objects.filter(
+                            entidad_id=representante.entidad_id,
+                            año=representante.año,
+                            numero=representante.numero,
+                            es_emisor=representante.es_emisor,
+                        ).values_list('id', flat=True)
+                        for rid in ids_grupo:
+                            a_crear.append((modelo_intermedio, fk_name, rid, tipo_item))
+                    else:
+                        a_crear.append((modelo_intermedio, fk_name, item_id, tipo_item))
 
             if not a_crear:
                 messages.error(request, 'Debe seleccionar al menos un ítem para la liquidación.')
@@ -893,11 +956,50 @@ def _retenciones_sin_liquidar(request):
     return form, retenciones
 
 
+def _agrupar_retenciones_sin_liquidar(retenciones_qs):
+    """Agrupa los renglones (Retencion) por comprobante completo
+    (año+numero) -- mismo criterio ya usado en liquidacion_form._armar_items
+    y en retenciones.views.retencion_listado -- para que "Retenciones sin
+    liquidar" también muestre un comprobante por fila (con el total sumado
+    de sus renglones), en vez de un renglón suelto por fila.
+
+    A diferencia de _armar_items, acá NO se excluye un comprobante entero
+    si sólo ALGUNOS de sus renglones ya están liquidados: el queryset de
+    entrada ya viene filtrado a los renglones todavía sin liquidar
+    (liquidaciones__isnull=True), así que un comprobante con liquidación
+    parcial (por ejemplo, uno vinculado renglón por renglón antes de este
+    cambio) se sigue mostrando acá, pero con el total de sólo lo que falta
+    liquidar -- que es justamente lo que este reporte necesita comunicar.
+    """
+    grupos = {}
+    for r in retenciones_qs:
+        clave = (r.año, r.numero)
+        grupo = grupos.get(clave)
+        if grupo is None:
+            grupo = grupos[clave] = SimpleNamespace(
+                id=r.id,
+                fecha=r.fecha,
+                entidad=r.entidad,
+                entidad_liquidar_id=r.entidad_id,
+                id_regimen=r.id_regimen,
+                id_impuesto=r.id_impuesto,
+                año=r.año,
+                numero=r.numero,
+                total=Decimal('0'),
+                cantidad_renglones=0,
+                ids_renglones=[],
+            )
+        grupo.ids_renglones.append(r.id)
+        grupo.cantidad_renglones += 1
+        grupo.total += (r.total or Decimal('0'))
+        if r.fecha and (grupo.fecha is None or r.fecha > grupo.fecha):
+            grupo.fecha = r.fecha
+    return sorted(grupos.values(), key=lambda g: (g.fecha or datetime.date.min, g.id), reverse=True)
+
+
 def sin_liquidar_retenciones(request):
-    form, retenciones = _retenciones_sin_liquidar(request)
-    retenciones = list(retenciones[:500])
-    for r in retenciones:
-        r.entidad_liquidar_id = r.entidad_id
+    form, retenciones_qs = _retenciones_sin_liquidar(request)
+    retenciones = _agrupar_retenciones_sin_liquidar(retenciones_qs)[:500]
 
     return render(request, 'liquidaciones/sin_liquidar_retenciones.html', {
         'form': form,
@@ -1141,20 +1243,21 @@ def _filas_movimientos_caja_sin_liquidar(request):
 
 
 def _filas_retenciones_sin_liquidar(request):
-    _, retenciones = _retenciones_sin_liquidar(request)
-    columnas = ['ID', 'Fecha', 'Entidad', 'Régimen', 'Impuesto', 'Año', 'Número', 'Total']
+    _, retenciones_qs = _retenciones_sin_liquidar(request)
+    retenciones = _agrupar_retenciones_sin_liquidar(retenciones_qs)
+    columnas = ['ID', 'Fecha', 'Entidad', 'Régimen', 'Impuesto', 'Año', 'Número', 'Renglones', 'Total']
     filas = []
     for r in retenciones:
         filas.append([
             r.id, r.fecha, str(r.entidad) if r.entidad else '',
             str(r.id_regimen) if r.id_regimen else '', str(r.id_impuesto) if r.id_impuesto else '',
-            r.año, r.numero, _numero_o_none(r.total),
+            r.año, r.numero, r.cantidad_renglones, _numero_o_none(r.total),
         ])
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {7},  # Total
-        'anchos': [0.6, 0.9, 2.1, 1.9, 1.7, 0.7, 0.8, 1.1],
+        'columnas_numericas': {7, 8},  # Renglones, Total
+        'anchos': [0.6, 0.9, 2.0, 1.8, 1.6, 0.7, 0.8, 0.8, 1.1],
     }
 
 

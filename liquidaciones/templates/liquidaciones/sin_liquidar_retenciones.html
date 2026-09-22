@@ -51,7 +51,7 @@
   <thead>
     <tr>
       <th>ID</th><th>Fecha</th><th>Entidad</th><th>Régimen</th><th>Impuesto</th>
-      <th>Año</th><th>Número</th><th>Total</th><th>Acción</th>
+      <th>Año</th><th>Número</th><th>Renglones</th><th>Total</th><th>Acción</th>
     </tr>
   </thead>
   <tbody>
@@ -64,6 +64,7 @@
       <td>{{ r.id_impuesto|default:"-" }}</td>
       <td>{{ r.año|default:"-" }}</td>
       <td>{{ r.numero|default:"-" }}</td>
+      <td>{{ r.cantidad_renglones }}</td>
       <td>{{ r.total }}</td>
       <td>
         {% if r.entidad_liquidar_id %}
@@ -74,7 +75,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="9">No hay retenciones sin liquidar.</td></tr>
+    <tr><td colspan="10">No hay retenciones sin liquidar.</td></tr>
     {% endfor %}
   </tbody>
 </table>
