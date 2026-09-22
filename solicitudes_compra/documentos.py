@@ -87,10 +87,18 @@ def _entidad_propia():
     return Entidad.objects.filter(id=ENTIDAD_PROPIA_ID).first()
 
 
+def _nombre_titulo(nombre):
+    """Formatea el nombre de una entidad con la primera letra de cada
+    palabra en mayúscula y el resto en minúscula (ej. 'EMPLEADO RETIRADOR
+    UNO' -> 'Empleado Retirador Uno'), en vez de imprimirlo tal cual está
+    cargado en la base (a veces todo en mayúsculas)."""
+    return (nombre or '').strip().title()
+
+
 def _nombre_completo(entidad):
     if not entidad:
         return ''
-    return (entidad.nombre or '').strip().upper()
+    return _nombre_titulo(entidad.nombre)
 
 
 def _formatear_cantidad(valor):
@@ -260,7 +268,7 @@ def _bloque_copia(solicitud, entidad, propia, etiqueta, es_copia_empresa, estilo
     if not es_copia_empresa:
         filas_solicitante.extend([
             (
-                'Solicitante:', propia.nombre if propia else '',
+                'Solicitante:', _nombre_titulo(propia.nombre) if propia else '',
                 'Cuit:', cuit_con_guiones(propia.cuit) if propia else '',
             ),
             ('Dirección:', propia.direccion if propia else '', 'Tel:', TELEFONO_EMPRESA),
@@ -269,6 +277,10 @@ def _bloque_copia(solicitud, entidad, propia, etiqueta, es_copia_empresa, estilo
         'Autorizado a retirar:', _nombre_completo(solicitud.responsable_retiro),
         'DNI:', numero_con_puntos(solicitud.responsable_retiro.documento_nro),
     ))
+    # "Solicitó" (quién autorizó/pidió la compra, antes "Autorizado por"):
+    # sólo en la copia de la empresa, justo debajo de "Autorizado a retirar".
+    if es_copia_empresa:
+        filas_solicitante.append(('Solicitó:', _nombre_completo(solicitud.solicitante), '', ''))
     apellido_nombre_creador, dni_creador = _creador_info(solicitud)
     if es_copia_empresa and apellido_nombre_creador:
         filas_solicitante.append(('Creó la orden:', apellido_nombre_creador, 'DNI:', dni_creador))
@@ -277,7 +289,7 @@ def _bloque_copia(solicitud, entidad, propia, etiqueta, es_copia_empresa, estilo
         Paragraph(f'SOLICITUD DE ENTREGA — N° {_numero_impreso(solicitud)}', estilos['encabezado']),
         Paragraph(subtitulo, estilos['subtitulo']),
         _tabla_datos_pdf('DATOS DEL PROVEEDOR', [
-            ('Proveedor:', entidad.nombre or '', 'Cuit:', cuit_con_guiones(entidad.cuit)),
+            ('Proveedor:', _nombre_titulo(entidad.nombre), 'Cuit:', cuit_con_guiones(entidad.cuit)),
             (
                 'Dirección:', entidad.direccion or '', '',
                 f'{entidad.localidad or ""} ({entidad.codpos or ""})  {entidad.provincia or ""}'.strip(),
@@ -293,25 +305,38 @@ def _bloque_copia(solicitud, entidad, propia, etiqueta, es_copia_empresa, estilo
         bloque.append(Spacer(1, 0.1 * cm))
         bloque.append(Paragraph(f'Observaciones: {solicitud.observaciones}', estilos['obs']))
 
-    # "Solicitó" (quién autorizó/pidió la compra, antes "Autorizado por"):
-    # sólo en la copia de la empresa.
-    if es_copia_empresa:
-        bloque.append(Paragraph(f'Solicitó: {_nombre_completo(solicitud.solicitante)}', estilos['pie']))
-
-    # Sólo en la copia del proveedor: dos espacios de firma -- el autorizado
-    # a retirar (constancia de que se llevó la mercadería) y quien generó
-    # la orden en el sistema.
+    # Sólo en la copia del proveedor: espacio(s) de firma -- el autorizado a
+    # retirar (constancia de que se llevó la mercadería) y, si se pudo
+    # resolver, quien generó la orden en el sistema. Con las dos, van una al
+    # lado de la otra (izquierda/derecha) en vez de una debajo de la otra,
+    # para no alargar la hoja.
     if not es_copia_empresa:
         bloque.append(Spacer(1, 0.4 * cm))
-        bloque.append(Paragraph('_' * 42, estilos['firma_linea']))
-        bloque.append(Paragraph(
-            f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)})',
-            estilos['firma_label'],
-        ))
+        firma_retira = (
+            Paragraph('_' * 30, estilos['firma_linea']),
+            Paragraph(f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)})', estilos['firma_label']),
+        )
         if apellido_nombre_creador:
-            bloque.append(Spacer(1, 0.3 * cm))
-            bloque.append(Paragraph('_' * 42, estilos['firma_linea']))
-            bloque.append(Paragraph(f'Firma de quien creó la orden ({apellido_nombre_creador})', estilos['firma_label']))
+            firma_creador = (
+                Paragraph('_' * 30, estilos['firma_linea']),
+                Paragraph(f'Firma de quien creó la orden ({apellido_nombre_creador})', estilos['firma_label']),
+            )
+            tabla_firmas = Table(
+                [[firma_retira[0], firma_creador[0]], [firma_retira[1], firma_creador[1]]],
+                colWidths=[9.3 * cm, 9.3 * cm],
+            )
+            tabla_firmas.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            bloque.append(tabla_firmas)
+        else:
+            bloque.append(firma_retira[0])
+            bloque.append(firma_retira[1])
 
     return bloque
 
@@ -372,7 +397,7 @@ def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, es_copia_emp
             fila_encabezado.extend(['Hora', f'{hora}hs'])
     ws.append(fila_encabezado)
     ws.append([])
-    ws.append(['Proveedor', entidad.nombre or '', 'Cuit', cuit_con_guiones(entidad.cuit)])
+    ws.append(['Proveedor', _nombre_titulo(entidad.nombre), 'Cuit', cuit_con_guiones(entidad.cuit)])
     ws.append([
         'Dirección', entidad.direccion or '', 'Localidad',
         f'{entidad.localidad or ""} ({entidad.codpos or ""}) {entidad.provincia or ""}'.strip(),
@@ -381,7 +406,7 @@ def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, es_copia_emp
 
     if not es_copia_empresa:
         ws.append([
-            'Solicitante', propia.nombre if propia else '',
+            'Solicitante', _nombre_titulo(propia.nombre) if propia else '',
             'Cuit', cuit_con_guiones(propia.cuit) if propia else '',
         ])
         ws.append(['Dirección', propia.direccion if propia else '', 'Tel', TELEFONO_EMPRESA])
@@ -389,6 +414,10 @@ def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, es_copia_emp
         'Autorizado a retirar', _nombre_completo(solicitud.responsable_retiro),
         'DNI', numero_con_puntos(solicitud.responsable_retiro.documento_nro),
     ])
+    # "Solicitó": sólo en la copia de la empresa, justo debajo de
+    # "Autorizado a retirar" (mismo criterio que en el PDF).
+    if es_copia_empresa:
+        ws.append(['Solicitó', _nombre_completo(solicitud.solicitante)])
     apellido_nombre_creador, dni_creador = _creador_info(solicitud)
     if es_copia_empresa and apellido_nombre_creador:
         ws.append(['Creó la orden', apellido_nombre_creador, 'DNI', dni_creador])
@@ -407,18 +436,22 @@ def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, es_copia_emp
         ws.append(fila)
 
     ws.append([])
-    if es_copia_empresa:
-        ws.append(['Solicitó', _nombre_completo(solicitud.solicitante)])
     if solicitud.observaciones:
         ws.append(['Observaciones', solicitud.observaciones])
 
-    # Sólo en el bloque del proveedor: mismos dos espacios de firma que en
-    # el PDF (ver _bloque_copia).
+    # Sólo en el bloque del proveedor: mismos espacios de firma que en el
+    # PDF (ver _bloque_copia). Con las dos, van en la misma fila -- una en
+    # las primeras dos columnas y la otra en las siguientes dos -- para que
+    # queden una al lado de la otra, no una debajo de la otra.
     if not es_copia_empresa:
         ws.append([])
-        ws.append([f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)}):', '______________________________'])
         if apellido_nombre_creador:
-            ws.append([f'Firma de quien creó la orden ({apellido_nombre_creador}):', '______________________________'])
+            ws.append([
+                f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)}):', '______________________________',
+                f'Firma de quien creó la orden ({apellido_nombre_creador}):', '______________________________',
+            ])
+        else:
+            ws.append([f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)}):', '______________________________'])
 
 
 def generar_excel_solicitud(solicitud):
