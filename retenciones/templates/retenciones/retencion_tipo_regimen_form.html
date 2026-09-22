@@ -13,8 +13,8 @@
         <div class="form-group mb-3">
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
-            {% if field.name == 'impuesto' %}
-            <small class="form-text text-muted">Se muestra como "id - nombre" para elegir el impuesto relacionado.</small>
+            {% if field.name == 'impuestos' %}
+            <small class="form-text text-muted">Marcá todos los impuestos a los que aplica este régimen (podés elegir más de uno).</small>
             {% endif %}
             {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
         </div>

@@ -31,10 +31,16 @@
                     <div class="form-group col-md-2">
                         <label>{{ header_form.id_impuesto.label }}</label>
                         {{ header_form.id_impuesto }}
+                        {% if header_form.id_impuesto.errors %}
+                            <div class="text-danger small">{{ header_form.id_impuesto.errors|join:", " }}</div>
+                        {% endif %}
                     </div>
                     <div class="form-group col-md-2">
                         <label>{{ header_form.id_regimen.label }}</label>
                         {{ header_form.id_regimen }}
+                        {% if header_form.id_regimen.errors %}
+                            <div class="text-danger small">{{ header_form.id_regimen.errors|join:", " }}</div>
+                        {% endif %}
                     </div>
                     <div class="form-group col-md-1">
                         <label>{{ header_form.año.label }}</label>
@@ -119,6 +125,17 @@
         </tbody></table>
 
         <button type="button" id="btn-agregar-renglon" class="btn btn-sm btn-outline-secondary mb-3">+ Agregar renglón</button>
+
+        <!-- Total sumado de la columna "Retención" de todos los renglones
+             (sin contar los marcados para "Quitar"), se recalcula solo a
+             medida que se completan/editan los renglones -- así se ve antes
+             de guardar, no hace falta esperar a imprimir el PDF/Excel. -->
+        <div class="d-flex justify-content-end mb-3">
+            <div class="border rounded px-3 py-2 bg-light text-end">
+                <span class="text-muted small">Total retenciones:</span>
+                <strong id="total-general-retenciones" class="ms-1">$ 0,00</strong>
+            </div>
+        </div>
 
         <div class="mt-4">
             <button type="submit" name="accion" value="pdf" class="btn btn-primary">Guardar e imprimir en PDF</button>
@@ -256,9 +273,8 @@
         });
         const opcionesRegimen = Array.from(selectRegimen.options).map(function (opt) {
             const clon = opt.cloneNode(true);
-            if (clon.value && mapaRegimenImpuesto[clon.value] !== undefined && mapaRegimenImpuesto[clon.value] !== null) {
-                clon.dataset.impuesto = String(mapaRegimenImpuesto[clon.value]);
-            }
+            const impuestos = clon.value && mapaRegimenImpuesto[clon.value] ? mapaRegimenImpuesto[clon.value] : [];
+            clon.dataset.impuestos = impuestos.map(String).join(',');
             return clon;
         });
 
@@ -267,7 +283,8 @@
             const valorActual = selectRegimen.value;
             selectRegimen.innerHTML = '';
             opcionesRegimen.forEach(function (opt) {
-                if (!opt.value || !impuestoSeleccionado || opt.dataset.impuesto === impuestoSeleccionado) {
+                const vinculados = opt.dataset.impuestos ? opt.dataset.impuestos.split(',') : [];
+                if (!opt.value || !impuestoSeleccionado || vinculados.includes(impuestoSeleccionado)) {
                     selectRegimen.appendChild(opt.cloneNode(true));
                 }
             });
@@ -279,19 +296,19 @@
         function filtrarImpuestos() {
             const regimenSeleccionado = selectRegimen.value;
             const valorActual = selectImpuesto.value;
-            let impuestoVinculado = '';
+            let impuestosVinculados = [];
             if (regimenSeleccionado) {
                 const opcionRegimen = opcionesRegimen.find(function (o) { return o.value === regimenSeleccionado; });
-                impuestoVinculado = opcionRegimen ? (opcionRegimen.dataset.impuesto || '') : '';
+                impuestosVinculados = opcionRegimen && opcionRegimen.dataset.impuestos ? opcionRegimen.dataset.impuestos.split(',') : [];
             }
             selectImpuesto.innerHTML = '';
             opcionesImpuesto.forEach(function (opt) {
-                if (!opt.value || !regimenSeleccionado || opt.value === impuestoVinculado) {
+                if (!opt.value || !regimenSeleccionado || impuestosVinculados.includes(opt.value)) {
                     selectImpuesto.appendChild(opt.cloneNode(true));
                 }
             });
-            if (regimenSeleccionado && impuestoVinculado) {
-                selectImpuesto.value = impuestoVinculado;
+            if (regimenSeleccionado && impuestosVinculados.length === 1) {
+                selectImpuesto.value = impuestosVinculados[0];
             } else if (Array.from(selectImpuesto.options).some(function (o) { return o.value === valorActual; })) {
                 selectImpuesto.value = valorActual;
             }
@@ -316,6 +333,28 @@
         const valPorcentaje = parseFloat(porcentaje.value);
         if (!isNaN(valImporte) && !isNaN(valPorcentaje)) {
             total.value = (valImporte * valPorcentaje / 100).toFixed(2);
+        }
+        recalcularTotalGeneral();
+    }
+
+    // --- Total general: suma de la columna "Retención" de todos los
+    // renglones, sin contar los marcados para "Quitar" (checkbox DELETE) --
+    // se muestra antes de guardar, se recalcula solo con cada cambio. ---
+    function recalcularTotalGeneral() {
+        let suma = 0;
+        document.querySelectorAll('#tabla-renglones tbody tr.renglon-row').forEach(function (fila) {
+            const eliminar = fila.querySelector('input[name$="-DELETE"]');
+            if (eliminar && eliminar.checked) return;
+            const total = fila.querySelector('.total-input');
+            if (!total) return;
+            const valTotal = parseFloat(total.value);
+            if (!isNaN(valTotal)) suma += valTotal;
+        });
+        const elemento = document.getElementById('total-general-retenciones');
+        if (elemento) {
+            elemento.textContent = '$ ' + suma.toLocaleString('es-AR', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2,
+            });
         }
     }
 
@@ -422,10 +461,27 @@
         fila.querySelectorAll('.importe-input, .porcentaje-input').forEach(function (el) {
             el.addEventListener('input', function () { recalcularFila(fila); });
         });
+        // "Retención" queda editable a mano (ver más abajo el aviso de
+        // diferencia al guardar); cualquier cambio ahí también tiene que
+        // reflejarse en el total general.
+        const total = fila.querySelector('.total-input');
+        if (total) {
+            total.addEventListener('input', recalcularTotalGeneral);
+        }
+        // Si se marca "Quitar", ese renglón no debe seguir sumando en el
+        // total general (se va a borrar al guardar).
+        const eliminar = fila.querySelector('input[name$="-DELETE"]');
+        if (eliminar) {
+            eliminar.addEventListener('change', recalcularTotalGeneral);
+        }
         conectarBuscadorComprobante(fila);
     }
 
     document.querySelectorAll('#tabla-renglones tbody tr.renglon-row').forEach(conectarFila);
+    // Al cargar la página (por ejemplo en Modificación, con renglones ya
+    // guardados) se muestra el total desde el arranque, sin esperar a que
+    // se toque algún campo.
+    recalcularTotalGeneral();
 
     // --- Agregar renglón dinámicamente ---
     const totalFormsInput = document.getElementById('id_form-TOTAL_FORMS');
@@ -440,6 +496,7 @@
         tbody.appendChild(nuevaFila);
         conectarFila(nuevaFila);
         totalFormsInput.value = indice + 1;
+        recalcularTotalGeneral();
     });
 
     // --- Aviso si "Retención" no coincide con lo calculado (Importe x

@@ -24,7 +24,7 @@
                 <tr>
                     <th>{% sort_th 'id' 'ID' %}</th>
                     <th>{% sort_th 'nombre' 'Nombre' %}</th>
-                    <th>{% sort_th 'impuesto' 'Impuesto relacionado' %}</th>
+                    <th>Impuestos vinculados</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
@@ -33,7 +33,17 @@
                 <tr data-fila-dato>
                     <td>{{ regimen.id }}</td>
                     <td>{{ regimen.nombre|default:"-" }}</td>
-                    <td>{% if regimen.impuesto %}{{ regimen.impuesto.id }} - {{ regimen.impuesto.nombre }}{% else %}-{% endif %}</td>
+                    <td>
+                        {% with impuestos_regimen=regimen.impuestos.all %}
+                            {% if impuestos_regimen %}
+                                {% for imp in impuestos_regimen %}{{ imp.id }} - {{ imp.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% elif regimen.impuesto %}
+                                {{ regimen.impuesto.id }} - {{ regimen.impuesto.nombre }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        {% endwith %}
+                    </td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'retenciones:tipo_regimen_modificar' pk=regimen.pk %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones:tipo_regimen_eliminar' pk=regimen.pk %}">Eliminar</a>

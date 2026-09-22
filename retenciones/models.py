@@ -71,15 +71,50 @@ class RetencionTipoImpuesto(models.Model):
 
 class RetencionTipoRegimen(models.Model):
     id = models.IntegerField(primary_key=True)
+    # Campo legacy: un solo impuesto relacionado. Se deja tal cual a nivel
+    # de base de datos (no se borra ni se sincroniza automáticamente) por si
+    # algún reporte u otra parte del sistema todavía lo lee, pero para
+    # cargar/mostrar los impuestos vinculados a un régimen hay que usar el
+    # campo `impuestos` (M2M) de más abajo, que permite más de uno.
     impuesto = models.ForeignKey(RetencionTipoImpuesto, models.DO_NOTHING, db_column='id_impuesto', blank=True, null=True)
     nombre = models.CharField(max_length=445, blank=True, null=True)
+    # Impuestos vinculados a este régimen (M2M real, a través de
+    # RetencionRegimenImpuesto). Un régimen como "Régimen de Retención y
+    # Percepción Aplicable" puede aplicar a varios impuestos a la vez (IIBB
+    # Corrientes, IIBB de otra jurisdicción, etc.), por eso ya no alcanza
+    # con el FK simple `impuesto` de arriba.
+    impuestos = models.ManyToManyField(
+        RetencionTipoImpuesto,
+        through='RetencionRegimenImpuesto',
+        related_name='regimenes',
+        blank=True,
+    )
 
     class Meta:
         managed = False
         db_table = 'retencion_tipo_regimen'
 
     def __str__(self):
-        return f'Id: {self.id} - {self.nombre} Impuesto: {self.impuesto}'
+        return f'Id: {self.id} - {self.nombre}'
+
+
+class RetencionRegimenImpuesto(models.Model):
+    """Tabla de vínculo Régimen<->Impuesto. A diferencia de los demás
+    modelos de este archivo, esta tabla es NUEVA (no espeja nada de la
+    base legacy 'fontana'), así que va con managed=True: alcanza con correr
+    `makemigrations`/`migrate` de forma normal, sin necesidad de SQL a
+    mano ni de tocar la base a mano."""
+    regimen = models.ForeignKey(RetencionTipoRegimen, on_delete=models.CASCADE, related_name='vinculos_impuesto')
+    impuesto = models.ForeignKey(RetencionTipoImpuesto, on_delete=models.CASCADE, related_name='vinculos_regimen')
+
+    class Meta:
+        db_table = 'retencion_regimen_impuesto'
+        constraints = [
+            models.UniqueConstraint(fields=['regimen', 'impuesto'], name='unico_regimen_impuesto'),
+        ]
+
+    def __str__(self):
+        return f'Régimen {self.regimen_id} <-> Impuesto {self.impuesto_id}'
 
 
 

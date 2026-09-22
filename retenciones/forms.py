@@ -112,8 +112,16 @@ class RetencionHeaderForm(forms.Form):
 
         id_impuesto = cleaned.get('id_impuesto')
         id_regimen = cleaned.get('id_regimen')
-        if id_impuesto and id_regimen and id_regimen.impuesto_id != id_impuesto.id:
-            self.add_error('id_regimen', 'El régimen elegido no corresponde al impuesto seleccionado.')
+        if id_impuesto and id_regimen:
+            vinculados = set(id_regimen.impuestos.values_list('id', flat=True))
+            if not vinculados and id_regimen.impuesto_id is not None:
+                # Régimen viejo, todavía no migrado a la relación M2M nueva
+                # (nadie lo volvió a guardar desde la pantalla de Ret.
+                # Regímenes con los checkboxes): se usa el vínculo legacy de
+                # un solo impuesto como resguardo.
+                vinculados = {id_regimen.impuesto_id}
+            if vinculados and id_impuesto.id not in vinculados:
+                self.add_error('id_regimen', 'El régimen elegido no corresponde al impuesto seleccionado.')
 
         return cleaned
 
@@ -206,11 +214,11 @@ RetencionRenglonFormSet = forms.formset_factory(
 # Alta / Modificación de los catálogos "Ret. Impuestos" y "Ret. Regimenes"
 # ---------------------------------------------------------------------------
 
-class ImpuestoIdNombreChoiceField(forms.ModelChoiceField):
+class ImpuestosMultipleChoiceField(forms.ModelMultipleChoiceField):
     """A diferencia de ImpuestoChoiceField (que solo muestra el nombre,
     pensado para el buscador de la retención), acá el pedido puntual fue
-    que al dar de alta/modificar un Régimen se vea el impuesto relacionado
-    con su id y su nombre."""
+    que al dar de alta/modificar un Régimen se vean los impuestos
+    relacionados con su id y su nombre."""
 
     def label_from_instance(self, obj):
         return f'{obj.id} - {obj.nombre}'
@@ -229,19 +237,42 @@ class RetencionTipoImpuestoForm(forms.ModelForm):
 
 
 class RetencionTipoRegimenForm(forms.ModelForm):
-    impuesto = ImpuestoIdNombreChoiceField(
+    # M2M a través de RetencionRegimenImpuesto: un mismo régimen puede
+    # aplicar a varios impuestos a la vez (ver comentario en models.py).
+    # No se puede declarar en Meta.fields porque un ManyToManyField con
+    # through= no lo guarda form.save()/save_m2m() solo -- hay que llamar
+    # guardar_impuestos() a mano desde la vista, una vez que el régimen ya
+    # tiene un id guardado.
+    impuestos = ImpuestosMultipleChoiceField(
         queryset=RetencionTipoImpuesto.objects.all().order_by('nombre'),
         required=True,
-        label='Impuesto relacionado',
-        widget=forms.Select(attrs={'class': 'form-control form-control-sm'}),
+        label='Impuestos relacionados',
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
     )
 
     class Meta:
         model = RetencionTipoRegimen
-        fields = ['impuesto', 'nombre']
+        fields = ['nombre']
         widgets = {
             'nombre': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
         }
         labels = {
             'nombre': 'Nombre del régimen',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            vinculados = list(self.instance.impuestos.values_list('id', flat=True))
+            if not vinculados and self.instance.impuesto_id is not None:
+                # Régimen viejo, todavía no migrado a la relación M2M
+                # nueva: se precarga tildado el impuesto que tenía en el
+                # campo legacy, para no perder ese dato al editar.
+                vinculados = [self.instance.impuesto_id]
+            self.fields['impuestos'].initial = vinculados
+
+    def guardar_impuestos(self, regimen):
+        """Guarda el M2M. Hay que llamarlo a mano desde la vista, después
+        de que `regimen` ya tenga un pk guardado en la base (ver
+        retencion_tipo_regimen_alta/modificar en views.py)."""
+        regimen.impuestos.set(self.cleaned_data['impuestos'])

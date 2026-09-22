@@ -134,12 +134,18 @@ def _tipos_comprobante_por_id():
 
 
 def _regimen_impuesto_map():
-    """Mapa {id_regimen: id_impuesto} para que el JS del form condicione el
-    combo de Régimen según el Impuesto elegido (y viceversa)."""
-    return {
-        str(r.id): r.impuesto_id
-        for r in RetencionTipoRegimen.objects.all()
-    }
+    """Mapa {id_regimen: [id_impuesto, ...]} para que el JS del form
+    condicione el combo de Régimen según el Impuesto elegido (y
+    viceversa). Un régimen puede estar vinculado a varios impuestos a la
+    vez (ver RetencionTipoRegimen.impuestos en models.py)."""
+    mapa = {}
+    for r in RetencionTipoRegimen.objects.prefetch_related('impuestos'):
+        ids = [str(i.id) for i in r.impuestos.all()]
+        if not ids and r.impuesto_id is not None:
+            # Régimen viejo, todavía no migrado a la relación M2M nueva.
+            ids = [str(r.impuesto_id)]
+        mapa[str(r.id)] = ids
+    return mapa
 
 
 def _texto_comprobante_origen(retencion, tipos_por_id):
@@ -807,11 +813,10 @@ def _siguiente_id_tipo_regimen():
 
 
 def retencion_tipo_regimen_listado(request):
-    regimenes = RetencionTipoRegimen.objects.select_related('impuesto').order_by('nombre')
+    regimenes = RetencionTipoRegimen.objects.prefetch_related('impuestos').order_by('nombre')
     regimenes = aplicar_orden_queryset(request, regimenes, {
         'id': 'id',
         'nombre': 'nombre',
-        'impuesto': 'impuesto__nombre',
     })
     return render(request, 'retenciones/retencion_tipo_regimen_listado.html', {
         'regimenes': regimenes,
@@ -825,6 +830,7 @@ def retencion_tipo_regimen_alta(request):
             regimen = form.save(commit=False)
             regimen.id = _siguiente_id_tipo_regimen()
             regimen.save(force_insert=True)
+            form.guardar_impuestos(regimen)
             messages.success(request, f'El régimen "{regimen.nombre}" se creó correctamente.')
             return redirect('retenciones:tipo_regimen_listado')
     else:
@@ -843,6 +849,7 @@ def retencion_tipo_regimen_modificar(request, pk):
         form = RetencionTipoRegimenForm(request.POST, instance=regimen)
         if form.is_valid():
             form.save()
+            form.guardar_impuestos(regimen)
             messages.success(request, f'El régimen "{regimen.nombre}" se modificó correctamente.')
             return redirect('retenciones:tipo_regimen_listado')
     else:
