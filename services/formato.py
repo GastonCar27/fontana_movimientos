@@ -9,6 +9,19 @@ MESES = [
 ]
 
 
+def numero_con_puntos(valor):
+    """Formatea un número entero (ej. un DNI) separando los miles con un
+    punto, como se usa habitualmente en Argentina (ej. 28.333.444). Si no
+    es un número válido, devuelve el valor tal cual vino."""
+    if not valor:
+        return ''
+    try:
+        entero = int(valor)
+    except (TypeError, ValueError):
+        return str(valor)
+    return f'{entero:,}'.replace(',', '.')
+
+
 def cuit_con_guiones(cuit):
     """Formatea un CUIT como XX-XXXXXXXX-X. Si no tiene 11 dígitos (dato
     incompleto o mal cargado), devuelve el valor tal cual vino."""

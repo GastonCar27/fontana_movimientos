@@ -7,17 +7,35 @@ retirar y su DNI, la tabla de renglones pedidos, y la firma de quien
 autorizó el pedido al pie.
 
 Cada solicitud se imprime DOS VECES en la misma hoja: una copia completa
-(con Sector y Prioridad, para que quede archivada en la empresa) y, debajo,
-una copia reducida para el proveedor (sin esos dos datos, que no le sirven),
+para archivar en la empresa y, debajo, una copia para el proveedor,
 separadas por una línea de corte para poder separarlas con tijera. Por eso
 cada copia usa una versión compacta del diseño (fuente más chica, menos
 filas en blanco, sin la caja grande del número): a media hoja no entra el
-mismo diseño "grande" que antes ocupaba la hoja completa. La copia del
-proveedor además lleva, al pie, un espacio para que firme el autorizado a
-retirar al momento de llevarse la mercadería (constancia de entrega para
-el proveedor).
+mismo diseño "grande" que antes ocupaba la hoja completa.
+
+Las dos copias NO muestran lo mismo (a propósito, no es sólo un recorte de
+espacio):
+- Copia EMPRESA: lleva Sector y Prioridad (uso interno), la hora de emisión
+  además de la fecha, quién solicitó el pedido ("Solicitó") y quién generó
+  la orden en el sistema ("Creó la orden"). En cambio NO repite los datos
+  de la propia empresa (nombre/dirección/CUIT/tel de Fontana) -- ya los
+  tiene, es la copia que se queda acá, así se ahorra tinta -- con la única
+  excepción del renglón "Autorizado a retirar" (a quién esperar).
+- Copia PROVEEDOR: al revés, SÍ lleva los datos de Fontana (el proveedor no
+  los tiene de memoria) pero no Sector/Prioridad (no le sirven) ni quién
+  solicitó/creó la orden como dato de texto -- en cambio, al pie, tiene DOS
+  espacios de firma: uno para quien retira la mercadería y otro para quien
+  generó la orden, como constancia de entrega para el proveedor.
 """
+import re
+
 from django.http import HttpResponse
+from django.utils import timezone as django_timezone
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9, no debería pasar en este proyecto
+    ZoneInfo = None
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
@@ -27,7 +45,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from entidades.models import Entidad
-from services.formato import cuit_con_guiones, fecha_larga
+from services.formato import cuit_con_guiones, fecha_larga, numero_con_puntos
 
 # Entidad que representa a la propia empresa (mismo criterio que
 # liquidaciones.views.ENTIDAD_PROPIA_ID / MovimientoCaja.emisor).
@@ -42,6 +60,27 @@ TELEFONO_EMPRESA = '(3755) 15654287/15413042'
 # (se completa con filas en blanco si la solicitud tiene menos). Más chico
 # que antes porque ahora cada copia ocupa sólo media hoja.
 FILAS_MINIMAS_RENGLONES = 5
+
+# settings.TIME_ZONE del proyecto está en 'UTC' (no en la hora real de
+# Misiones), así que para mostrar la hora de emisión tal cual la vería
+# alguien ahí se convierte explícitamente a esta zona horaria, sin depender
+# de esa configuración global (cambiarla afectaría otras fechas del
+# sistema, como el default de 'fecha', y no es parte de este pedido).
+ZONA_HORARIA_IMPRESION = ZoneInfo('America/Argentina/Buenos_Aires') if ZoneInfo else None
+
+# Usuario (User.username, en minúsculas) que creó la orden -> nombre EXACTO
+# de su Entidad correspondiente en la tabla `entidades` (para buscarla y
+# sacarle el DNI), más el apellido y el nombre YA separados (para imprimir
+# "Apellido, Nombre" sin tener que adivinar cómo partir el campo libre
+# 'nombre' de Entidad, que no sigue un orden fijo). Usernames y split
+# Apellido/Nombre confirmados por Gastón. Si en el futuro se suma un
+# usuario nuevo que todavía no está acá, no rompe: _creador_info imprime
+# el nombre de usuario tal cual (con mayúscula inicial) en vez del DNI.
+USUARIO_A_ENTIDAD = {
+    'franco': {'entidad_nombre': 'Bongers Walter Franco', 'apellido': 'Bongers', 'nombre': 'Walter Franco'},
+    'diego': {'entidad_nombre': 'Genesini Diego', 'apellido': 'Genesini', 'nombre': 'Diego'},
+    'gaston': {'entidad_nombre': 'Luis Gastón Carballo', 'apellido': 'Carballo', 'nombre': 'Luis Gastón'},
+}
 
 
 def _entidad_propia():
@@ -66,6 +105,52 @@ def _numero_o_none(valor):
     if valor is None:
         return None
     return float(valor)
+
+
+def _numero_impreso(solicitud):
+    """El número que se imprime en el PDF/Excel es siempre sólo los
+    dígitos, sin el prefijo histórico 'OC-' que todavía tienen las
+    solicitudes cargadas antes de este cambio (ej. numero='OC-125' imprime
+    '125'); las solicitudes nuevas ya se guardan sin prefijo (ver
+    siguiente_numero_solicitud en models.py), así que ahí esto no cambia
+    nada."""
+    numero = solicitud.numero or solicitud.id
+    digitos = re.sub(r'\D', '', str(numero))
+    return digitos or numero
+
+
+def _hora_emision(solicitud):
+    """Hora (HH:MM) en que se guardó por primera vez la solicitud
+    (solicitud.creado, DateTimeField con auto_now_add=True -- no hizo
+    falta agregar una columna nueva, ese dato ya se guardaba solo desde
+    siempre, sólo faltaba imprimirlo)."""
+    if not solicitud.creado:
+        return ''
+    if not ZONA_HORARIA_IMPRESION:
+        return django_timezone.localtime(solicitud.creado).strftime('%H:%M')
+    return django_timezone.localtime(solicitud.creado, ZONA_HORARIA_IMPRESION).strftime('%H:%M')
+
+
+def _creador_info(solicitud):
+    """Devuelve (nombre_para_mostrar, dni_con_puntos) del usuario que creó
+    la solicitud (solicitud.creado_por), buscando su Entidad correspondiente
+    según USUARIO_A_ENTIDAD de acá arriba. Si 'creado_por' es None (dato
+    viejo, de antes de que se empezara a guardar), devuelve ('', '') y el
+    campo/firma correspondiente simplemente no se imprime (ver _bloque_copia
+    / _agregar_bloque_excel). Si 'creado_por' existe pero su username no
+    está en el mapeo (usuario nuevo todavía no contemplado), no hay forma de
+    resolver su Entidad para el DNI, pero igual se muestra el nombre de
+    usuario (con mayúscula inicial, por convención) en vez de dejar el campo
+    vacío del todo."""
+    if not solicitud.creado_por_id:
+        return '', ''
+    username = (solicitud.creado_por.username or '').strip()
+    datos = USUARIO_A_ENTIDAD.get(username.lower())
+    if not datos:
+        return (username.capitalize() if username else ''), ''
+    entidad_creador = Entidad.objects.filter(nombre=datos['entidad_nombre']).first()
+    dni = numero_con_puntos(entidad_creador.documento_nro) if entidad_creador else ''
+    return f"{datos['apellido']}, {datos['nombre']}", dni
 
 
 # ---------------------------------------------------------------------------
@@ -124,11 +209,11 @@ def _tabla_datos_pdf(titulo, filas):
     return tabla
 
 
-def _tabla_renglones_pdf(renglones, incluir_sector_prioridad):
+def _tabla_renglones_pdf(renglones, es_copia_empresa):
     """La copia para la empresa lleva Prioridad y Sector; la del proveedor
     no (no le sirven), así que directamente no se incluyen esas dos
     columnas -- no se muestran vacías, se libera ese ancho para el resto."""
-    if incluir_sector_prioridad:
+    if es_copia_empresa:
         encabezados = ['Cantidad', 'U. de Medida', 'Prioridad', 'Sector', 'Descripción']
         anchos = [1.8 * cm, 2.3 * cm, 1.8 * cm, 2.3 * cm, 10.4 * cm]
     else:
@@ -138,7 +223,7 @@ def _tabla_renglones_pdf(renglones, incluir_sector_prioridad):
     datos = [encabezados]
     for renglon in renglones:
         fila = [_formatear_cantidad(renglon.cantidad), renglon.unidad_medida or '']
-        if incluir_sector_prioridad:
+        if es_copia_empresa:
             fila.append(renglon.get_prioridad_display() if renglon.prioridad else '')
             fila.append(renglon.sector.nombre if renglon.sector_id else '')
         fila.append(renglon.descripcion)
@@ -160,15 +245,37 @@ def _tabla_renglones_pdf(renglones, incluir_sector_prioridad):
     return tabla
 
 
-def _bloque_copia(solicitud, entidad, propia, etiqueta, incluir_sector_prioridad, estilos):
+def _bloque_copia(solicitud, entidad, propia, etiqueta, es_copia_empresa, estilos):
     """Devuelve la lista de flowables de UNA copia (empresa o proveedor),
     para apilar dos de éstas en la misma hoja con una línea de corte entre
-    medio -- ver generar_pdf_solicitud."""
-    numero = solicitud.numero or solicitud.id
+    medio -- ver generar_pdf_solicitud. Qué lleva cada una está explicado
+    en el docstring del módulo."""
+    subtitulo = f'{etiqueta} · {fecha_larga(solicitud.fecha)}'
+    if es_copia_empresa:
+        hora = _hora_emision(solicitud)
+        if hora:
+            subtitulo += f' · {hora}hs'
+
+    filas_solicitante = []
+    if not es_copia_empresa:
+        filas_solicitante.extend([
+            (
+                'Solicitante:', propia.nombre if propia else '',
+                'Cuit:', cuit_con_guiones(propia.cuit) if propia else '',
+            ),
+            ('Dirección:', propia.direccion if propia else '', 'Tel:', TELEFONO_EMPRESA),
+        ])
+    filas_solicitante.append((
+        'Autorizado a retirar:', _nombre_completo(solicitud.responsable_retiro),
+        'DNI:', numero_con_puntos(solicitud.responsable_retiro.documento_nro),
+    ))
+    apellido_nombre_creador, dni_creador = _creador_info(solicitud)
+    if es_copia_empresa and apellido_nombre_creador:
+        filas_solicitante.append(('Creó la orden:', apellido_nombre_creador, 'DNI:', dni_creador))
 
     bloque = [
-        Paragraph(f'SOLICITUD DE ENTREGA — N° {numero}', estilos['encabezado']),
-        Paragraph(f'{etiqueta} · {fecha_larga(solicitud.fecha)}', estilos['subtitulo']),
+        Paragraph(f'SOLICITUD DE ENTREGA — N° {_numero_impreso(solicitud)}', estilos['encabezado']),
+        Paragraph(subtitulo, estilos['subtitulo']),
         _tabla_datos_pdf('DATOS DEL PROVEEDOR', [
             ('Proveedor:', entidad.nombre or '', 'Cuit:', cuit_con_guiones(entidad.cuit)),
             (
@@ -177,38 +284,34 @@ def _bloque_copia(solicitud, entidad, propia, etiqueta, incluir_sector_prioridad
             ),
         ]),
         Spacer(1, 0.15 * cm),
-        _tabla_datos_pdf('DATOS DEL SOLICITANTE', [
-            (
-                'Solicitante:', propia.nombre if propia else '',
-                'Cuit:', cuit_con_guiones(propia.cuit) if propia else '',
-            ),
-            ('Dirección:', propia.direccion if propia else '', 'Tel:', TELEFONO_EMPRESA),
-            (
-                'Autorizado:', _nombre_completo(solicitud.responsable_retiro),
-                'DNI:', solicitud.responsable_retiro.documento_nro or '',
-            ),
-        ]),
+        _tabla_datos_pdf('DATOS DEL SOLICITANTE', filas_solicitante),
         Spacer(1, 0.15 * cm),
-        _tabla_renglones_pdf(list(solicitud.renglones.select_related('sector').all()), incluir_sector_prioridad),
+        _tabla_renglones_pdf(list(solicitud.renglones.select_related('sector').all()), es_copia_empresa),
     ]
 
     if solicitud.observaciones:
         bloque.append(Spacer(1, 0.1 * cm))
         bloque.append(Paragraph(f'Observaciones: {solicitud.observaciones}', estilos['obs']))
 
-    bloque.append(Paragraph(f'Autorizado por: {_nombre_completo(solicitud.solicitante)}', estilos['pie']))
+    # "Solicitó" (quién autorizó/pidió la compra, antes "Autorizado por"):
+    # sólo en la copia de la empresa.
+    if es_copia_empresa:
+        bloque.append(Paragraph(f'Solicitó: {_nombre_completo(solicitud.solicitante)}', estilos['pie']))
 
-    # Sólo en la copia del proveedor: un espacio para que el autorizado a
-    # retirar (el nombre que ya figura arriba, en "DATOS DEL SOLICITANTE" ->
-    # Autorizado) firme al momento de llevarse la mercadería -- así el
-    # proveedor se queda con esa copia como constancia de la entrega.
-    if not incluir_sector_prioridad:
-        bloque.append(Spacer(1, 0.5 * cm))
+    # Sólo en la copia del proveedor: dos espacios de firma -- el autorizado
+    # a retirar (constancia de que se llevó la mercadería) y quien generó
+    # la orden en el sistema.
+    if not es_copia_empresa:
+        bloque.append(Spacer(1, 0.4 * cm))
         bloque.append(Paragraph('_' * 42, estilos['firma_linea']))
         bloque.append(Paragraph(
             f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)})',
             estilos['firma_label'],
         ))
+        if apellido_nombre_creador:
+            bloque.append(Spacer(1, 0.3 * cm))
+            bloque.append(Paragraph('_' * 42, estilos['firma_linea']))
+            bloque.append(Paragraph(f'Firma de quien creó la orden ({apellido_nombre_creador})', estilos['firma_label']))
 
     return bloque
 
@@ -257,12 +360,17 @@ def generar_pdf_solicitud(solicitud):
 # Excel
 # ---------------------------------------------------------------------------
 
-def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, incluir_sector_prioridad):
+def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, es_copia_empresa):
     """Igual que _bloque_copia pero agregando filas directo a la hoja --
     ver generar_excel_solicitud, que llama esto dos veces (una por copia)
     con una fila separadora de corte entre medio."""
-    ws.append([f'SOLICITUD DE ENTREGA — N° {solicitud.numero or solicitud.id}'])
-    ws.append([etiqueta, '', 'Fecha', fecha_larga(solicitud.fecha)])
+    ws.append([f'SOLICITUD DE ENTREGA — N° {_numero_impreso(solicitud)}'])
+    fila_encabezado = [etiqueta, '', 'Fecha', fecha_larga(solicitud.fecha)]
+    if es_copia_empresa:
+        hora = _hora_emision(solicitud)
+        if hora:
+            fila_encabezado.extend(['Hora', f'{hora}hs'])
+    ws.append(fila_encabezado)
     ws.append([])
     ws.append(['Proveedor', entidad.nombre or '', 'Cuit', cuit_con_guiones(entidad.cuit)])
     ws.append([
@@ -270,40 +378,47 @@ def _agregar_bloque_excel(ws, solicitud, entidad, propia, etiqueta, incluir_sect
         f'{entidad.localidad or ""} ({entidad.codpos or ""}) {entidad.provincia or ""}'.strip(),
     ])
     ws.append([])
-    ws.append([
-        'Solicitante', propia.nombre if propia else '',
-        'Cuit', cuit_con_guiones(propia.cuit) if propia else '',
-    ])
-    ws.append(['Dirección', propia.direccion if propia else '', 'Tel', TELEFONO_EMPRESA])
+
+    if not es_copia_empresa:
+        ws.append([
+            'Solicitante', propia.nombre if propia else '',
+            'Cuit', cuit_con_guiones(propia.cuit) if propia else '',
+        ])
+        ws.append(['Dirección', propia.direccion if propia else '', 'Tel', TELEFONO_EMPRESA])
     ws.append([
         'Autorizado a retirar', _nombre_completo(solicitud.responsable_retiro),
-        'DNI', solicitud.responsable_retiro.documento_nro or '',
+        'DNI', numero_con_puntos(solicitud.responsable_retiro.documento_nro),
     ])
+    apellido_nombre_creador, dni_creador = _creador_info(solicitud)
+    if es_copia_empresa and apellido_nombre_creador:
+        ws.append(['Creó la orden', apellido_nombre_creador, 'DNI', dni_creador])
     ws.append([])
 
-    if incluir_sector_prioridad:
+    if es_copia_empresa:
         ws.append(['Cantidad', 'U. de Medida', 'Prioridad', 'Sector', 'Descripción'])
     else:
         ws.append(['Cantidad', 'U. de Medida', 'Descripción'])
     for renglon in solicitud.renglones.select_related('sector').all():
         fila = [_numero_o_none(renglon.cantidad), renglon.unidad_medida or '']
-        if incluir_sector_prioridad:
+        if es_copia_empresa:
             fila.append(renglon.get_prioridad_display() if renglon.prioridad else '')
             fila.append(renglon.sector.nombre if renglon.sector_id else '')
         fila.append(renglon.descripcion)
         ws.append(fila)
 
     ws.append([])
-    ws.append(['Autorizado por', _nombre_completo(solicitud.solicitante)])
+    if es_copia_empresa:
+        ws.append(['Solicitó', _nombre_completo(solicitud.solicitante)])
     if solicitud.observaciones:
         ws.append(['Observaciones', solicitud.observaciones])
 
-    # Sólo en el bloque del proveedor: mismo espacio de firma que en el PDF
-    # (ver _bloque_copia) para que el autorizado a retirar firme al llevarse
-    # la mercadería.
-    if not incluir_sector_prioridad:
+    # Sólo en el bloque del proveedor: mismos dos espacios de firma que en
+    # el PDF (ver _bloque_copia).
+    if not es_copia_empresa:
         ws.append([])
         ws.append([f'Firma de quien retira ({_nombre_completo(solicitud.responsable_retiro)}):', '______________________________'])
+        if apellido_nombre_creador:
+            ws.append([f'Firma de quien creó la orden ({apellido_nombre_creador}):', '______________________________'])
 
 
 def generar_excel_solicitud(solicitud):
