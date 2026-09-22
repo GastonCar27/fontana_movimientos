@@ -82,10 +82,23 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     agregaron a mano desde el buscador de "otros movimientos / comprobantes",
     por ejemplo para aplicar un cheque_recibido de un tercero) — si no se
     devolvieran acá, desaparecerían de la pantalla al editar la liquidación.
+
+    Un mismo movimiento/comprobante/retención puede estar vinculado a UNA
+    liquidación de pago Y UNA de cobro a la vez -- son direcciones distintas
+    (confirmado por Gastón, 22/09/2026: "un movimiento puede estar
+    registrado en un cobro y en un pago una vez"). Por eso `excluidos()`
+    sólo excluye lo que ya está vinculado a una liquidación del MISMO tipo
+    que se está armando (pago excluye sólo lo ya usado en pago, cobro sólo
+    lo ya usado en cobro) -- antes excluía cruzado (cualquier tipo), lo que
+    hacía desaparecer del alta de cobro movimientos que sólo estaban usados
+    en una liquidación de pago (y viceversa) -- caso típico: un movimiento
+    re-clasificado de receptor a emisor (mismo mecanismo que el comando
+    mover_receptor_a_emisor) que ya estaba vinculado a una liquidación de
+    pago de antes de la reclasificación.
     """
 
     def excluidos(modelo_intermedio, campo_fk):
-        qs = modelo_intermedio.objects.all()
+        qs = modelo_intermedio.objects.filter(liquidacion__tipo=tipo)
         if liquidacion_actual:
             qs = qs.exclude(liquidacion=liquidacion_actual)
         return qs.values_list(campo_fk, flat=True)
