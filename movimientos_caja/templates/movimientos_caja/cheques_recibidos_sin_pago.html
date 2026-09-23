@@ -25,7 +25,9 @@
         Cheques y e-cheques cargados en el libro "Cheques Recibidos" que no están vinculados a ninguna liquidación
         de pago -- es decir, que todavía se podrían usar para pagarle a un proveedor. Uno que ya está vinculado a la
         liquidación de cobro que lo trajo puede seguir apareciendo acá: eso no importa, sólo importa si ya se usó
-        para pagar.
+        para pagar. Incluye también los cheques diferidos (posdatados); están ordenados primero por fecha de
+        diferido (los que no tienen diferido cargado, disponibles ya mismo, quedan primero) y, a igualdad de
+        diferido, por fecha de emisión.
     </p>
 
     <div class="table-responsive">
@@ -39,7 +41,7 @@
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'emision' 'Emisión' %}</th>
                     <th class="text-end">{% sort_th 'monto' 'Monto' %}</th>
-                    <th>Diferido</th>
+                    <th>{% sort_th 'diferido' 'Diferido' %}</th>
                     <th>Liquidación</th>
                 </tr>
             </thead>

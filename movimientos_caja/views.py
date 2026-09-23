@@ -1273,6 +1273,16 @@ def _cheques_recibidos_sin_pago_qs():
     Recibidos" es, por definición, un cheque recibido de un tercero
     todavía en poder de Fontana.
 
+    Corregido de nuevo el mismo día: tampoco se excluye más un cheque por
+    tener DIFERIDO cargado (a diferencia de `_cheques_en_cartera_qs`,
+    donde sí se excluye) -- la mayoría de los cheques recibidos de
+    terceros son diferidos (posdatados), así que excluirlos dejaba el
+    listado casi vacío (Gastón reportó sólo 2 de muchos, y pidió
+    explícitamente ver y ordenar por esa fecha). Un cheque diferido sigue
+    siendo algo que Fontana ya tiene en su poder y podría, en principio,
+    entregarle a un proveedor -- sigue en la lista, con su fecha de
+    diferido a la vista.
+
     El filtro de liquidación sigue siendo sólo `tipo='pago'` (no
     `liquidaciones__isnull=True` como las pantallas "Sin Liquidar" de la
     app liquidaciones): un cheque puede estar perfectamente vinculado a la
@@ -1281,7 +1291,13 @@ def _cheques_recibidos_sin_pago_qs():
     cuando ya está en una liquidación de tipo pago (ese vínculo se arma a
     mano, vía el buscador de "Otros movimientos" del alta/edición de una
     liquidación de pago -- ver `item_sin_liquidar_buscar` en
-    liquidaciones/views.py)."""
+    liquidaciones/views.py).
+
+    Orden por defecto (pedido de Gastón): primero por fecha de diferido
+    (los sin diferido -- disponibles ya mismo -- quedan primero, es el
+    comportamiento estándar de MySQL con ASC y NULL), y a igualdad de
+    diferido, por fecha de emisión; `-id` es sólo para desempatar de forma
+    estable cuando emisión también coincide."""
     caja = _caja_por_nombre(NOMBRE_CAJA_CHEQUES_RECIBIDOS)
     if caja is None:
         return MovimientoCaja.objects.none()
@@ -1291,15 +1307,14 @@ def _cheques_recibidos_sin_pago_qs():
             caja=caja,
             efectivizacion__isnull=True,
         )
-        .filter(Q(movimientocajadiferido__isnull=True) | Q(movimientocajadiferido__diferido__isnull=True))
         # Ojo: 'liquidaciones__tipo' es el Debe/Haber del ítem
         # (LiquidacionMovimiento.tipo), NO el tipo pago/cobro de la
         # liquidación -- hay que ir un paso más, a través de la FK
         # 'liquidacion', para llegar a Liquidacion.tipo.
         .exclude(liquidaciones__liquidacion__tipo='pago')
-        .select_related('caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad')
+        .select_related('caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad', 'movimientocajadiferido')
         .prefetch_related('liquidaciones__liquidacion')
-        .order_by('-emision', '-id')
+        .order_by('movimientocajadiferido__diferido', 'emision', '-id')
     )
 
 
@@ -1340,6 +1355,7 @@ def movimiento_caja_cheques_recibidos_sin_pago(request):
         'numero': 'rel_numero__numero',
         'emision': 'emision',
         'monto': 'monto',
+        'diferido': 'movimientocajadiferido__diferido',
     })
     movimientos = list(movimientos)
     total_monto = sum((m.monto or Decimal('0') for m in movimientos), Decimal('0'))
