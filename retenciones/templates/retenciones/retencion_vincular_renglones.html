@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Vincular renglones — retención {{ anio }}-{{ numero|stringformat:"04d" }}</h4>
+
+    <div class="alert alert-warning">
+        Este comprobante de retención ya tiene retenciones incluidas en una liquidación, así
+        que no se puede modificar el total ni ningún otro dato de la cabecera desde acá. Lo
+        único que se puede hacer es vincular (o quitar) el Comprobante real sobre el que se
+        practicó cada renglón — es sólo documentación, no cambia el total ni la liquidación.
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <strong>Entidad:</strong> {{ entidad_texto|default:"-" }} &nbsp;|&nbsp;
+            <strong>Total del comprobante:</strong> ${{ total|separador_miles }}
+        </div>
+    </div>
+
+    {% for l in lineas %}
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>
+                Renglón {{ l.id }} — {{ l.fecha_comp_origen|default:"-" }} —
+                {{ l.comprobante_origen|default:"-" }} — ${{ l.total|separador_miles }}
+            </span>
+        </div>
+        <div class="card-body">
+            {% with renglones=l.renglones_vinculados %}
+            {% if renglones %}
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Comprobante real vinculado</th>
+                            <th class="text-end">Neto gravado</th>
+                            <th class="text-end">Total</th>
+                            <th style="width:100px;" class="text-center">Quitar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rn in renglones %}
+                        <tr>
+                            <td>{{ rn.comprobante.comprobante_string|default:rn.comprobante_id }}</td>
+                            <td class="text-end">{{ rn.neto_gravado|separador_miles }}</td>
+                            <td class="text-end">{{ rn.total|separador_miles }}</td>
+                            <td class="text-center">
+                                <form method="post" style="display:inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="accion" value="quitar_renglon">
+                                    <input type="hidden" name="renglon_id" value="{{ rn.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Quitar</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <form method="post" class="vincular-form" data-retencion-id="{{ l.id }}">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="vincular_renglon">
+                    <input type="hidden" name="retencion_id" value="{{ l.id }}">
+                    <input type="hidden" name="comprobante_id" class="comprobante-id-input" value="">
+                    <div class="position-relative" style="max-width:500px;">
+                        <input type="text" class="form-control form-control-sm comprobante-buscador"
+                               placeholder="Buscar el comprobante real sobre el que se practicó..." autocomplete="off">
+                        <div class="comprobante-resultados"></div>
+                    </div>
+                    <div class="small text-muted mt-1 comprobante-elegido">Todavía no se vinculó ningún comprobante.</div>
+                    <button type="submit" class="btn btn-sm btn-primary mt-2" disabled>Vincular</button>
+                </form>
+            {% endif %}
+            {% endwith %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <a href="{% url 'retenciones:listado' %}" class="btn btn-outline-secondary">Volver al listado</a>
+</div>
+
+<style>
+.comprobante-resultados {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    font-size: 0.85rem;
+}
+.comprobante-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.comprobante-resultados div:hover {
+    background: #f0f0f0;
+}
+.comprobante-resultados div.comprobante-resultado-vacio {
+    cursor: default;
+    color: #6c757d;
+    font-style: italic;
+}
+.comprobante-resultados div.comprobante-resultado-vacio:hover {
+    background: transparent;
+}
+</style>
+
+<script>
+(function () {
+    const entidadId = '{{ entidad_id|default:"" }}';
+    const esEmisorValor = '{{ es_emisor }}';
+
+    function buscarComprobantes(form) {
+        const input = form.querySelector('.comprobante-buscador');
+        const resultados = form.querySelector('.comprobante-resultados');
+        if (!input || !resultados) return;
+
+        if (!entidadId) {
+            resultados.innerHTML = '';
+            const aviso = document.createElement('div');
+            aviso.className = 'comprobante-resultado-vacio';
+            aviso.textContent = 'Esta retención no tiene entidad asignada.';
+            resultados.appendChild(aviso);
+            resultados.style.display = 'block';
+            return;
+        }
+
+        const q = input.value.trim();
+        fetch(
+            `{% url 'retenciones:comprobante_buscar' %}?entidad=${encodeURIComponent(entidadId)}`
+            + `&es_emisor=${encodeURIComponent(esEmisorValor)}&q=${encodeURIComponent(q)}`
+        )
+            .then(resp => resp.json())
+            .then(data => {
+                resultados.innerHTML = '';
+                if (data.resultados.length === 0) {
+                    const vacio = document.createElement('div');
+                    vacio.className = 'comprobante-resultado-vacio';
+                    vacio.textContent = 'No se encontraron facturas para esa entidad/dirección.';
+                    resultados.appendChild(vacio);
+                    resultados.style.display = 'block';
+                    return;
+                }
+                data.resultados.forEach(function (item) {
+                    const div = document.createElement('div');
+                    div.textContent = item.text;
+                    div.addEventListener('click', function () {
+                        input.value = item.text;
+                        form.querySelector('.comprobante-id-input').value = item.id;
+                        form.querySelector('.comprobante-elegido').textContent = 'Se va a vincular: ' + item.text;
+                        form.querySelector('button[type="submit"]').disabled = false;
+                        resultados.style.display = 'none';
+                    });
+                    resultados.appendChild(div);
+                });
+                resultados.style.display = 'block';
+            });
+    }
+
+    document.querySelectorAll('.vincular-form').forEach(function (form) {
+        const input = form.querySelector('.comprobante-buscador');
+        const resultados = form.querySelector('.comprobante-resultados');
+        let timeoutId = null;
+
+        input.addEventListener('focus', function () {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(function () { buscarComprobantes(form); }, 150);
+        });
+        input.addEventListener('input', function () {
+            form.querySelector('.comprobante-id-input').value = '';
+            form.querySelector('button[type="submit"]').disabled = true;
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(function () { buscarComprobantes(form); }, 250);
+        });
+        document.addEventListener('click', function (e) {
+            if (!resultados.contains(e.target) && e.target !== input) {
+                resultados.style.display = 'none';
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

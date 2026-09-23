@@ -1,7 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -20,7 +20,7 @@ from .forms import (
     RetencionTipoImpuestoForm,
     RetencionTipoRegimenForm,
 )
-from .models import Retencion, RetencionTipoImpuesto, RetencionTipoRegimen
+from .models import Retencion, RetencionRenglon, RetencionTipoImpuesto, RetencionTipoRegimen
 
 # Textos que cambian según la dirección de la retención (Retencion.es_emisor
 # -- ver el comentario del campo en models.py). Mismo criterio que
@@ -348,6 +348,83 @@ def retencion_alta(request):
     })
 
 
+def _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevos):
+    """Modo restringido de Modificación: sólo permite vincular (o quitar)
+    RetencionRenglon reales para un comprobante que ya tiene liquidación
+    asignada y todavía no tiene ninguno -- ver el comentario en
+    retencion_modificar. No toca el total ni ningún otro dato de la
+    Retencion; sólo agrega/borra filas de la tabla nueva `retencion_renglon`."""
+    primera = lineas[0]
+
+    if request.method == 'POST':
+        accion = request.POST.get('accion')
+
+        if accion == 'vincular_renglon':
+            retencion_id = request.POST.get('retencion_id', '')
+            comprobante_id = request.POST.get('comprobante_id', '')
+            retencion_obj = next((l for l in lineas if str(l.id) == retencion_id), None)
+
+            if not retencion_obj:
+                messages.error(request, 'Renglón inválido.')
+            elif not comprobante_id:
+                messages.error(request, 'Elegí un comprobante de la lista antes de vincular.')
+            else:
+                comprobante = Comprobante.objects.filter(pk=comprobante_id).first()
+                if not comprobante:
+                    messages.error(request, 'No se encontró el comprobante elegido.')
+                else:
+                    try:
+                        RetencionRenglon.objects.create(
+                            retencion=retencion_obj,
+                            comprobante=comprobante,
+                            neto_gravado=comprobante.neto_gravado,
+                            porcentaje=retencion_obj.porcentaje,
+                            total=retencion_obj.total,
+                        )
+                        messages.success(
+                            request,
+                            f'Comprobante {comprobante.comprobante_string or comprobante.id} vinculado a la '
+                            f'retención {retencion_obj.id}.'
+                        )
+                    except IntegrityError:
+                        messages.error(
+                            request,
+                            'Ese comprobante ya tiene esta misma retención (mismo impuesto y régimen) '
+                            'vinculada -- no se puede repetir.'
+                        )
+        elif accion == 'quitar_renglon':
+            renglon_id = request.POST.get('renglon_id', '')
+            renglon = RetencionRenglon.objects.filter(
+                pk=renglon_id, retencion__año=anio, retencion__numero=numero,
+            ).first()
+            if renglon:
+                renglon.delete()
+                messages.success(request, 'Vínculo quitado.')
+            else:
+                messages.error(request, 'No se encontró ese vínculo.')
+
+        return redirect('retenciones:modificar', anio=anio, numero=numero)
+
+    renglones_por_retencion = {}
+    for rn in renglones_nuevos:
+        renglones_por_retencion.setdefault(rn.retencion_id, []).append(rn)
+    # Se cuelga como atributo de cada línea (en vez de pasar el dict aparte)
+    # porque el template necesita indexar por l.id, y eso no se puede hacer
+    # con la sintaxis de puntos de Django (sólo permite claves fijas).
+    for l in lineas:
+        l.renglones_vinculados = renglones_por_retencion.get(l.id, [])
+
+    return render(request, 'retenciones/retencion_vincular_renglones.html', {
+        'anio': anio,
+        'numero': numero,
+        'lineas': lineas,
+        'entidad_texto': primera.entidad_nombre or (str(primera.entidad) if primera.entidad else ''),
+        'entidad_id': primera.entidad_id,
+        'es_emisor': primera.es_emisor if primera.es_emisor is not None else Retencion.ES_EMISOR,
+        'total': sum((l.total or Decimal('0')) for l in lineas),
+    })
+
+
 def retencion_modificar(request, anio, numero):
     lineas = list(_grupo_queryset(anio, numero))
     if not lineas:
@@ -355,12 +432,20 @@ def retencion_modificar(request, anio, numero):
         return redirect('retenciones:listado')
 
     if _tiene_liquidacion(anio, numero):
-        messages.error(
-            request,
-            f'El comprobante {anio}-{numero:04d} ya tiene retenciones incluidas en una '
-            'liquidación y no se puede modificar desde acá.'
+        # Modo restringido (pedido por Gastón, 23/09/2026): mientras haya una
+        # liquidación asignada, la cabecera y los renglones viejos
+        # (subtotal/porcentaje/total/comprobante_origen) quedan de sólo
+        # lectura -- eso nunca se puede tocar acá. Lo único que se permite es
+        # vincular (o quitar) el/los Comprobante(s) real(es) en la tabla
+        # nueva RetencionRenglon: es sólo agregar documentación, no toca el
+        # total ni ningún otro dato de la Retencion, así que es seguro
+        # incluso si ya tiene algún renglón vinculado (por ejemplo un
+        # certificado con varias facturas, cargadas de a una).
+        renglones_nuevos = list(
+            RetencionRenglon.objects.filter(retencion__in=lineas)
+            .select_related('comprobante', 'comprobante__tipo_comprobante', 'retencion')
         )
-        return redirect('retenciones:listado')
+        return _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevos)
 
     primera = lineas[0]
     tipos_por_id = _tipos_comprobante_por_id()
