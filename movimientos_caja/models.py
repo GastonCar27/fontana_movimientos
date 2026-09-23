@@ -5,9 +5,17 @@
 #   * Make sure each ForeignKey and OneToOneField has `on_delete` set to the desired behavior
 #   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
+from decimal import Decimal
+
+from django.conf import settings
 from django.db import models
 from entidades.models import Entidad
 from django.core.exceptions import ValidationError
+
+# Id de la propia Fontana en la tabla Entidad -- mismo valor y mismo patrón
+# (constante local por app, ver settings.ENTIDAD_PROPIA_ID) que ya usan
+# remitos, retenciones, liquidaciones, comprobantes, etc.
+ENTIDAD_PROPIA_ID = getattr(settings, 'ENTIDAD_PROPIA_ID', 100)
 
 
 class BancoCuentaTipoMovim(models.Model):
@@ -121,6 +129,54 @@ class MovimientoCaja(models.Model):
         # .first() devuelve la instancia de la Entidad o None si no existe el ID 100
         entidad_defecto = Entidad.objects.filter(id=100).first()
         return entidad_defecto
+
+    @property
+    def tiene_libro_banco(self):
+        """True si este movimiento ya está cargado en un libro de banco real
+        (tiene un asiento en bancocuentalibro_movim, vía LibroMovim) -- a
+        diferencia de, por ejemplo, un cheque todavía en cartera, que puede
+        no tener libro asignado todavía."""
+        try:
+            return self.asiento_libro is not None
+        except LibroMovim.DoesNotExist:
+            return False
+
+    @property
+    def necesita_invertir_signo_liquidacion(self):
+        """True cuando este movimiento está guardado con el signo invertido
+        por la convención del libro de banco (ahí negativo = a favor
+        nuestro, positivo = le debemos al banco -- ver el texto de ayuda en
+        movimiento_caja_form.html) pero para armar una liquidación/recibo
+        hay que tratarlo como un monto positivo, igual que un cheque en
+        cartera o uno dado directo a un proveedor (esos SÍ están guardados
+        en positivo).
+
+        Sólo pasa esto cuando el movimiento representa dinero que entró a
+        favor de Fontana a través de un banco real: (1) ya está cargado en
+        un libro de banco (no está en cartera, sin libro todavía) y (2) el
+        receptor es la propia Fontana (ENTIDAD_PROPIA_ID) -- un cheque
+        depositado o una transferencia recibida, no un pago que sale (ahí
+        el receptor es la entidad a la que se le paga, nunca Fontana).
+
+        Por construcción esto nunca puede afectar una liquidación de PAGO:
+        _armar_items() (liquidaciones/views.py) sólo ofrece, para pago,
+        movimientos con receptor=la entidad (nunca Fontana) -- así que sólo
+        puede llegar a activarse en una liquidación de COBRO. No cambia el
+        dato guardado en la base ni el saldo del libro de banco (ver
+        movimientos_caja/views.py, estado de caja): es sólo el criterio a
+        usar al SUMAR este movimiento para una liquidación (pedido de
+        Gastón, 23/09/2026)."""
+        return self.tiene_libro_banco and self.receptor_id == ENTIDAD_PROPIA_ID
+
+    @property
+    def monto_para_liquidacion(self):
+        """Monto a usar al sumar este movimiento en una liquidación/recibo
+        -- ver necesita_invertir_signo_liquidacion. NO es el monto guardado
+        en la base (ese sigue intacto) ni el que se usa para el saldo del
+        libro de banco (estado de caja)."""
+        monto = self.monto or Decimal('0')
+        return -monto if self.necesita_invertir_signo_liquidacion else monto
+
     def clean(self):
         super().clean()
         # Validamos el libro a través de la relación 'asiento_libro' (LibroMovim)

@@ -170,10 +170,13 @@ def _filas_debe(liquidacion):
         filas.append([c.id, c.fecha, _texto_comprobante(c), entidad_texto, monto])
 
     for lm in liquidacion.movimientos.filter(tipo='debe').select_related(
-        'movimiento_caja__tipo', 'movimiento_caja__movimientocajabancocuentaentidad'
+        'movimiento_caja__tipo', 'movimiento_caja__movimientocajabancocuentaentidad',
+        'movimiento_caja__asiento_libro',
     ):
         m = lm.movimiento_caja
-        monto = m.monto or Decimal('0')
+        # monto_para_liquidacion (no monto a secas): ver el comentario en
+        # MovimientoCaja.necesita_invertir_signo_liquidacion.
+        monto = m.monto_para_liquidacion
         total += monto
         filas.append([m.id, m.emision, _texto_movimiento(m), entidad_texto, monto])
 
@@ -210,9 +213,12 @@ def _filas_haber(liquidacion):
         'movimiento_caja__tipo',
         'movimiento_caja__movimientocajabancocuentaentidad',
         'movimiento_caja__movimientocajadiferido',
+        'movimiento_caja__asiento_libro',
     ):
         m = lm.movimiento_caja
-        monto = m.monto or Decimal('0')
+        # monto_para_liquidacion (no monto a secas): ver el comentario en
+        # MovimientoCaja.necesita_invertir_signo_liquidacion.
+        monto = m.monto_para_liquidacion
         total += monto
         filas.append([m.id, m.emision, _diferido_movimiento(m), _texto_movimiento(m), entidad_texto, monto])
 

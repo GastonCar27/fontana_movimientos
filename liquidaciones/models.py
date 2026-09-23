@@ -8,6 +8,10 @@ from retenciones.models import Retencion
 from retenciones_inym.models import RetencionInym
 from movimientos_caja.models import MovimientoCaja
 
+# Mismo valor y mismo patrón (constante local por app) que ya usan
+# retenciones, movimientos_caja, remitos, comprobantes, etc.
+ENTIDAD_PROPIA_ID = 100
+
 
 class Liquidacion(models.Model):
     # Pago: nosotros le pagamos a la entidad (proveedor) -- comportamiento
@@ -80,9 +84,35 @@ class Liquidacion(models.Model):
             )
         )
 
+        # Movimientos de caja: un cheque depositado o una transferencia
+        # recibida a favor de Fontana puede estar guardado en NEGATIVO por
+        # la convención del libro de banco (ahí negativo = a favor
+        # nuestro), pero acá hay que sumarlo en positivo -- mismo criterio
+        # que MovimientoCaja.necesita_invertir_signo_liquidacion
+        # (movimientos_caja/models.py), llevado a SQL porque acá se suma
+        # con Sum() en la base. Sólo se invierte cuando (1) el movimiento
+        # ya está en un libro de banco real (movimiento_caja__asiento_libro
+        # no es null -- no es un cheque en cartera, que no tiene libro
+        # todavía) y (2) el receptor es la propia Fontana -- por
+        # construcción esto nunca puede afectar una liquidación de PAGO,
+        # donde el receptor siempre es la otra entidad (ver _armar_items en
+        # liquidaciones/views.py). No cambia el monto guardado en la base
+        # (pedido de Gastón, 23/09/2026).
+        movimientos_qs = self.movimientos.annotate(
+            monto_para_liquidacion=Case(
+                When(
+                    movimiento_caja__receptor_id=ENTIDAD_PROPIA_ID,
+                    movimiento_caja__asiento_libro__isnull=False,
+                    then=-F('movimiento_caja__monto'),
+                ),
+                default=F('movimiento_caja__monto'),
+                output_field=DecimalField(max_digits=20, decimal_places=2),
+            )
+        )
+
         # (related_manager, campo_monto_del_item_relacionado)
         fuentes = [
-            (self.movimientos.all(), 'movimiento_caja__monto'),
+            (movimientos_qs, 'monto_para_liquidacion'),
             (comprobantes_qs, 'monto_convertido'),
             (self.retenciones.all(), 'retencion__total'),
             (self.retenciones_inym.all(), 'retencion_inym__total'),

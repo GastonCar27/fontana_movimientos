@@ -93,6 +93,17 @@ class RetencionHeaderForm(forms.Form):
         label='Régimen',
         widget=forms.Select(attrs={'class': 'form-control form-control-sm', 'id': 'id_id_regimen'}),
     )
+    # Fecha de la retención en sí (no la del comprobante origen -- esa es
+    # fecha_comp_origen, un campo propio de cada renglón de "Detalle de las
+    # operaciones"). Antes de esto no existía ningún campo para cargarla a
+    # mano: se guardaba una copia de la fecha del renglón sin que el usuario
+    # pudiera elegirla ni verla en el encabezado (pedido de Gastón,
+    # 23/09/2026).
+    fecha = forms.DateField(
+        required=True,
+        label='Fecha',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
     año = forms.IntegerField(
         label='Año',
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),

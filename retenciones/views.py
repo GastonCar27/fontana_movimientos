@@ -299,6 +299,11 @@ def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
     anio = header_form.cleaned_data['año']
     numero = header_form.cleaned_data['numero']
 
+    # Fecha de la retención en sí, cargada a mano en el encabezado (no se
+    # deriva más de la fecha del comprobante origen de cada renglón -- son
+    # dos cosas distintas, ver comentario en RetencionHeaderForm.fecha).
+    fecha_retencion = header_form.cleaned_data.get('fecha')
+
     siguiente_id = _siguiente_id_retencion()
     creados = []
     comprobante_string = f'{anio}-{numero:04d}'
@@ -329,7 +334,7 @@ def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
             porcentaje=porcentaje,
             total=total,
             comprobante_string=comprobante_string,
-            fecha=datos.get('fecha_comp_origen'),
+            fecha=fecha_retencion,
             id_impuesto=id_impuesto,
             id_regimen=id_regimen,
             tipo_comp_origen=datos.get('tipo_comp_origen').id if datos.get('tipo_comp_origen') else None,
@@ -380,11 +385,13 @@ def retencion_alta(request):
                     return retencion_excel(request, creados[0])
                 return redirect('retenciones:listado')
     else:
-        anio_actual = __import__('datetime').date.today().year
+        hoy = __import__('datetime').date.today()
+        anio_actual = hoy.year
         header_form = RetencionHeaderForm(initial={
             'año': anio_actual,
             'numero': _siguiente_numero_retencion(anio_actual),
             'es_emisor': Retencion.ES_EMISOR,
+            'fecha': hoy,
         })
         formset = RetencionRenglonFormSet(prefix='form')
 
@@ -613,6 +620,7 @@ def retencion_modificar(request, id):
             'id_impuesto': primera.id_impuesto,
             'id_regimen': primera.id_regimen,
             'es_emisor': primera.es_emisor if primera.es_emisor is not None else Retencion.ES_EMISOR,
+            'fecha': primera.fecha,
             'año': primera.año,
             'numero': primera.numero,
         })

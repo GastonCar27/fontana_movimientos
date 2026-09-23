@@ -42,7 +42,17 @@ def _monto_item(item_obj):
     'total'. Si el objeto es un Comprobante en moneda distinta a pesos
     (tiene registro en comprobante_tipo_de_cambio), el total se multiplica
     por ese tipo de cambio.
+
+    Para MovimientoCaja se usa 'monto_para_liquidacion' (no 'monto' a
+    secas): un cheque depositado o una transferencia recibida a favor de
+    Fontana puede estar guardado en negativo por la convención del libro de
+    banco, y acá hay que tratarlo como positivo -- ver el comentario en
+    MovimientoCaja.necesita_invertir_signo_liquidacion (movimientos_caja/
+    models.py). No afecta a pago (ver ese mismo comentario) ni cambia nada
+    guardado en la base (pedido de Gastón, 23/09/2026).
     """
+    if hasattr(item_obj, 'monto_para_liquidacion'):
+        return item_obj.monto_para_liquidacion
     if hasattr(item_obj, 'monto'):
         return item_obj.monto or Decimal('0')
     total = getattr(item_obj, 'total', None) or Decimal('0')

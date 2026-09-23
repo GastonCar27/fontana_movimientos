@@ -124,13 +124,8 @@
                 <td>{{ m.monto_mostrar|separador_miles }}</td>
                 <td>
                     <select name="mov_tipo_{{ m.pk }}" class="sel-tipo">
-                        {% if tipo_liquidacion == "cobro" %}
-                        <option value="debe" {% if m.tipo_actual == "debe" or not m.tipo_actual %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if m.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
-                        {% else %}
                         <option value="debe" {% if m.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
                         <option value="haber" {% if m.tipo_actual == "haber" or not m.tipo_actual %}selected{% endif %}>Haber</option>
-                        {% endif %}
                     </select>
                 </td>
             </tr>
@@ -156,13 +151,8 @@
                 <td>{{ c.monto_mostrar|separador_miles }}</td>
                 <td>
                     <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
-                        {% if tipo_liquidacion == "cobro" %}
-                        <option value="debe" {% if c.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if c.tipo_actual == "haber" or not c.tipo_actual %}selected{% endif %}>Haber</option>
-                        {% else %}
                         <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
                         <option value="haber" {% if c.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
-                        {% endif %}
                     </select>
                 </td>
             </tr>
@@ -189,13 +179,8 @@
                 <td>{{ r.monto_mostrar|separador_miles }}</td>
                 <td>
                     <select name="ret_tipo_{{ r.pk }}" class="sel-tipo">
-                        {% if tipo_liquidacion == "cobro" %}
                         <option value="debe" {% if r.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
                         <option value="haber" {% if r.tipo_actual == "haber" or not r.tipo_actual %}selected{% endif %}>Haber</option>
-                        {% else %}
-                        <option value="debe" {% if r.tipo_actual == "debe" or not r.tipo_actual %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if r.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
-                        {% endif %}
                     </select>
                 </td>
             </tr>
@@ -218,13 +203,8 @@
                 <td>{{ ri.monto_mostrar|separador_miles }}</td>
                 <td>
                     <select name="retinym_tipo_{{ ri.pk }}" class="sel-tipo">
-                        {% if tipo_liquidacion == "cobro" %}
                         <option value="debe" {% if ri.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
                         <option value="haber" {% if ri.tipo_actual == "haber" or not ri.tipo_actual %}selected{% endif %}>Haber</option>
-                        {% else %}
-                        <option value="debe" {% if ri.tipo_actual == "debe" or not ri.tipo_actual %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if ri.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
-                        {% endif %}
                     </select>
                 </td>
             </tr>
@@ -262,13 +242,8 @@
                 <td>{{ m.monto_mostrar|separador_miles }}</td>
                 <td>
                     <select name="mov_tipo_{{ m.pk }}" class="sel-tipo">
-                        {% if tipo_liquidacion == "cobro" %}
-                        <option value="debe" {% if m.tipo_actual == "debe" or not m.tipo_actual %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if m.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
-                        {% else %}
                         <option value="debe" {% if m.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
                         <option value="haber" {% if m.tipo_actual == "haber" or not m.tipo_actual %}selected{% endif %}>Haber</option>
-                        {% endif %}
                     </select>
                 </td>
                 <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales();">Quitar</button></td>
@@ -285,13 +260,8 @@
                 <td>{{ c.monto_mostrar|separador_miles }}</td>
                 <td>
                     <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
-                        {% if tipo_liquidacion == "cobro" %}
-                        <option value="debe" {% if c.tipo_actual == "debe" %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if c.tipo_actual == "haber" or not c.tipo_actual %}selected{% endif %}>Haber</option>
-                        {% else %}
                         <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
                         <option value="haber" {% if c.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
-                        {% endif %}
                     </select>
                 </td>
                 <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales();">Quitar</button></td>
@@ -332,8 +302,6 @@
 {% endif %}
 
 <script>
-const tipoLiquidacion = "{{ tipo_liquidacion|default:'' }}";
-
 // --- Buscador de entidad con autocompletado ---
 (function () {
     const input = document.getElementById('entidad-buscador');
@@ -399,12 +367,12 @@ function agregarOtroItem(item) {
     const nombreTipoSel = (item.tipo === 'mov' ? 'mov_tipo_' : 'comp_tipo_') + item.id;
     const etiquetaTipo = item.tipo === 'mov' ? 'Movimiento' : 'Comprobante';
 
-    // Default Debe/Haber: para cobro los movimientos van por defecto en Debe
-    // y comprobantes/retenciones en Haber; para pago es al revés (igual que
-    // el resto de las tablas de este formulario).
-    const defaultTipo = (item.tipo === 'mov')
-        ? (tipoLiquidacion === 'cobro' ? 'debe' : 'haber')
-        : (tipoLiquidacion === 'cobro' ? 'haber' : 'debe');
+    // Default Debe/Haber: comprobante siempre en Debe (lo que se debe/
+    // factura), movimiento siempre en Haber (con qué se saldó) -- misma
+    // regla para pago y para cobro, igual que el resto de las tablas de
+    // este formulario (Gastón, 23/09/2026: revierte el default invertido
+    // que se había puesto para cobro el 22/09/2026).
+    const defaultTipo = item.tipo === 'mov' ? 'haber' : 'debe';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
