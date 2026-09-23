@@ -137,6 +137,30 @@ def _parse_float_post(valor):
         return None
 
 
+class _SumaRenglonesExcedeTotal(Exception):
+    """Se lanza (y se atrapa) dentro de una transacción para deshacer un
+    vincular/editar de renglón si, después de esa operación, la suma de los
+    renglones de la retención superaría su total (pedido de Gastón,
+    23/09/2026: la suma NUNCA puede superar el total, pero sí puede quedar
+    por debajo -- puede haber más renglones por cargar)."""
+    def __init__(self, suma, total):
+        self.suma = suma
+        self.total = total
+        super().__init__(f'La suma de renglones (${suma}) superaría el total de la retención (${total}).')
+
+
+def _chequear_suma_renglones(retencion_obj):
+    """Suma los RetencionRenglon ya guardados de esta retención (se llama
+    DESPUÉS de crear/editar el renglón en curso, dentro de la misma
+    transacción) y lanza _SumaRenglonesExcedeTotal si superan el total de la
+    Retencion. Devuelve (suma, total_retencion) si no hay problema."""
+    suma = RetencionRenglon.objects.filter(retencion=retencion_obj).aggregate(s=Sum('total'))['s'] or Decimal('0')
+    total_retencion = retencion_obj.total
+    if total_retencion is not None and suma > total_retencion:
+        raise _SumaRenglonesExcedeTotal(suma, total_retencion)
+    return suma, total_retencion
+
+
 def _tiene_liquidacion(retencion_id):
     """True si esta retención ya está incluida en una liquidación
     (liquidacion_retencion tiene ON DELETE RESTRICT hacia retencion: borrarla
@@ -413,24 +437,39 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                     if total is None:
                         total = _calcular_total(neto_gravado, porcentaje)
                     try:
-                        RetencionRenglon.objects.create(
-                            retencion=retencion_obj,
-                            comprobante=comprobante,
-                            neto_gravado=neto_gravado,
-                            porcentaje=porcentaje,
-                            total=total,
-                        )
-                        messages.success(
-                            request,
-                            f'Comprobante {comprobante.comprobante_string or comprobante.id} vinculado a la '
-                            f'retención {retencion_obj.id}.'
-                        )
+                        with transaction.atomic():
+                            RetencionRenglon.objects.create(
+                                retencion=retencion_obj,
+                                comprobante=comprobante,
+                                neto_gravado=neto_gravado,
+                                porcentaje=porcentaje,
+                                total=total,
+                            )
+                            suma, total_retencion = _chequear_suma_renglones(retencion_obj)
                     except IntegrityError:
                         messages.error(
                             request,
                             'Ese comprobante ya tiene esta misma retención (mismo impuesto y régimen) '
                             'vinculada -- no se puede repetir.'
                         )
+                    except _SumaRenglonesExcedeTotal as exc:
+                        messages.error(
+                            request,
+                            f'No se vinculó: la suma de los renglones (${exc.suma}) superaría el total de '
+                            f'la retención (${exc.total}).'
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f'Comprobante {comprobante.comprobante_string or comprobante.id} vinculado a la '
+                            f'retención {retencion_obj.id}.'
+                        )
+                        if total_retencion is not None and suma < total_retencion:
+                            messages.warning(
+                                request,
+                                f'La suma de los renglones vinculados (${suma}) todavía no llega al total '
+                                f'de la retención (${total_retencion}). Podés seguir agregando renglones.'
+                            )
         elif accion == 'editar_renglon':
             # Corrige el neto/porcentaje/total de un renglón YA vinculado
             # (pedido de Gastón, 23/09/2026) -- sigue sin tocar nada de la
@@ -445,15 +484,32 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                 total = _parse_decimal_post(request.POST.get('total'))
                 if total is None:
                     total = _calcular_total(neto_gravado, porcentaje)
-                renglon.neto_gravado = neto_gravado
-                renglon.porcentaje = porcentaje
-                renglon.total = total
-                renglon.save()
-                messages.success(
-                    request,
-                    f'Se actualizó el renglón del comprobante '
-                    f'{renglon.comprobante.comprobante_string or renglon.comprobante_id}.'
-                )
+                retencion_del_renglon = next((l for l in lineas if l.id == renglon.retencion_id), None) or renglon.retencion
+                try:
+                    with transaction.atomic():
+                        renglon.neto_gravado = neto_gravado
+                        renglon.porcentaje = porcentaje
+                        renglon.total = total
+                        renglon.save()
+                        suma, total_retencion = _chequear_suma_renglones(retencion_del_renglon)
+                except _SumaRenglonesExcedeTotal as exc:
+                    messages.error(
+                        request,
+                        f'No se guardó: la suma de los renglones (${exc.suma}) superaría el total de la '
+                        f'retención (${exc.total}).'
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f'Se actualizó el renglón del comprobante '
+                        f'{renglon.comprobante.comprobante_string or renglon.comprobante_id}.'
+                    )
+                    if total_retencion is not None and suma < total_retencion:
+                        messages.warning(
+                            request,
+                            f'La suma de los renglones vinculados (${suma}) todavía no llega al total de '
+                            f'la retención (${total_retencion}). Podés seguir agregando renglones.'
+                        )
         elif accion == 'quitar_renglon':
             renglon_id = request.POST.get('renglon_id', '')
             renglon = RetencionRenglon.objects.filter(pk=renglon_id, retencion_id__in=[l.id for l in lineas]).first()

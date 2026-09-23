@@ -29,9 +29,11 @@
         <div class="card-body">
             {% with renglones=l.renglones_vinculados %}
             {% if renglones %}
-                {# Un <form> por renglón, fuera de la tabla (un <tr> no puede contener <form>
-                   como hijo directo) -- los inputs/botones de cada fila se asocian con el
-                   atributo form="..." (HTML5), aunque no sean descendientes del form. #}
+                {% comment %}
+                Un <form> por renglón, fuera de la tabla (un <tr> no puede contener <form>
+                como hijo directo) -- los inputs/botones de cada fila se asocian con el
+                atributo form="..." (HTML5), aunque no sean descendientes del form.
+                {% endcomment %}
                 {% for rn in renglones %}
                 <form method="post" id="form-renglon-{{ rn.id }}">
                     {% csrf_token %}
@@ -50,21 +52,21 @@
                     </thead>
                     <tbody>
                         {% for rn in renglones %}
-                        <tr>
+                        <tr class="fila-renglon">
                             <td>{{ rn.comprobante.comprobante_string|default:rn.comprobante_id }}</td>
                             <td>
                                 <input type="text" form="form-renglon-{{ rn.id }}" name="neto_gravado"
-                                       class="form-control form-control-sm text-end"
+                                       class="form-control form-control-sm text-end renglon-neto"
                                        value="{{ rn.neto_gravado|stringformat:'s'|default:'' }}">
                             </td>
                             <td>
                                 <input type="text" form="form-renglon-{{ rn.id }}" name="porcentaje"
-                                       class="form-control form-control-sm text-end"
+                                       class="form-control form-control-sm text-end renglon-porcentaje"
                                        value="{{ rn.porcentaje|stringformat:'s'|default:'' }}">
                             </td>
                             <td>
                                 <input type="text" form="form-renglon-{{ rn.id }}" name="total"
-                                       class="form-control form-control-sm text-end"
+                                       class="form-control form-control-sm text-end renglon-total"
                                        value="{{ rn.total|stringformat:'s'|default:'' }}">
                             </td>
                             <td class="text-center">
@@ -98,11 +100,11 @@
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Porcentaje</label>
-                        <input type="text" name="porcentaje" class="form-control form-control-sm">
+                        <input type="text" name="porcentaje" class="form-control form-control-sm nuevo-porcentaje">
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Retención (monto)</label>
-                        <input type="text" name="total" class="form-control form-control-sm">
+                        <input type="text" name="total" class="form-control form-control-sm nuevo-total">
                     </div>
                 </div>
                 <div class="small text-muted mt-1">Si dejás "Retención" en blanco, se calcula solo con Neto x Porcentaje.</div>
@@ -152,6 +154,47 @@
     const entidadId = '{{ entidad_id|default:"" }}';
     const esEmisorValor = '{{ es_emisor }}';
 
+    // Calcula neto x porcentaje / 100 y lo carga en el campo Retención
+    // (monto) -- pero nunca pisa un valor que el usuario ya haya tocado a
+    // mano (se marca "sucio" apenas escribe algo en el campo Total).
+    function calcularTotal(neto, porcentaje) {
+        const n = parseFloat(String(neto || '').replace(',', '.'));
+        const p = parseFloat(String(porcentaje || '').replace(',', '.'));
+        if (isNaN(n) || isNaN(p)) return null;
+        return (n * p / 100).toFixed(2);
+    }
+
+    function wireAutoCalcTotal(netoInput, porcentajeInput, totalInput) {
+        if (!netoInput || !porcentajeInput || !totalInput) return;
+        let totalSucio = totalInput.value.trim() !== '';
+        totalInput.addEventListener('input', function () { totalSucio = true; });
+        function recalcular() {
+            if (totalSucio) return;
+            const calculado = calcularTotal(netoInput.value, porcentajeInput.value);
+            if (calculado !== null) {
+                totalInput.value = calculado;
+            }
+        }
+        netoInput.addEventListener('input', recalcular);
+        porcentajeInput.addEventListener('input', recalcular);
+    }
+
+    document.querySelectorAll('.fila-renglon').forEach(function (fila) {
+        wireAutoCalcTotal(
+            fila.querySelector('.renglon-neto'),
+            fila.querySelector('.renglon-porcentaje'),
+            fila.querySelector('.renglon-total'),
+        );
+    });
+
+    document.querySelectorAll('.vincular-form').forEach(function (form) {
+        wireAutoCalcTotal(
+            form.querySelector('.neto-gravado-input'),
+            form.querySelector('.nuevo-porcentaje'),
+            form.querySelector('.nuevo-total'),
+        );
+    });
+
     function buscarComprobantes(form) {
         const input = form.querySelector('.comprobante-buscador');
         const resultados = form.querySelector('.comprobante-resultados');
@@ -191,12 +234,13 @@
                         form.querySelector('.comprobante-id-input').value = item.id;
                         form.querySelector('.comprobante-elegido').textContent = 'Se va a vincular: ' + item.text;
                         form.querySelector('button[type="submit"]').disabled = false;
-                        // Precarga el neto gravado del comprobante elegido como base de
-                        // resguardo -- queda editable, por si la base real de esta
-                        // retención puntual es otra.
+                        // Toma el neto gravado del comprobante elegido (si lo tiene) --
+                        // sigue quedando editable a mano después, por si la base real de
+                        // esta retención puntual es otra.
                         const netoInput = form.querySelector('.neto-gravado-input');
-                        if (netoInput && !netoInput.value && item.subtotal) {
+                        if (netoInput && item.subtotal) {
                             netoInput.value = item.subtotal;
+                            netoInput.dispatchEvent(new Event('input'));
                         }
                         resultados.style.display = 'none';
                     });
