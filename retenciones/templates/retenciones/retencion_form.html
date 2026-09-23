@@ -200,6 +200,19 @@
 .comprobante-resultados div.comprobante-resultado-vacio:hover {
     background: transparent;
 }
+/* Campos con los datos de la factura elegida (Tipo/Punto de venta/Número/
+   Fecha): una vez que se selecciona una factura del buscador quedan
+   bloqueados para que no se puedan tipear valores que no correspondan a
+   esa factura -- ver conectarBuscadorComprobante/buscarComprobantesFila.
+   Importe, Porcentaje y Retención NO se bloquean, siguen editables a
+   mano. Para "cambiar" la factura de un renglón hay que volver a buscar y
+   elegir otra: eso reemplaza estos valores y los deja bloqueados de
+   nuevo. */
+.campo-bloqueado {
+    background-color: #e9ecef !important;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
 </style>
 
 <script>
@@ -434,6 +447,24 @@
                             inputImporte.value = item.subtotal;
                             inputImporte.dispatchEvent(new Event('input'));
                         }
+
+                        // Una vez elegida la factura, sus datos propios quedan
+                        // bloqueados (no Importe/Porcentaje/Retención, esos
+                        // siguen editables a mano) -- pedido de Gastón,
+                        // 23/09/2026. <select> no soporta "readonly", así que
+                        // ahí se bloquea con la clase (pointer-events: none +
+                        // sin foco por teclado).
+                        [inputPuntoVenta, inputNumero, inputFecha].forEach(function (campo) {
+                            if (campo) {
+                                campo.readOnly = true;
+                                campo.classList.add('campo-bloqueado');
+                            }
+                        });
+                        if (selectTipo) {
+                            selectTipo.classList.add('campo-bloqueado');
+                            selectTipo.setAttribute('tabindex', '-1');
+                        }
+                        input.readOnly = false; // el buscador sigue activo: buscar y elegir otra factura reemplaza y vuelve a bloquear estos campos.
 
                         resultados.style.display = 'none';
                     });
