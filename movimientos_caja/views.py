@@ -1248,37 +1248,47 @@ def _cheques_en_cartera(caja):
 # --- Cheques recibidos sin asignar a un pago ---------------------------------
 # Pedido de Gastón (23/09/2026): un listado, en la app de movimientos_caja,
 # de los cheques/e-cheques recibidos que todavía se podrían usar para
-# pagarle a un proveedor -- es decir, que siguen en cartera (no se
-# depositaron todavía) y que no están vinculados a ninguna liquidación de
+# pagarle a un proveedor -- es decir, que están cargados en el libro
+# "Cheques Recibidos" y que no están vinculados a ninguna liquidación de
 # PAGO. Puede seguir apareciendo uno que ya está vinculado a la liquidación
 # de COBRO que lo trajo -- eso no lo saca de la lista, sólo importa si ya
 # se usó para pagar.
 
 NOMBRE_TIPO_ECHEQUE = 'E-Cheq'
+NOMBRE_CAJA_CHEQUES_RECIBIDOS = 'Cheques Recibidos'
 
 
 def _cheques_recibidos_sin_pago_qs():
-    """Cheques o e-cheques recibidos, en cartera (sin depositar) y sin
-    vincular todavía a una liquidación de PAGO.
+    """Cheques o e-cheques cargados en la caja/libro "Cheques Recibidos"
+    que todavía no están vinculados a ninguna liquidación de PAGO.
 
-    Mismo criterio de "en cartera" que usa Estado de Caja
-    (`_cheques_en_cartera_qs`: concepto 'Cartera', sin diferido pendiente,
-    sin efectivizar), pero con dos diferencias a propósito: (1) también
-    cuenta tipo 'E-Cheq', que `_cheques_en_cartera_qs` no cuenta (sólo
-    'Cheque') -- confirmado con Gastón el 23/09/2026; y (2) no filtra por
-    una caja puntual, porque acá se quiere el listado completo, de todas
-    las cajas.
+    Corregido el 23/09/2026: la primera versión filtraba por concepto
+    'Cartera' (mismo criterio que `_cheques_en_cartera_qs`, pensado para
+    los cheques que Macro/Nación tienen pendientes de depositar) y por
+    eso daba siempre vacío -- los cheques cargados en la caja "Cheques
+    Recibidos" no tienen ese concepto asignado (confirmado con un caso
+    real, movimiento 11017: caja "Cheques Recibidos", sin
+    MovimientoCajaConcepto, con su propio Libro Movim). El criterio
+    correcto es la caja en sí: todo lo que está cargado en "Cheques
+    Recibidos" es, por definición, un cheque recibido de un tercero
+    todavía en poder de Fontana.
 
-    El filtro de liquidación es sólo `tipo='pago'` (no
+    El filtro de liquidación sigue siendo sólo `tipo='pago'` (no
     `liquidaciones__isnull=True` como las pantallas "Sin Liquidar" de la
     app liquidaciones): un cheque puede estar perfectamente vinculado a la
     liquidación de COBRO que lo trajo y seguir figurando acá, porque
     todavía no se usó para pagarle a nadie -- sólo se saca de la lista
-    cuando ya está en una liquidación de tipo pago."""
+    cuando ya está en una liquidación de tipo pago (ese vínculo se arma a
+    mano, vía el buscador de "Otros movimientos" del alta/edición de una
+    liquidación de pago -- ver `item_sin_liquidar_buscar` en
+    liquidaciones/views.py)."""
+    caja = _caja_por_nombre(NOMBRE_CAJA_CHEQUES_RECIBIDOS)
+    if caja is None:
+        return MovimientoCaja.objects.none()
     return (
         MovimientoCaja.objects.filter(
             Q(tipo__nombre__iexact=NOMBRE_TIPO_CHEQUE) | Q(tipo__nombre__iexact=NOMBRE_TIPO_ECHEQUE),
-            rel_concepto__concepto_tipo__nombre__iexact=NOMBRE_CONCEPTO_CARTERA,
+            caja=caja,
             efectivizacion__isnull=True,
         )
         .filter(Q(movimientocajadiferido__isnull=True) | Q(movimientocajadiferido__diferido__isnull=True))
