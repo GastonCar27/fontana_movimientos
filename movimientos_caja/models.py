@@ -152,21 +152,30 @@ class MovimientoCaja(models.Model):
         en positivo).
 
         Sólo pasa esto cuando el movimiento representa dinero que entró a
-        favor de Fontana a través de un banco real: (1) ya está cargado en
-        un libro de banco (no está en cartera, sin libro todavía) y (2) el
-        receptor es la propia Fontana (ENTIDAD_PROPIA_ID) -- un cheque
-        depositado o una transferencia recibida, no un pago que sale (ahí
-        el receptor es la entidad a la que se le paga, nunca Fontana).
+        favor de Fontana: el receptor es la propia Fontana (ENTIDAD_PROPIA_ID)
+        -- nunca un pago que sale, ahí el receptor es la entidad a la que se
+        le paga -- Y el monto está guardado en negativo.
+
+        Ojo: NO se exige además que el movimiento ya tenga asignado un
+        libro de banco (hoja/renglón, LibroMovim) -- se probó con datos
+        reales (23/09/2026, e-cheqs 10985-10988 de Gastón) que un
+        movimiento puede estar guardado en negativo por la convención del
+        banco sin tener todavía ese asiento formal cargado, y esa
+        condición de más hacía que la corrección nunca se activara para
+        esos casos reales.
 
         Por construcción esto nunca puede afectar una liquidación de PAGO:
         _armar_items() (liquidaciones/views.py) sólo ofrece, para pago,
         movimientos con receptor=la entidad (nunca Fontana) -- así que sólo
-        puede llegar a activarse en una liquidación de COBRO. No cambia el
-        dato guardado en la base ni el saldo del libro de banco (ver
-        movimientos_caja/views.py, estado de caja): es sólo el criterio a
-        usar al SUMAR este movimiento para una liquidación (pedido de
-        Gastón, 23/09/2026)."""
-        return self.tiene_libro_banco and self.receptor_id == ENTIDAD_PROPIA_ID
+        puede llegar a activarse en una liquidación de COBRO, donde
+        además _armar_items() ya filtra receptor=ENTIDAD_PROPIA_ID para
+        todo lo que se puede elegir, así que ahí nunca representa una
+        salida real. No cambia el dato guardado en la base ni el saldo del
+        libro de banco (ver movimientos_caja/views.py, estado de caja): es
+        sólo el criterio a usar al SUMAR este movimiento para una
+        liquidación (pedido de Gastón, 23/09/2026)."""
+        monto = self.monto or Decimal('0')
+        return self.receptor_id == ENTIDAD_PROPIA_ID and monto < 0
 
     @property
     def monto_para_liquidacion(self):

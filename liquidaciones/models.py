@@ -90,19 +90,22 @@ class Liquidacion(models.Model):
         # nuestro), pero acá hay que sumarlo en positivo -- mismo criterio
         # que MovimientoCaja.necesita_invertir_signo_liquidacion
         # (movimientos_caja/models.py), llevado a SQL porque acá se suma
-        # con Sum() en la base. Sólo se invierte cuando (1) el movimiento
-        # ya está en un libro de banco real (movimiento_caja__asiento_libro
-        # no es null -- no es un cheque en cartera, que no tiene libro
-        # todavía) y (2) el receptor es la propia Fontana -- por
+        # con Sum() en la base. Se invierte cuando (1) el receptor es la
+        # propia Fontana y (2) el monto está guardado en negativo -- por
         # construcción esto nunca puede afectar una liquidación de PAGO,
         # donde el receptor siempre es la otra entidad (ver _armar_items en
-        # liquidaciones/views.py). No cambia el monto guardado en la base
+        # liquidaciones/views.py). NO se exige además que el movimiento ya
+        # tenga asignado un libro de banco (hoja/renglón) -- se sacó esa
+        # condición el 23/09/2026 porque con datos reales (e-cheqs de
+        # Gastón) un movimiento puede estar en negativo sin tener todavía
+        # ese asiento formal cargado, y esa condición de más hacía que
+        # nunca se corrigiera. No cambia el monto guardado en la base
         # (pedido de Gastón, 23/09/2026).
         movimientos_qs = self.movimientos.annotate(
             monto_para_liquidacion=Case(
                 When(
                     movimiento_caja__receptor_id=ENTIDAD_PROPIA_ID,
-                    movimiento_caja__asiento_libro__isnull=False,
+                    movimiento_caja__monto__lt=0,
                     then=-F('movimiento_caja__monto'),
                 ),
                 default=F('movimiento_caja__monto'),

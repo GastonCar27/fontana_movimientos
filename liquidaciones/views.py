@@ -738,6 +738,14 @@ def liquidacion_diferencias(request):
     (ver suma_comprobantes): el campo 'total' de Comprobante siempre está
     guardado en positivo en la base, el signo se aplica acá según el
     nombre del tipo de comprobante.
+
+    Los movimientos de caja usan suma_movimientos (no suma_relacionada):
+    aplican la misma corrección de signo que Liquidacion.recalcular_totales
+    y MovimientoCaja.necesita_invertir_signo_liquidacion. Sin esto, esta
+    pantalla compararía el debe/haber guardado (ya corregido al guardar)
+    contra un recálculo sin corregir, y marcaría como "diferencia" toda
+    liquidación con algún movimiento corregido, aunque en realidad esté
+    bien.
     """
 
     def suma_relacionada(modelo_intermedio, campo_monto, tipo):
@@ -748,6 +756,39 @@ def liquidacion_diferencias(request):
                 .order_by()
                 .values('liquidacion')
                 .annotate(total=Sum(campo_monto))
+                .values('total'),
+                output_field=DecimalField(max_digits=20, decimal_places=2),
+            ),
+            Value(Decimal('0')),
+        )
+
+    def suma_movimientos(tipo):
+        """
+        Igual que suma_relacionada, pero además invierte el signo de un
+        movimiento cuando el receptor es la propia Fontana y el monto está
+        guardado en negativo -- mismo criterio que
+        MovimientoCaja.necesita_invertir_signo_liquidacion y
+        Liquidacion.recalcular_totales (ver ambos para el porqué). No hace
+        falta que el movimiento tenga libro de banco asignado.
+        """
+        return Coalesce(
+            Subquery(
+                LiquidacionMovimiento.objects
+                .filter(liquidacion=OuterRef('pk'), tipo=tipo)
+                .annotate(
+                    monto_signado=Case(
+                        When(
+                            movimiento_caja__receptor_id=ENTIDAD_PROPIA_ID,
+                            movimiento_caja__monto__lt=0,
+                            then=-F('movimiento_caja__monto'),
+                        ),
+                        default=F('movimiento_caja__monto'),
+                        output_field=DecimalField(max_digits=20, decimal_places=2),
+                    )
+                )
+                .order_by()
+                .values('liquidacion')
+                .annotate(total=Sum('monto_signado'))
                 .values('total'),
                 output_field=DecimalField(max_digits=20, decimal_places=2),
             ),
@@ -805,8 +846,8 @@ def liquidacion_diferencias(request):
         Liquidacion.objects
         .select_related('entidad')
         .annotate(
-            mov_debe=suma_relacionada(LiquidacionMovimiento, 'movimiento_caja__monto', 'debe'),
-            mov_haber=suma_relacionada(LiquidacionMovimiento, 'movimiento_caja__monto', 'haber'),
+            mov_debe=suma_movimientos('debe'),
+            mov_haber=suma_movimientos('haber'),
             comp_debe=suma_comprobantes('debe'),
             comp_haber=suma_comprobantes('haber'),
             ret_debe=suma_relacionada(LiquidacionRetencion, 'retencion__total', 'debe'),
