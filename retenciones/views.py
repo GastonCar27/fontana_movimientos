@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.contrib import messages
 from django.db import IntegrityError, transaction
@@ -107,6 +107,34 @@ def _calcular_total(subtotal, porcentaje):
     return (Decimal(str(subtotal)) * Decimal(str(porcentaje)) / Decimal('100')).quantize(
         Decimal('0.01'), rounding=ROUND_HALF_UP
     )
+
+
+def _parse_decimal_post(valor):
+    """Convierte un valor de POST (puede venir con coma decimal) a Decimal,
+    o None si viene vacío/inválido -- para los campos numéricos del form de
+    vincular/editar renglón (neto_gravado, total), que no pasan por un
+    Django Form."""
+    if valor is None:
+        return None
+    valor = str(valor).strip().replace(',', '.')
+    if not valor:
+        return None
+    try:
+        return Decimal(valor)
+    except InvalidOperation:
+        return None
+
+
+def _parse_float_post(valor):
+    if valor is None:
+        return None
+    valor = str(valor).strip().replace(',', '.')
+    if not valor:
+        return None
+    try:
+        return float(valor)
+    except ValueError:
+        return None
 
 
 def _tiene_liquidacion(retencion_id):
@@ -369,13 +397,28 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                 if not comprobante:
                     messages.error(request, 'No se encontró el comprobante elegido.')
                 else:
+                    # El neto/porcentaje/total de ESTE renglón son propios de
+                    # este comprobante puntual -- no se copian sin más del
+                    # comprobante ni de la cabecera, porque una misma
+                    # retención puede tener varios comprobantes vinculados,
+                    # cada uno con su propia base/porcentaje/monto retenido
+                    # (pedido de Gastón, 23/09/2026). Si no se cargan a mano,
+                    # se usa el neto del comprobante como base de resguardo, y
+                    # el total se recalcula de neto x porcentaje si no vino.
+                    neto_gravado = _parse_decimal_post(request.POST.get('neto_gravado'))
+                    if neto_gravado is None:
+                        neto_gravado = comprobante.neto_gravado
+                    porcentaje = _parse_float_post(request.POST.get('porcentaje'))
+                    total = _parse_decimal_post(request.POST.get('total'))
+                    if total is None:
+                        total = _calcular_total(neto_gravado, porcentaje)
                     try:
                         RetencionRenglon.objects.create(
                             retencion=retencion_obj,
                             comprobante=comprobante,
-                            neto_gravado=comprobante.neto_gravado,
-                            porcentaje=retencion_obj.porcentaje,
-                            total=retencion_obj.total,
+                            neto_gravado=neto_gravado,
+                            porcentaje=porcentaje,
+                            total=total,
                         )
                         messages.success(
                             request,
@@ -388,9 +431,32 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                             'Ese comprobante ya tiene esta misma retención (mismo impuesto y régimen) '
                             'vinculada -- no se puede repetir.'
                         )
+        elif accion == 'editar_renglon':
+            # Corrige el neto/porcentaje/total de un renglón YA vinculado
+            # (pedido de Gastón, 23/09/2026) -- sigue sin tocar nada de la
+            # Retencion/cabecera, sólo esta fila de retencion_renglon.
+            renglon_id = request.POST.get('renglon_id', '')
+            renglon = RetencionRenglon.objects.filter(pk=renglon_id, retencion_id__in=[l.id for l in lineas]).first()
+            if not renglon:
+                messages.error(request, 'No se encontró ese vínculo.')
+            else:
+                neto_gravado = _parse_decimal_post(request.POST.get('neto_gravado'))
+                porcentaje = _parse_float_post(request.POST.get('porcentaje'))
+                total = _parse_decimal_post(request.POST.get('total'))
+                if total is None:
+                    total = _calcular_total(neto_gravado, porcentaje)
+                renglon.neto_gravado = neto_gravado
+                renglon.porcentaje = porcentaje
+                renglon.total = total
+                renglon.save()
+                messages.success(
+                    request,
+                    f'Se actualizó el renglón del comprobante '
+                    f'{renglon.comprobante.comprobante_string or renglon.comprobante_id}.'
+                )
         elif accion == 'quitar_renglon':
             renglon_id = request.POST.get('renglon_id', '')
-            renglon = RetencionRenglon.objects.filter(pk=renglon_id, retencion_id=id).first()
+            renglon = RetencionRenglon.objects.filter(pk=renglon_id, retencion_id__in=[l.id for l in lineas]).first()
             if renglon:
                 renglon.delete()
                 messages.success(request, 'Vínculo quitado.')

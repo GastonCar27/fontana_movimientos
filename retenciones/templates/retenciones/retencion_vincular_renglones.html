@@ -29,48 +29,85 @@
         <div class="card-body">
             {% with renglones=l.renglones_vinculados %}
             {% if renglones %}
-                <table class="table table-sm table-bordered mb-0">
+                {# Un <form> por renglón, fuera de la tabla (un <tr> no puede contener <form>
+                   como hijo directo) -- los inputs/botones de cada fila se asocian con el
+                   atributo form="..." (HTML5), aunque no sean descendientes del form. #}
+                {% for rn in renglones %}
+                <form method="post" id="form-renglon-{{ rn.id }}">
+                    {% csrf_token %}
+                    <input type="hidden" name="renglon_id" value="{{ rn.id }}">
+                </form>
+                {% endfor %}
+                <table class="table table-sm table-bordered mb-3 align-middle">
                     <thead class="table-light">
                         <tr>
                             <th>Comprobante real vinculado</th>
-                            <th class="text-end">Neto gravado</th>
-                            <th class="text-end">Total</th>
-                            <th style="width:100px;" class="text-center">Quitar</th>
+                            <th style="width:150px;" class="text-end">Neto gravado</th>
+                            <th style="width:100px;" class="text-end">Porcentaje</th>
+                            <th style="width:150px;" class="text-end">Retención (monto)</th>
+                            <th style="width:150px;" class="text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for rn in renglones %}
                         <tr>
                             <td>{{ rn.comprobante.comprobante_string|default:rn.comprobante_id }}</td>
-                            <td class="text-end">{{ rn.neto_gravado|separador_miles }}</td>
-                            <td class="text-end">{{ rn.total|separador_miles }}</td>
+                            <td>
+                                <input type="text" form="form-renglon-{{ rn.id }}" name="neto_gravado"
+                                       class="form-control form-control-sm text-end"
+                                       value="{{ rn.neto_gravado|stringformat:'s'|default:'' }}">
+                            </td>
+                            <td>
+                                <input type="text" form="form-renglon-{{ rn.id }}" name="porcentaje"
+                                       class="form-control form-control-sm text-end"
+                                       value="{{ rn.porcentaje|stringformat:'s'|default:'' }}">
+                            </td>
+                            <td>
+                                <input type="text" form="form-renglon-{{ rn.id }}" name="total"
+                                       class="form-control form-control-sm text-end"
+                                       value="{{ rn.total|stringformat:'s'|default:'' }}">
+                            </td>
                             <td class="text-center">
-                                <form method="post" style="display:inline;">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="accion" value="quitar_renglon">
-                                    <input type="hidden" name="renglon_id" value="{{ rn.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Quitar</button>
-                                </form>
+                                <button type="submit" form="form-renglon-{{ rn.id }}" name="accion" value="editar_renglon"
+                                        class="btn btn-sm btn-outline-primary">Guardar</button>
+                                <button type="submit" form="form-renglon-{{ rn.id }}" name="accion" value="quitar_renglon"
+                                        class="btn btn-sm btn-outline-danger">Quitar</button>
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
-            {% else %}
-                <form method="post" class="vincular-form" data-retencion-id="{{ l.id }}">
-                    {% csrf_token %}
-                    <input type="hidden" name="accion" value="vincular_renglon">
-                    <input type="hidden" name="retencion_id" value="{{ l.id }}">
-                    <input type="hidden" name="comprobante_id" class="comprobante-id-input" value="">
-                    <div class="position-relative" style="max-width:500px;">
-                        <input type="text" class="form-control form-control-sm comprobante-buscador"
-                               placeholder="Buscar el comprobante real sobre el que se practicó..." autocomplete="off">
-                        <div class="comprobante-resultados"></div>
-                    </div>
-                    <div class="small text-muted mt-1 comprobante-elegido">Todavía no se vinculó ningún comprobante.</div>
-                    <button type="submit" class="btn btn-sm btn-primary mt-2" disabled>Vincular</button>
-                </form>
             {% endif %}
+
+            <form method="post" class="vincular-form" data-retencion-id="{{ l.id }}">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="vincular_renglon">
+                <input type="hidden" name="retencion_id" value="{{ l.id }}">
+                <input type="hidden" name="comprobante_id" class="comprobante-id-input" value="">
+                <div class="small text-muted mb-1">Vincular otro comprobante real{% if renglones %} más{% endif %}:</div>
+                <div class="position-relative" style="max-width:500px;">
+                    <input type="text" class="form-control form-control-sm comprobante-buscador"
+                           placeholder="Buscar el comprobante real sobre el que se practicó..." autocomplete="off">
+                    <div class="comprobante-resultados"></div>
+                </div>
+                <div class="small text-muted mt-1 comprobante-elegido">Todavía no se vinculó ningún comprobante.</div>
+                <div class="row g-2 mt-1" style="max-width:500px;">
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Neto gravado</label>
+                        <input type="text" name="neto_gravado" class="form-control form-control-sm neto-gravado-input">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Porcentaje</label>
+                        <input type="text" name="porcentaje" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Retención (monto)</label>
+                        <input type="text" name="total" class="form-control form-control-sm">
+                    </div>
+                </div>
+                <div class="small text-muted mt-1">Si dejás "Retención" en blanco, se calcula solo con Neto x Porcentaje.</div>
+                <button type="submit" class="btn btn-sm btn-primary mt-2" disabled>Vincular</button>
+            </form>
             {% endwith %}
         </div>
     </div>
@@ -154,6 +191,13 @@
                         form.querySelector('.comprobante-id-input').value = item.id;
                         form.querySelector('.comprobante-elegido').textContent = 'Se va a vincular: ' + item.text;
                         form.querySelector('button[type="submit"]').disabled = false;
+                        // Precarga el neto gravado del comprobante elegido como base de
+                        // resguardo -- queda editable, por si la base real de esta
+                        // retención puntual es otra.
+                        const netoInput = form.querySelector('.neto-gravado-input');
+                        if (netoInput && !netoInput.value && item.subtotal) {
+                            netoInput.value = item.subtotal;
+                        }
                         resultados.style.display = 'none';
                     });
                     resultados.appendChild(div);
