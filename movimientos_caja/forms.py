@@ -293,3 +293,29 @@ class RankingEntidadesForm(forms.Form):
         if desde and hasta and desde > hasta:
             self.add_error('fecha_hasta', '"Emisión hasta" no puede ser anterior a "Emisión desde".')
         return cleaned_data
+
+
+class ChequesRecibidosSinPagoFiltroForm(forms.Form):
+    """Filtro de fecha de Emisión (desde/hasta) para 'Cheques recibidos sin
+    pago' -- pedido de Gastón, 23/09/2026. Sin default acá: el default de
+    'emision_desde' (hoy menos 1 año) se aplica en la vista sólo cuando el
+    campo no vino en la URL, para poder distinguir "no se filtró nada
+    todavía" de "el usuario vació el campo a propósito"."""
+    emision_desde = forms.DateField(
+        required=False,
+        label='Emisión desde',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    emision_hasta = forms.DateField(
+        required=False,
+        label='Emisión hasta',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        desde = cleaned_data.get('emision_desde')
+        hasta = cleaned_data.get('emision_hasta')
+        if desde and hasta and desde > hasta:
+            self.add_error('emision_hasta', '"Emisión hasta" no puede ser anterior a "Emisión desde".')
+        return cleaned_data

@@ -12,10 +12,10 @@
             </span>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a class="btn btn-sm btn-outline-success" href="{% url 'movimientos_caja:movimiento_caja_cheques_recibidos_sin_pago_excel' %}">
+            <a class="btn btn-sm btn-outline-success" href="{% url 'movimientos_caja:movimiento_caja_cheques_recibidos_sin_pago_excel' %}?{{ request.GET.urlencode }}">
                 Exportar a Excel
             </a>
-            <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_cheques_recibidos_sin_pago_pdf' %}">
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_cheques_recibidos_sin_pago_pdf' %}?{{ request.GET.urlencode }}">
                 Exportar a PDF
             </a>
         </div>
@@ -29,6 +29,36 @@
         diferido (los que no tienen diferido cargado, disponibles ya mismo, quedan primero) y, a igualdad de
         diferido, por fecha de emisión.
     </p>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="row gx-3 gy-2 align-items-end">
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.emision_desde.label_tag }}
+                    {{ form.emision_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.emision_hasta.label_tag }}
+                    {{ form.emision_hasta }}
+                </div>
+                {% if form.emision_desde.errors or form.emision_hasta.errors %}
+                <div class="col-12">
+                    <div class="text-danger small">
+                        {{ form.emision_desde.errors|join:" " }} {{ form.emision_hasta.errors|join:" " }}
+                    </div>
+                </div>
+                {% endif %}
+                <div class="col-auto d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
+                    <a href="?emision_desde=&emision_hasta=" class="btn btn-outline-secondary btn-sm px-3">Ver todo el historial</a>
+                </div>
+            </form>
+            <div class="text-muted small mt-2 mb-0">
+                Por defecto se muestran los cheques con emisión desde hace 1 año a hoy -- "Ver todo el historial"
+                saca ese límite.
+            </div>
+        </div>
+    </div>
 
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle mb-2">

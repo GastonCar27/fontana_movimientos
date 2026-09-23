@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -16,6 +17,7 @@ from services.permisos import requiere_grupo
 
 from .forms import (
     AsignarLibroMovimientoForm,
+    ChequesRecibidosSinPagoFiltroForm,
     EstadoCajaForm,
     MovimientoCajaForm,
     MovimientoCajaRelacionadosForm,
@@ -1346,8 +1348,48 @@ def _filas_cheques_recibidos_sin_pago(movimientos):
     }
 
 
+def _cheques_recibidos_sin_pago_filtrados(request):
+    """Aplica a `_cheques_recibidos_sin_pago_qs()` el filtro de fecha de
+    Emisión (desde/hasta) de `ChequesRecibidosSinPagoFiltroForm`. Devuelve
+    (form, queryset).
+
+    Pedido de Gastón (23/09/2026): filtro desde/hasta por fecha de
+    Emisión, con 'Emisión desde' precargada en HOY MENOS 1 AÑO mientras no
+    se haya filtrado nada explícitamente -- si el campo vino vacío a
+    propósito (el usuario lo borró y volvió a filtrar) NO se reaplica el
+    default, se respeta que quiera ver todo hacia atrás. 'Emisión hasta'
+    no tiene default, queda abierto hacia adelante.
+
+    El default se inyecta directamente en una COPIA de los parámetros GET
+    (sólo si 'emision_desde' no vino en la URL) y se arma el form ya
+    ATADO a esos datos -- así el campo se ve precargado en pantalla
+    incluso al hacer clic en un encabezado ordenable (que arma su link
+    conservando sólo lo que ya estaba en request.GET, sin saber nada de
+    este default) y el valor efectivo que filtra es siempre el mismo que
+    se ve en el campo."""
+    datos = request.GET.copy()
+    if 'emision_desde' not in datos:
+        datos['emision_desde'] = (timezone.now().date() - timedelta(days=365)).isoformat()
+    form = ChequesRecibidosSinPagoFiltroForm(datos)
+
+    movimientos = _cheques_recibidos_sin_pago_qs()
+    emision_desde = None
+    emision_hasta = None
+    if form.is_valid():
+        emision_desde = form.cleaned_data.get('emision_desde')
+        emision_hasta = form.cleaned_data.get('emision_hasta')
+
+    if emision_desde:
+        movimientos = movimientos.filter(emision__gte=emision_desde)
+    if emision_hasta:
+        movimientos = movimientos.filter(emision__lte=emision_hasta)
+
+    return form, movimientos
+
+
 def movimiento_caja_cheques_recibidos_sin_pago(request):
-    movimientos = aplicar_orden_queryset(request, _cheques_recibidos_sin_pago_qs(), {
+    form, movimientos = _cheques_recibidos_sin_pago_filtrados(request)
+    movimientos = aplicar_orden_queryset(request, movimientos, {
         'id': 'id',
         'caja': 'caja__nombre',
         'tipo': 'tipo__nombre',
@@ -1361,6 +1403,7 @@ def movimiento_caja_cheques_recibidos_sin_pago(request):
     total_monto = sum((m.monto or Decimal('0') for m in movimientos), Decimal('0'))
 
     return render(request, 'movimientos_caja/cheques_recibidos_sin_pago.html', {
+        'form': form,
         'movimientos': movimientos,
         'cantidad_total': len(movimientos),
         'total_monto': total_monto,
@@ -1368,12 +1411,14 @@ def movimiento_caja_cheques_recibidos_sin_pago(request):
 
 
 def movimiento_caja_cheques_recibidos_sin_pago_excel(request):
-    resultado = _filas_cheques_recibidos_sin_pago(_cheques_recibidos_sin_pago_qs())
+    _form, movimientos = _cheques_recibidos_sin_pago_filtrados(request)
+    resultado = _filas_cheques_recibidos_sin_pago(movimientos)
     return _excel_response('cheques_recibidos_sin_pago', resultado)
 
 
 def movimiento_caja_cheques_recibidos_sin_pago_pdf(request):
-    resultado = _filas_cheques_recibidos_sin_pago(_cheques_recibidos_sin_pago_qs())
+    _form, movimientos = _cheques_recibidos_sin_pago_filtrados(request)
+    resultado = _filas_cheques_recibidos_sin_pago(movimientos)
     return _pdf_response('cheques_recibidos_sin_pago', 'Cheques recibidos sin asignar a un pago', resultado)
 
 
