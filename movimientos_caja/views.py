@@ -1245,6 +1245,112 @@ def _cheques_en_cartera(caja):
     return _cheques_en_cartera_qs(caja).aggregate(total=Sum('monto'))['total'] or Decimal('0')
 
 
+# --- Cheques recibidos sin asignar a un pago ---------------------------------
+# Pedido de Gastón (23/09/2026): un listado, en la app de movimientos_caja,
+# de los cheques/e-cheques recibidos que todavía se podrían usar para
+# pagarle a un proveedor -- es decir, que siguen en cartera (no se
+# depositaron todavía) y que no están vinculados a ninguna liquidación de
+# PAGO. Puede seguir apareciendo uno que ya está vinculado a la liquidación
+# de COBRO que lo trajo -- eso no lo saca de la lista, sólo importa si ya
+# se usó para pagar.
+
+NOMBRE_TIPO_ECHEQUE = 'E-Cheq'
+
+
+def _cheques_recibidos_sin_pago_qs():
+    """Cheques o e-cheques recibidos, en cartera (sin depositar) y sin
+    vincular todavía a una liquidación de PAGO.
+
+    Mismo criterio de "en cartera" que usa Estado de Caja
+    (`_cheques_en_cartera_qs`: concepto 'Cartera', sin diferido pendiente,
+    sin efectivizar), pero con dos diferencias a propósito: (1) también
+    cuenta tipo 'E-Cheq', que `_cheques_en_cartera_qs` no cuenta (sólo
+    'Cheque') -- confirmado con Gastón el 23/09/2026; y (2) no filtra por
+    una caja puntual, porque acá se quiere el listado completo, de todas
+    las cajas.
+
+    El filtro de liquidación es sólo `tipo='pago'` (no
+    `liquidaciones__isnull=True` como las pantallas "Sin Liquidar" de la
+    app liquidaciones): un cheque puede estar perfectamente vinculado a la
+    liquidación de COBRO que lo trajo y seguir figurando acá, porque
+    todavía no se usó para pagarle a nadie -- sólo se saca de la lista
+    cuando ya está en una liquidación de tipo pago."""
+    return (
+        MovimientoCaja.objects.filter(
+            Q(tipo__nombre__iexact=NOMBRE_TIPO_CHEQUE) | Q(tipo__nombre__iexact=NOMBRE_TIPO_ECHEQUE),
+            rel_concepto__concepto_tipo__nombre__iexact=NOMBRE_CONCEPTO_CARTERA,
+            efectivizacion__isnull=True,
+        )
+        .filter(Q(movimientocajadiferido__isnull=True) | Q(movimientocajadiferido__diferido__isnull=True))
+        # Ojo: 'liquidaciones__tipo' es el Debe/Haber del ítem
+        # (LiquidacionMovimiento.tipo), NO el tipo pago/cobro de la
+        # liquidación -- hay que ir un paso más, a través de la FK
+        # 'liquidacion', para llegar a Liquidacion.tipo.
+        .exclude(liquidaciones__liquidacion__tipo='pago')
+        .select_related('caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad')
+        .prefetch_related('liquidaciones__liquidacion')
+        .order_by('-emision', '-id')
+    )
+
+
+def _filas_cheques_recibidos_sin_pago(movimientos):
+    columnas = ['ID', 'Caja', 'Tipo', 'Emisor', 'Número', 'Emisión', 'Monto', 'Diferido', 'Liquidación']
+    filas = []
+    for m in movimientos:
+        try:
+            diferido = m.movimientocajadiferido.diferido
+        except Exception:
+            diferido = None
+        filas.append([
+            m.id,
+            str(m.caja) if m.caja else '',
+            str(m.tipo) if m.tipo else '',
+            str(m.emisor) if m.emisor else '',
+            m.numero if m.numero is not None else '',
+            m.emision,
+            _numero_o_none(m.monto),
+            diferido,
+            _texto_liquidacion(m),
+        ])
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': {6},  # Monto
+        'columnas_fecha': {5, 7},  # Emisión, Diferido
+        'anchos': [0.5, 1.1, 1.1, 1.8, 0.8, 0.9, 1.0, 0.9, 1.3],
+    }
+
+
+def movimiento_caja_cheques_recibidos_sin_pago(request):
+    movimientos = aplicar_orden_queryset(request, _cheques_recibidos_sin_pago_qs(), {
+        'id': 'id',
+        'caja': 'caja__nombre',
+        'tipo': 'tipo__nombre',
+        'emisor': 'emisor_relacion__id_entidad__nombre',
+        'numero': 'rel_numero__numero',
+        'emision': 'emision',
+        'monto': 'monto',
+    })
+    movimientos = list(movimientos)
+    total_monto = sum((m.monto or Decimal('0') for m in movimientos), Decimal('0'))
+
+    return render(request, 'movimientos_caja/cheques_recibidos_sin_pago.html', {
+        'movimientos': movimientos,
+        'cantidad_total': len(movimientos),
+        'total_monto': total_monto,
+    })
+
+
+def movimiento_caja_cheques_recibidos_sin_pago_excel(request):
+    resultado = _filas_cheques_recibidos_sin_pago(_cheques_recibidos_sin_pago_qs())
+    return _excel_response('cheques_recibidos_sin_pago', resultado)
+
+
+def movimiento_caja_cheques_recibidos_sin_pago_pdf(request):
+    resultado = _filas_cheques_recibidos_sin_pago(_cheques_recibidos_sin_pago_qs())
+    return _pdf_response('cheques_recibidos_sin_pago', 'Cheques recibidos sin asignar a un pago', resultado)
+
+
 def _movimientos_firmes_excluyendo_cartera(libro, caja, fecha):
     """Suma de los movimientos firmes de ESE libro (mismo criterio que
     `_movimientos_firmes_de_libro`: sin diferido, o con diferido ya

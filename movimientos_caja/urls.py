@@ -25,6 +25,18 @@ urlpatterns = [
         'reportes/estado-caja/defecto/pdf/',
         views.movimiento_caja_estado_defecto_pdf, name='movimiento_caja_estado_defecto_pdf',
     ),
+    path(
+        'reportes/cheques-recibidos-sin-pago/',
+        views.movimiento_caja_cheques_recibidos_sin_pago, name='movimiento_caja_cheques_recibidos_sin_pago',
+    ),
+    path(
+        'reportes/cheques-recibidos-sin-pago/excel/',
+        views.movimiento_caja_cheques_recibidos_sin_pago_excel, name='movimiento_caja_cheques_recibidos_sin_pago_excel',
+    ),
+    path(
+        'reportes/cheques-recibidos-sin-pago/pdf/',
+        views.movimiento_caja_cheques_recibidos_sin_pago_pdf, name='movimiento_caja_cheques_recibidos_sin_pago_pdf',
+    ),
     path('<int:pk>/editar/', views.movimiento_caja_form, name='movimiento_caja_editar'),
     path('<int:pk>/eliminar/', views.movimiento_caja_eliminar, name='movimiento_caja_eliminar'),
     # --- Modificar en libro (asignar/editar libro, hoja y renglón) ---
