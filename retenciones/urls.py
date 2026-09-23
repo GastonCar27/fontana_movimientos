@@ -11,10 +11,10 @@ urlpatterns = [
     path('ranking-entidades/', views.retencion_ranking_entidades, name='ranking_entidades'),
     path('ranking-entidades/excel/', views.retencion_ranking_entidades_excel, name='ranking_entidades_excel'),
     path('ranking-entidades/pdf/', views.retencion_ranking_entidades_pdf, name='ranking_entidades_pdf'),
-    path('<int:anio>/<int:numero>/modificar/', views.retencion_modificar, name='modificar'),
-    path('<int:anio>/<int:numero>/eliminar/', views.retencion_eliminar, name='eliminar'),
-    path('<int:anio>/<int:numero>/pdf/', views.retencion_pdf, name='pdf'),
-    path('<int:anio>/<int:numero>/excel/', views.retencion_excel, name='excel'),
+    path('<int:id>/modificar/', views.retencion_modificar, name='modificar'),
+    path('<int:id>/eliminar/', views.retencion_eliminar, name='eliminar'),
+    path('<int:id>/pdf/', views.retencion_pdf, name='pdf'),
+    path('<int:id>/excel/', views.retencion_excel, name='excel'),
 
     # Ret. Impuestos
     path('tipos/impuestos/', views.retencion_tipo_impuesto_listado, name='tipo_impuesto_listado'),

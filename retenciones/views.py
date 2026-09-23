@@ -109,24 +109,13 @@ def _calcular_total(subtotal, porcentaje):
     )
 
 
-def _grupo_queryset(anio, numero):
-    return (
-        Retencion.objects
-        .filter(año=anio, numero=numero)
-        .select_related('entidad', 'id_impuesto', 'id_regimen')
-        .order_by('id')
-    )
-
-
-def _tiene_liquidacion(anio, numero):
-    """True si alguno de los renglones de este comprobante ya está incluido
-    en una liquidación (liquidacion_retencion tiene ON DELETE RESTRICT hacia
-    retencion: borrar esos renglones para 'reemplazarlos' en una
-    modificación rompería esa liquidación, así que no se permite)."""
+def _tiene_liquidacion(retencion_id):
+    """True si esta retención ya está incluida en una liquidación
+    (liquidacion_retencion tiene ON DELETE RESTRICT hacia retencion: borrarla
+    para 'reemplazarla' en una modificación rompería esa liquidación, así que
+    no se permite)."""
     from liquidaciones.models import LiquidacionRetencion
-    return LiquidacionRetencion.objects.filter(
-        retencion__año=anio, retencion__numero=numero
-    ).exists()
+    return LiquidacionRetencion.objects.filter(retencion_id=retencion_id).exists()
 
 
 def _tipos_comprobante_por_id():
@@ -326,10 +315,17 @@ def retencion_alta(request):
                     f'El comprobante de retención {anio}-{numero:04d} se guardó correctamente '
                     f'({len(creados)} renglón{"es" if len(creados) != 1 else ""}).'
                 )
+                if len(creados) > 1:
+                    messages.warning(
+                        request,
+                        f'Se cargaron {len(creados)} renglones -- cada uno quedó como una retención '
+                        'independiente. Si necesitás imprimir más de una, hacelo por separado desde '
+                        'el listado.'
+                    )
                 if accion == 'pdf':
-                    return retencion_pdf(request, anio, numero)
+                    return retencion_pdf(request, creados[0])
                 if accion == 'excel':
-                    return retencion_excel(request, anio, numero)
+                    return retencion_excel(request, creados[0])
                 return redirect('retenciones:listado')
     else:
         anio_actual = __import__('datetime').date.today().year
@@ -348,12 +344,12 @@ def retencion_alta(request):
     })
 
 
-def _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevos):
+def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
     """Modo restringido de Modificación: sólo permite vincular (o quitar)
-    RetencionRenglon reales para un comprobante que ya tiene liquidación
-    asignada y todavía no tiene ninguno -- ver el comentario en
-    retencion_modificar. No toca el total ni ningún otro dato de la
-    Retencion; sólo agrega/borra filas de la tabla nueva `retencion_renglon`."""
+    RetencionRenglon reales para una retención que ya tiene liquidación
+    asignada -- ver el comentario en retencion_modificar. No toca el total ni
+    ningún otro dato de la Retencion; sólo agrega/borra filas de la tabla
+    nueva `retencion_renglon`."""
     primera = lineas[0]
 
     if request.method == 'POST':
@@ -394,16 +390,14 @@ def _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevo
                         )
         elif accion == 'quitar_renglon':
             renglon_id = request.POST.get('renglon_id', '')
-            renglon = RetencionRenglon.objects.filter(
-                pk=renglon_id, retencion__año=anio, retencion__numero=numero,
-            ).first()
+            renglon = RetencionRenglon.objects.filter(pk=renglon_id, retencion_id=id).first()
             if renglon:
                 renglon.delete()
                 messages.success(request, 'Vínculo quitado.')
             else:
                 messages.error(request, 'No se encontró ese vínculo.')
 
-        return redirect('retenciones:modificar', anio=anio, numero=numero)
+        return redirect('retenciones:modificar', id=id)
 
     renglones_por_retencion = {}
     for rn in renglones_nuevos:
@@ -415,8 +409,8 @@ def _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevo
         l.renglones_vinculados = renglones_por_retencion.get(l.id, [])
 
     return render(request, 'retenciones/retencion_vincular_renglones.html', {
-        'anio': anio,
-        'numero': numero,
+        'anio': primera.año,
+        'numero': primera.numero,
         'lineas': lineas,
         'entidad_texto': primera.entidad_nombre or (str(primera.entidad) if primera.entidad else ''),
         'entidad_id': primera.entidad_id,
@@ -425,29 +419,33 @@ def _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevo
     })
 
 
-def retencion_modificar(request, anio, numero):
-    lineas = list(_grupo_queryset(anio, numero))
-    if not lineas:
-        messages.error(request, f'No se encontró el comprobante de retención {anio}-{numero:04d}.')
+def retencion_modificar(request, id):
+    primera = (
+        Retencion.objects.filter(pk=id)
+        .select_related('entidad', 'id_impuesto', 'id_regimen')
+        .first()
+    )
+    if primera is None:
+        messages.error(request, f'No se encontró la retención con id {id}.')
         return redirect('retenciones:listado')
 
-    if _tiene_liquidacion(anio, numero):
+    anio = primera.año
+    numero = primera.numero
+
+    if _tiene_liquidacion(id):
         # Modo restringido (pedido por Gastón, 23/09/2026): mientras haya una
-        # liquidación asignada, la cabecera y los renglones viejos
+        # liquidación asignada, la cabecera y los datos viejos
         # (subtotal/porcentaje/total/comprobante_origen) quedan de sólo
         # lectura -- eso nunca se puede tocar acá. Lo único que se permite es
         # vincular (o quitar) el/los Comprobante(s) real(es) en la tabla
         # nueva RetencionRenglon: es sólo agregar documentación, no toca el
-        # total ni ningún otro dato de la Retencion, así que es seguro
-        # incluso si ya tiene algún renglón vinculado (por ejemplo un
-        # certificado con varias facturas, cargadas de a una).
+        # total ni ningún otro dato de la Retencion.
         renglones_nuevos = list(
-            RetencionRenglon.objects.filter(retencion__in=lineas)
+            RetencionRenglon.objects.filter(retencion_id=id)
             .select_related('comprobante', 'comprobante__tipo_comprobante', 'retencion')
         )
-        return _retencion_vincular_renglones(request, anio, numero, lineas, renglones_nuevos)
+        return _retencion_vincular_renglones(request, id, [primera], renglones_nuevos)
 
-    primera = lineas[0]
     tipos_por_id = _tipos_comprobante_por_id()
 
     if request.method == 'POST':
@@ -460,8 +458,11 @@ def retencion_modificar(request, anio, numero):
                 messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
                 with transaction.atomic():
-                    Retencion.objects.filter(año=anio, numero=numero).delete()
-                    _guardar_grupo(request, header_form, formset, None)
+                    # Sólo se toca esta fila puntual (por id) -- nunca otras
+                    # filas que puedan compartir año+numero (con otra entidad,
+                    # u otro impuesto/régimen de la misma entidad).
+                    Retencion.objects.filter(pk=id).delete()
+                    creados = _guardar_grupo(request, header_form, formset, None)
 
                 nuevo_anio = header_form.cleaned_data['año']
                 nuevo_numero = header_form.cleaned_data['numero']
@@ -470,10 +471,18 @@ def retencion_modificar(request, anio, numero):
                     request,
                     f'El comprobante de retención {nuevo_anio}-{nuevo_numero:04d} se modificó correctamente.'
                 )
+                if len(creados) > 1:
+                    messages.warning(
+                        request,
+                        f'Se cargaron {len(creados)} renglones nuevos -- cada uno quedó como una '
+                        'retención independiente. Si necesitás imprimir más de una, hacelo por '
+                        'separado desde el listado.'
+                    )
+                nuevo_id = creados[0] if creados else id
                 if accion == 'pdf':
-                    return retencion_pdf(request, nuevo_anio, nuevo_numero)
+                    return retencion_pdf(request, nuevo_id)
                 if accion == 'excel':
-                    return retencion_excel(request, nuevo_anio, nuevo_numero)
+                    return retencion_excel(request, nuevo_id)
                 return redirect('retenciones:listado')
     else:
         header_form = RetencionHeaderForm(initial={
@@ -487,7 +496,7 @@ def retencion_modificar(request, anio, numero):
         })
         formset = RetencionRenglonFormSet(
             prefix='form',
-            initial=_armar_formset_inicial(lineas, tipos_por_id),
+            initial=_armar_formset_inicial([primera], tipos_por_id),
         )
         formset.extra = 1
 
@@ -495,6 +504,7 @@ def retencion_modificar(request, anio, numero):
         'header_form': header_form,
         'formset': formset,
         'modo': 'modificar',
+        'id': id,
         'anio': anio,
         'numero': numero,
         'entidad_texto': primera.entidad_nombre or (str(primera.entidad) if primera.entidad else ''),
@@ -502,32 +512,36 @@ def retencion_modificar(request, anio, numero):
     })
 
 
-def retencion_eliminar(request, anio, numero):
-    lineas = list(_grupo_queryset(anio, numero))
-    if not lineas:
-        messages.error(request, f'No se encontró el comprobante de retención {anio}-{numero:04d}.')
+def retencion_eliminar(request, id):
+    primera = Retencion.objects.filter(pk=id).select_related('entidad').first()
+    if primera is None:
+        messages.error(request, f'No se encontró la retención con id {id}.')
         return redirect('retenciones:listado')
 
+    anio = primera.año
+    numero = primera.numero
+
     if request.method == 'POST':
-        if _tiene_liquidacion(anio, numero):
+        if _tiene_liquidacion(id):
             messages.error(
                 request,
-                f'El comprobante {anio}-{numero:04d} ya tiene retenciones incluidas en una '
-                'liquidación y no se puede eliminar desde acá.'
+                f'Esta retención ({anio}-{numero:04d}) ya está incluida en una '
+                'liquidación y no se puede eliminar desde acá.' if anio and numero else
+                'Esta retención ya está incluida en una liquidación y no se puede eliminar desde acá.'
             )
             return redirect('retenciones:listado')
 
-        Retencion.objects.filter(año=anio, numero=numero).delete()
-        messages.success(request, f'El comprobante de retención {anio}-{numero:04d} se eliminó correctamente.')
+        Retencion.objects.filter(pk=id).delete()
+        messages.success(request, 'La retención se eliminó correctamente.')
         return redirect('retenciones:listado')
 
-    total = sum((l.total or Decimal('0')) for l in lineas)
+    total = primera.total or Decimal('0')
     return render(request, 'retenciones/retencion_eliminar_confirm.html', {
         'anio': anio,
         'numero': numero,
-        'lineas': lineas,
+        'lineas': [primera],
         'total': total,
-        'entidad_nombre': lineas[0].entidad_nombre or (str(lineas[0].entidad) if lineas[0].entidad else ''),
+        'entidad_nombre': primera.entidad_nombre or (str(primera.entidad) if primera.entidad else ''),
     })
 
 
@@ -548,39 +562,38 @@ def retencion_listado(request):
     if q_entidad:
         qs = qs.filter(Q(entidad_nombre__icontains=q_entidad) | Q(entidad__nombre__icontains=q_entidad))
 
-    grupos = {}
-    for r in qs.order_by('-año', '-numero'):
-        clave = (r.año, r.numero)
-        if clave not in grupos:
-            grupos[clave] = {
-                'año': r.año,
-                'numero': r.numero,
-                'entidad_nombre': r.entidad_nombre or (str(r.entidad) if r.entidad else ''),
-                'fecha': r.fecha,
-                'cantidad_renglones': 0,
-                'total': Decimal('0'),
-                'es_emisor': r.es_emisor if r.es_emisor is not None else Retencion.ES_EMISOR,
-            }
-        grupos[clave]['cantidad_renglones'] += 1
-        grupos[clave]['total'] += (r.total or Decimal('0'))
-        if r.fecha and (grupos[clave]['fecha'] is None or r.fecha > grupos[clave]['fecha']):
-            grupos[clave]['fecha'] = r.fecha
+    # Cada fila de Retencion es un comprobante independiente (no se agrupan
+    # por año+numero: ese agrupamiento fue la causa del bug reportado por
+    # Gastón el 23/09/2026 -- distintas entidades, o distintos
+    # impuesto/régimen de una misma entidad, pueden compartir numero, y
+    # agruparlas mezclaba/ocultaba retenciones ajenas bajo una sola fila).
+    filas = [
+        {
+            'id': r.id,
+            'año': r.año,
+            'numero': r.numero,
+            'entidad_nombre': r.entidad_nombre or (str(r.entidad) if r.entidad else ''),
+            'fecha': r.fecha,
+            'total': r.total or Decimal('0'),
+            'es_emisor': r.es_emisor if r.es_emisor is not None else Retencion.ES_EMISOR,
+        }
+        for r in qs.order_by('-año', '-numero', '-id')
+    ]
 
     campos_orden = {
-        'anio': lambda g: g['año'] or 0,
-        'numero': lambda g: g['numero'] or 0,
-        'entidad': lambda g: (g['entidad_nombre'] or '').lower(),
-        'fecha': lambda g: g['fecha'],
-        'renglones': lambda g: g['cantidad_renglones'],
-        'total': lambda g: g['total'],
-        'direccion': lambda g: g['es_emisor'],
+        'anio': lambda f: f['año'] or 0,
+        'numero': lambda f: f['numero'] or 0,
+        'entidad': lambda f: (f['entidad_nombre'] or '').lower(),
+        'fecha': lambda f: f['fecha'],
+        'total': lambda f: f['total'],
+        'direccion': lambda f: f['es_emisor'],
     }
     if request.GET.get('orden') in campos_orden:
-        lista = aplicar_orden_lista(request, list(grupos.values()), campos_orden)
+        lista = aplicar_orden_lista(request, filas, campos_orden)
     else:
         # Sin orden pedido por columna: más recientes primero (año y número
         # descendente), mismo criterio que antes de poder ordenar por columna.
-        lista = sorted(grupos.values(), key=lambda g: (g['año'] or 0, g['numero'] or 0), reverse=True)
+        lista = sorted(filas, key=lambda f: (f['año'] or 0, f['numero'] or 0, f['id']), reverse=True)
     lista = lista[:500]
 
     return render(request, 'retenciones/retencion_listado.html', {
@@ -595,11 +608,11 @@ def retencion_listado(request):
 # Impresión (PDF / Excel), formato "Constancia de Retención"
 # ---------------------------------------------------------------------------
 
-def _contexto_impresion(anio, numero):
-    lineas = list(_grupo_queryset(anio, numero))
-    if not lineas:
+def _contexto_impresion(id):
+    primera = Retencion.objects.filter(pk=id).select_related('entidad', 'id_impuesto', 'id_regimen').first()
+    if primera is None or primera.año is None or primera.numero is None:
         return None
-    primera = lineas[0]
+    lineas = [primera]
     tipos_por_id = _tipos_comprobante_por_id()
 
     for l in lineas:
@@ -609,8 +622,8 @@ def _contexto_impresion(anio, numero):
     es_emisor = primera.es_emisor if primera.es_emisor is not None else Retencion.ES_EMISOR
 
     return {
-        'anio': anio,
-        'numero': numero,
+        'anio': primera.año,
+        'numero': primera.numero,
         'entidad': primera.entidad,
         'entidad_nombre': primera.entidad_nombre or (str(primera.entidad) if primera.entidad else ''),
         'domicilio': _formatear_domicilio(primera.entidad),
@@ -623,7 +636,7 @@ def _contexto_impresion(anio, numero):
     }
 
 
-def retencion_pdf(request, anio, numero):
+def retencion_pdf(request, id):
     from django.http import HttpResponse
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -632,11 +645,13 @@ def retencion_pdf(request, anio, numero):
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from movimientos.templatetags.movimientos_extras import separador_miles
 
-    contexto = _contexto_impresion(anio, numero)
+    contexto = _contexto_impresion(id)
     if contexto is None:
-        messages.error(request, f'No se encontró el comprobante de retención {anio}-{numero:04d}.')
+        messages.error(request, 'No se encontró esa retención, o le falta año/número para poder imprimirla.')
         return redirect('retenciones:listado')
 
+    anio = contexto['anio']
+    numero = contexto['numero']
     response = HttpResponse(content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename=retencion_{anio}_{numero:04d}.pdf'
 
@@ -728,17 +743,19 @@ def retencion_pdf(request, anio, numero):
     return response
 
 
-def retencion_excel(request, anio, numero):
+def retencion_excel(request, id):
     import openpyxl
     from django.http import HttpResponse
     from openpyxl.styles import Font, Alignment
     from services.gestorexcel import definir_estilo_general, formatear_celda_fecha, formatear_celda_numero
 
-    contexto = _contexto_impresion(anio, numero)
+    contexto = _contexto_impresion(id)
     if contexto is None:
-        messages.error(request, f'No se encontró el comprobante de retención {anio}-{numero:04d}.')
+        messages.error(request, 'No se encontró esa retención, o le falta año/número para poder imprimirla.')
         return redirect('retenciones:listado')
 
+    anio = contexto['anio']
+    numero = contexto['numero']
     textos = contexto['textos']
     wb = openpyxl.Workbook()
     ws = wb.active

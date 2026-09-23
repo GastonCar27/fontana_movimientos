@@ -183,7 +183,16 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     )
     grupos_retencion = {}
     for r in renglones_retencion:
-        clave = (r.año, r.numero)
+        # La clave incluye impuesto+régimen (además de año+numero) porque una
+        # misma entidad puede tener más de una retención con el mismo
+        # año+numero si el impuesto o el régimen es distinto (Gastón,
+        # 23/09/2026) -- agruparlas sólo por año+numero las mezclaría. Si
+        # año/numero todavía no están cargados, cada fila queda sola (no hay
+        # con qué agruparla de forma confiable).
+        if r.año is None or r.numero is None:
+            clave = ('sin_numero', r.id)
+        else:
+            clave = (r.año, r.numero, r.id_impuesto_id, r.id_regimen_id)
         grupo = grupos_retencion.get(clave)
         if grupo is None:
             grupo = grupos_retencion[clave] = SimpleNamespace(
@@ -534,16 +543,23 @@ def liquidacion_form(request, pk=None):
                         # mismo comprobante, si no la liquidación quedaría
                         # con el total parcial de un solo renglón.
                         representante = Retencion.objects.filter(pk=item_id).only(
-                            'id', 'entidad_id', 'año', 'numero', 'es_emisor',
+                            'id', 'entidad_id', 'año', 'numero', 'es_emisor', 'id_impuesto', 'id_regimen',
                         ).first()
                         if not representante:
                             continue
-                        ids_grupo = Retencion.objects.filter(
-                            entidad_id=representante.entidad_id,
-                            año=representante.año,
-                            numero=representante.numero,
-                            es_emisor=representante.es_emisor,
-                        ).values_list('id', flat=True)
+                        if representante.año is None or representante.numero is None:
+                            # Sin año/numero no hay con qué agrupar de forma
+                            # confiable -- se vincula sólo esta fila.
+                            ids_grupo = [representante.id]
+                        else:
+                            ids_grupo = Retencion.objects.filter(
+                                entidad_id=representante.entidad_id,
+                                año=representante.año,
+                                numero=representante.numero,
+                                es_emisor=representante.es_emisor,
+                                id_impuesto_id=representante.id_impuesto_id,
+                                id_regimen_id=representante.id_regimen_id,
+                            ).values_list('id', flat=True)
                         for rid in ids_grupo:
                             a_crear.append((modelo_intermedio, fk_name, rid, tipo_item))
                     else:
@@ -986,7 +1002,16 @@ def _agrupar_retenciones_sin_liquidar(retenciones_qs):
     """
     grupos = {}
     for r in retenciones_qs:
-        clave = (r.año, r.numero)
+        # Clave completa (entidad+año+numero+impuesto+régimen): esta lista
+        # puede traer varias entidades a la vez, y una misma entidad puede
+        # tener año+numero repetido con impuesto/régimen distinto -- agrupar
+        # sólo por año+numero mezclaría retenciones de entidades u
+        # impuestos/regímenes distintos bajo una sola fila (Gastón,
+        # 23/09/2026). Sin año/numero cargados, cada fila queda sola.
+        if r.año is None or r.numero is None:
+            clave = ('sin_numero', r.id)
+        else:
+            clave = (r.entidad_id, r.año, r.numero, r.id_impuesto_id, r.id_regimen_id)
         grupo = grupos.get(clave)
         if grupo is None:
             grupo = grupos[clave] = SimpleNamespace(
