@@ -88,3 +88,63 @@ class InymRetencionTipo(models.Model):
         # mostraba el string genérico de Django ("InymRetencionTipo object
         # (N)") en vez del nombre real de cada tipo de tarifa.
         return self.nombre or f'Tipo de tarifa {self.id}'
+
+
+class RetencionInymHistorico(models.Model):
+    """Tabla histórica, independiente de la operativa `retencion_inym` --
+    pedido de Gastón (24/09/2026). Quiere poder importar el Excel completo
+    (o un tramo grande) de INYM, con fecha desde/hasta, para armar un
+    análisis estadístico de kgs por tipo de tarifa/año/mes -- SIN afectar
+    el flujo operativo de liquidaciones, que sigue usando únicamente
+    `retencion_inym` (cargada a demanda, retención por retención, a medida
+    que se van liquidando).
+
+    A diferencia de `RetencionInym` y el resto de las tablas de este app,
+    ÉSTA es managed=True (tabla nueva, no una que ya existía en la base de
+    Fontana) -- Gastón corre `makemigrations`/`migrate` él mismo, mismo
+    criterio que las demás tablas nuevas de este proyecto.
+
+    Guarda filas CRUDAS (una por retención del Excel, sin agregar), para
+    poder rearmar cualquier análisis después sin reimportar. El importador
+    (ver importador_historico.py):
+      - Exige fecha desde/hasta (no se puede cargar "todo" sin querer).
+      - Descarta las filas con `eliminacion` cargada en el Excel
+        (retenciones anuladas del lado de INYM) -- pedido de Gastón,
+        24/09/2026 ("Para esto no tomar en cuenta retenciones eliminadas").
+      - Es idempotente por RANGO DE FECHA (no por certificado como el
+        importador operativo): reimportar borra primero lo que ya había
+        acá para ese mismo rango [fecha_desde, fecha_hasta] y vuelve a
+        insertar desde cero. No hace falta un diff campo a campo como en
+        el importador operativo porque acá no hay carga manual que
+        proteger -- es de solo lectura para análisis.
+    """
+    fecha = models.DateField()
+    periodo = models.DateField(blank=True, null=True)
+    id_tipo_tarifa = models.ForeignKey(
+        InymRetencionTipo, on_delete=models.PROTECT, db_column='id_tipo_tarifa',
+    )
+    operador_emisor = models.ForeignKey(
+        Inym_Operador, on_delete=models.PROTECT, db_column='id_operador_emisor',
+        related_name='retencion_inym_historico_emisor_set', blank=True, null=True,
+    )
+    operador_retenido = models.ForeignKey(
+        Inym_Operador, on_delete=models.PROTECT, db_column='id_operador_retenido',
+        related_name='retencion_inym_historico_retenido_set', blank=True, null=True,
+    )
+    kgs = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    tarifa = models.DecimalField(max_digits=20, decimal_places=6, blank=True, null=True)
+    total = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    # N° de certificado INYM tal cual viene del Excel -- solo informativo acá
+    # (no es clave de no-duplicado, ver criterio de idempotencia arriba).
+    id_certificado_inym = models.IntegerField(blank=True, null=True)
+    fecha_importacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'retencion_inym_historico'
+        indexes = [
+            models.Index(fields=['fecha']),
+            models.Index(fields=['id_tipo_tarifa', 'fecha']),
+        ]
+
+    def __str__(self):
+        return f'Histórico {self.id} - {self.fecha} - {self.id_tipo_tarifa}'

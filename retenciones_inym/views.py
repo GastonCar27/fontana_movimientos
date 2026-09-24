@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.db.models import Count, Max, Q, Sum
+from django.db.models.functions import ExtractMonth, ExtractYear
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 
@@ -10,9 +11,13 @@ from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
 from services.reportes import excel_response, pdf_response
 
-from .forms import ImportadorInymForm, RankingEntidadesForm, RetencionInymForm, texto_operador_inym
+from .forms import (
+    AnalisisKgsInymForm, ImportadorInymForm, ImportadorInymHistoricoForm,
+    RankingEntidadesForm, RetencionInymForm, texto_operador_inym,
+)
 from .importador import ErrorImportacion, importar_filas, leer_filas_excel
-from .models import InymRetencionTipo, RetencionInym
+from .importador_historico import importar_filas_historico
+from .models import InymRetencionTipo, RetencionInym, RetencionInymHistorico
 
 
 # ---------------------------------------------------------------------------
@@ -517,3 +522,322 @@ def retencion_inym_ranking_entidades_pdf(request):
     return pdf_response(
         'ranking_entidades_retenciones_inym', 'Ranking de entidades por monto de retenciones INYM', resultado
     )
+
+
+# ---------------------------------------------------------------------------
+# Tabla histórica de análisis (RetencionInymHistorico) -- pedido de Gastón
+# (24/09/2026): un import aparte (con fecha desde/hasta obligatoria, y sin
+# contar retenciones eliminadas) para poder cargar de a poco todo el
+# histórico de INYM sin tocar la tabla operativa `retencion_inym`, y armar
+# con eso un análisis estadístico de kgs por año/mes/tipo de tarifa. Ver
+# retenciones_inym/importador_historico.py y models.py::RetencionInymHistorico.
+# ---------------------------------------------------------------------------
+
+def retencion_inym_historico_importar(request):
+    resultado = None
+
+    if request.method == 'POST':
+        form = ImportadorInymHistoricoForm(request.POST, request.FILES)
+        if form.is_valid():
+            archivo = form.cleaned_data['archivo']
+            fecha_desde = form.cleaned_data['fecha_desde']
+            fecha_hasta = form.cleaned_data['fecha_hasta']
+            try:
+                filas = leer_filas_excel(archivo, archivo.name)
+                resultado = importar_filas_historico(filas, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta)
+            except ErrorImportacion as exc:
+                form.add_error('archivo', str(exc))
+            else:
+                messages.success(
+                    request,
+                    f"Se cargaron {resultado['importadas']} retenciones al histórico para el rango "
+                    f"{fecha_desde:%d/%m/%Y} - {fecha_hasta:%d/%m/%Y} (se reemplazó lo que hubiera antes "
+                    "en ese mismo rango).",
+                )
+                if resultado['eliminadas_excluidas']:
+                    messages.info(
+                        request,
+                        f"No se contaron {resultado['eliminadas_excluidas']} retención(es) marcadas como "
+                        "eliminadas en INYM.",
+                    )
+    else:
+        form = ImportadorInymHistoricoForm()
+
+    return render(request, 'retenciones_inym/retencion_inym_historico_importar.html', {
+        'form': form, 'resultado': resultado,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Análisis Kgs INYM (histórico) -- pedido de Gastón (24/09/2026): kgs por
+# operador y año, análisis de varianza (máximo/mínimo/variación % por
+# operador) y análisis mensual (en qué mes se reciben más kgs de cada tipo
+# de tarifa). Todo sobre RetencionInymHistorico, no sobre la tabla
+# operativa. Qué operador (emisor/retenido) representa "quién
+# entregó/recibió" todavía no está definido para todos los tipos de tarifa
+# (confirmado sólo para "Hoja verde" = operador retenido), así que la
+# pantalla deja elegirlo con AnalisisKgsInymForm.rol_operador en vez de
+# asumir uno fijo.
+# ---------------------------------------------------------------------------
+
+MESES_NOMBRE = [
+    '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
+
+
+def _historico_filtrado(request):
+    """Aplica los filtros de AnalisisKgsInymForm (fecha desde/hasta,
+    opcionales) sobre RetencionInymHistorico. Devuelve (form, queryset,
+    rol_operador) -- centralizado para que la pantalla y las 6
+    exportaciones (Excel/PDF x 3 secciones) usen siempre el mismo
+    criterio."""
+    form = AnalisisKgsInymForm(request.GET or None)
+    qs = RetencionInymHistorico.objects.all()
+    rol_operador = 'retenido'
+    if form.is_valid():
+        fecha_desde = form.cleaned_data.get('fecha_desde')
+        fecha_hasta = form.cleaned_data.get('fecha_hasta')
+        rol_operador = form.cleaned_data.get('rol_operador') or 'retenido'
+        if fecha_desde:
+            qs = qs.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            qs = qs.filter(fecha__lte=fecha_hasta)
+    return form, qs, rol_operador
+
+
+def _campo_operador(rol_operador):
+    return 'operador_emisor' if rol_operador == 'emisor' else 'operador_retenido'
+
+
+def _pivot_operador_anio(qs, rol_operador):
+    """Devuelve (filas_pivot, anios): filas_pivot es una lista de dicts
+    {'id', 'nombre', 'valores': {año: kgs}}, uno por operador (según
+    rol_operador), ordenados por nombre; anios es la lista ordenada de
+    años que aparecen en los datos."""
+    campo = _campo_operador(rol_operador)
+    registros = (
+        qs.filter(**{f'{campo}__isnull': False})
+        .annotate(anio=ExtractYear('fecha'))
+        .values('anio', f'{campo}_id', f'{campo}__entidad__nombre', f'{campo}__tipo_operador__nombre')
+        .annotate(kgs_total=Sum('kgs'))
+    )
+
+    operadores = {}
+    anios = set()
+    for r in registros:
+        anios.add(r['anio'])
+        op_id = r[f'{campo}_id']
+        if op_id not in operadores:
+            operadores[op_id] = {
+                'id': op_id,
+                'nombre': f"{r[f'{campo}__entidad__nombre']} ({r[f'{campo}__tipo_operador__nombre']})",
+                'valores': {},
+            }
+        operadores[op_id]['valores'][r['anio']] = r['kgs_total']
+
+    anios_ordenados = sorted(anios)
+    filas_pivot = sorted(operadores.values(), key=lambda o: o['nombre'].lower())
+    return filas_pivot, anios_ordenados
+
+
+def _analisis_varianza(filas_pivot, anios):
+    """Para cada operador de filas_pivot: año/kgs máximo, año/kgs mínimo,
+    variación % entre ambos, y la variación % interanual (año a año)."""
+    resultado = []
+    for op in filas_pivot:
+        valores = [(anio, op['valores'][anio]) for anio in anios if op['valores'].get(anio) is not None]
+        if not valores:
+            continue
+        anio_max, kgs_max = max(valores, key=lambda t: t[1])
+        anio_min, kgs_min = min(valores, key=lambda t: t[1])
+        variacion_max_min_pct = (
+            (kgs_max - kgs_min) / kgs_min * 100 if kgs_min else None
+        )
+        variacion_interanual = []
+        for i in range(1, len(valores)):
+            anio_prev, kgs_prev = valores[i - 1]
+            anio_act, kgs_act = valores[i]
+            pct = (kgs_act - kgs_prev) / kgs_prev * 100 if kgs_prev else None
+            variacion_interanual.append({'anio': anio_act, 'pct': pct})
+        resultado.append({
+            'operador': op['nombre'], 'operador_id': op['id'],
+            'anio_max': anio_max, 'kgs_max': kgs_max,
+            'anio_min': anio_min, 'kgs_min': kgs_min,
+            'variacion_max_min_pct': variacion_max_min_pct,
+            'variacion_interanual': variacion_interanual,
+        })
+    return resultado
+
+
+def _pivot_tipo_tarifa_mes(qs):
+    """Devuelve una lista de dicts {'id', 'nombre', 'valores': {mes: kgs},
+    'mes_max', 'kgs_mes_max'}, uno por tipo de tarifa -- kgs totales (de
+    todos los años juntos) por mes, para ver en qué mes se recibe más de
+    cada tipo. 'mes' es 1-12."""
+    registros = (
+        qs.filter(id_tipo_tarifa__isnull=False)
+        .annotate(mes=ExtractMonth('fecha'))
+        .values('id_tipo_tarifa_id', 'id_tipo_tarifa__nombre', 'mes')
+        .annotate(kgs_total=Sum('kgs'))
+    )
+
+    tipos = {}
+    for r in registros:
+        tid = r['id_tipo_tarifa_id']
+        if tid not in tipos:
+            tipos[tid] = {'id': tid, 'nombre': r['id_tipo_tarifa__nombre'] or f'Tipo {tid}', 'valores': {}}
+        tipos[tid]['valores'][r['mes']] = r['kgs_total']
+
+    filas_pivot = sorted(tipos.values(), key=lambda t: (t['nombre'] or '').lower())
+    for t in filas_pivot:
+        if t['valores']:
+            mes_max = max(t['valores'], key=lambda m: t['valores'][m])
+            t['mes_max'] = mes_max
+            t['kgs_mes_max'] = t['valores'][mes_max]
+        else:
+            t['mes_max'] = None
+            t['kgs_mes_max'] = None
+    return filas_pivot
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs(request):
+    form, qs, rol_operador = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    varianza = _analisis_varianza(filas_pivot, anios)
+    mensual = _pivot_tipo_tarifa_mes(qs)
+
+    # El template no puede indexar un dict con una variable de loop --
+    # se arman acá listas ya ordenadas (mismo orden que 'anios'/1..12) para
+    # poder iterarlas en paralelo con un solo {% for %} por fila.
+    filas_tabla = [
+        {'nombre': op['nombre'], 'valores': [op['valores'].get(a) for a in anios]}
+        for op in filas_pivot
+    ]
+    totales_por_anio = [
+        sum((op['valores'].get(a) or 0 for op in filas_pivot), Decimal('0'))
+        for a in anios
+    ]
+    mensual_tabla = [
+        {
+            'nombre': t['nombre'],
+            'valores': [t['valores'].get(m) for m in range(1, 13)],
+            'mes_max_nombre': MESES_NOMBRE[t['mes_max']] if t['mes_max'] else '',
+            'kgs_mes_max': t['kgs_mes_max'],
+        }
+        for t in mensual
+    ]
+
+    return render(request, 'retenciones_inym/retencion_inym_analisis_kgs.html', {
+        'form': form,
+        'rol_operador': rol_operador,
+        'anios': anios,
+        'filas_tabla': filas_tabla,
+        'totales_por_anio': totales_por_anio,
+        'varianza': varianza,
+        'mensual_tabla': mensual_tabla,
+        'meses_nombre_cortos': ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
+        'hay_datos': qs.exists(),
+    })
+
+
+def _filas_analisis_kgs_operadores(filas_pivot, anios):
+    columnas = ['Operador'] + [str(a) for a in anios]
+    filas = [
+        [op['nombre']] + [
+            float(op['valores'][a]) if op['valores'].get(a) is not None else None
+            for a in anios
+        ]
+        for op in filas_pivot
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': set(range(1, len(anios) + 1)),
+        'anchos': [2.2] + [0.8] * len(anios),
+    }
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_operadores_excel(request):
+    _form, qs, rol_operador = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    resultado = _filas_analisis_kgs_operadores(filas_pivot, anios)
+    return excel_response('analisis_kgs_inym_operadores', resultado)
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_operadores_pdf(request):
+    _form, qs, rol_operador = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    resultado = _filas_analisis_kgs_operadores(filas_pivot, anios)
+    return pdf_response('analisis_kgs_inym_operadores', 'Kgs INYM por operador y año', resultado)
+
+
+def _filas_analisis_kgs_varianza(varianza):
+    columnas = ['Operador', 'Año máximo', 'Kgs (máximo)', 'Año mínimo', 'Kgs (mínimo)', 'Variación % (máx. vs mín.)']
+    filas = [
+        [
+            v['operador'], v['anio_max'], float(v['kgs_max']), v['anio_min'], float(v['kgs_min']),
+            float(v['variacion_max_min_pct']) if v['variacion_max_min_pct'] is not None else None,
+        ]
+        for v in varianza
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': {2, 4, 5},
+        'anchos': [2.2, 1.0, 1.0, 1.0, 1.0, 1.3],
+    }
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_varianza_excel(request):
+    _form, qs, rol_operador = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    varianza = _analisis_varianza(filas_pivot, anios)
+    resultado = _filas_analisis_kgs_varianza(varianza)
+    return excel_response('analisis_kgs_inym_varianza', resultado)
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_varianza_pdf(request):
+    _form, qs, rol_operador = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    varianza = _analisis_varianza(filas_pivot, anios)
+    resultado = _filas_analisis_kgs_varianza(varianza)
+    return pdf_response('analisis_kgs_inym_varianza', 'Análisis de varianza por año -- Kgs INYM por operador', resultado)
+
+
+def _filas_analisis_kgs_mensual(mensual):
+    columnas = ['Tipo de tarifa'] + MESES_NOMBRE[1:] + ['Mes con más kgs']
+    filas = [
+        [t['nombre']] + [
+            float(t['valores'][m]) if t['valores'].get(m) is not None else None
+            for m in range(1, 13)
+        ] + [MESES_NOMBRE[t['mes_max']] if t['mes_max'] else '']
+        for t in mensual
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': set(range(1, 13)),
+        'anchos': [1.8] + [0.7] * 12 + [1.1],
+    }
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_mensual_excel(request):
+    _form, qs, _rol_operador = _historico_filtrado(request)
+    mensual = _pivot_tipo_tarifa_mes(qs)
+    resultado = _filas_analisis_kgs_mensual(mensual)
+    return excel_response('analisis_kgs_inym_mensual', resultado)
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_mensual_pdf(request):
+    _form, qs, _rol_operador = _historico_filtrado(request)
+    mensual = _pivot_tipo_tarifa_mes(qs)
+    resultado = _filas_analisis_kgs_mensual(mensual)
+    return pdf_response('analisis_kgs_inym_mensual', 'Kgs INYM por mes y tipo de tarifa', resultado)

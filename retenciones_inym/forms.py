@@ -226,3 +226,74 @@ class ImportadorInymForm(forms.Form):
         if desde and hasta and desde > hasta:
             self.add_error('fecha_hasta', '"Fecha hasta" no puede ser anterior a "Fecha desde".')
         return cleaned_data
+
+
+class ImportadorInymHistoricoForm(forms.Form):
+    """Carga del Excel de INYM a la tabla histórica de análisis
+    (RetencionInymHistorico) -- pedido de Gastón, 24/09/2026. A diferencia
+    de ImportadorInymForm (importación operativa), acá fecha_desde y
+    fecha_hasta son OBLIGATORIAS: no se puede cargar el archivo completo
+    sin querer, porque van a aparecer muchas retenciones de fechas viejas
+    que todavía no se manejaban con esta app."""
+    archivo = forms.FileField(
+        label='Excel de INYM',
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control form-control-sm', 'accept': '.xls,.xlsx'}),
+    )
+    fecha_desde = forms.DateField(
+        required=True,
+        label='Fecha desde',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    fecha_hasta = forms.DateField(
+        required=True,
+        label='Fecha hasta',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        desde = cleaned_data.get('fecha_desde')
+        hasta = cleaned_data.get('fecha_hasta')
+        if desde and hasta and desde > hasta:
+            self.add_error('fecha_hasta', '"Fecha hasta" no puede ser anterior a "Fecha desde".')
+        return cleaned_data
+
+
+class AnalisisKgsInymForm(forms.Form):
+    """Filtros de la pantalla "Análisis Kgs INYM" (histórico) -- rango de
+    fecha opcional sobre RetencionInymHistorico, y qué operador de la
+    retención representa "quién entregó/recibió" los kgs (pedido de
+    Gastón, 24/09/2026: para "Hoja verde" es el operador retenido; para
+    otros tipos de tarifa todavía no está definido, así que se deja
+    elegible en pantalla en vez de asumir uno solo)."""
+    ROL_OPERADOR_CHOICES = [
+        ('retenido', 'Operador retenido (quien recibe)'),
+        ('emisor', 'Operador emisor (quien entrega)'),
+    ]
+    fecha_desde = forms.DateField(
+        required=False,
+        label='Fecha desde',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    fecha_hasta = forms.DateField(
+        required=False,
+        label='Fecha hasta',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    rol_operador = forms.ChoiceField(
+        required=False,
+        choices=ROL_OPERADOR_CHOICES,
+        initial='retenido',
+        label='Agrupar por',
+        widget=forms.Select(attrs={'class': 'form-control form-control-sm'}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        desde = cleaned_data.get('fecha_desde')
+        hasta = cleaned_data.get('fecha_hasta')
+        if desde and hasta and desde > hasta:
+            self.add_error('fecha_hasta', '"Fecha hasta" no puede ser anterior a "Fecha desde".')
+        if not cleaned_data.get('rol_operador'):
+            cleaned_data['rol_operador'] = 'retenido'
+        return cleaned_data
