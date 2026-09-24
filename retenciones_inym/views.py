@@ -83,8 +83,12 @@ def _retencion_inym_listado_filtrado(request):
     siempre lo mismo que se está viendo. Pedido de Gastón (24/09/2026):
     poder filtrar por "desde dónde fue agregada" (agregado_desde), tipo de
     tarifa, id y N° de certificado INYM, además de los filtros que ya había
-    (fecha, operador retenido)."""
-    q_fecha = request.GET.get('fecha', '').strip()
+    (fecha, operador retenido). La fecha pasó de ser un filtro exacto a un
+    rango "desde/hasta" (mismo pedido, misma conversación), ambos extremos
+    opcionales e independientes -- mismo criterio que
+    ChequesRecibidosSinPagoFiltroForm en movimientos_caja."""
+    q_fecha_desde = request.GET.get('fecha_desde', '').strip()
+    q_fecha_hasta = request.GET.get('fecha_hasta', '').strip()
     q_retenido = request.GET.get('retenido', '').strip()
     q_agregado_desde = request.GET.get('agregado_desde', '').strip()
     q_tipo_tarifa = request.GET.get('tipo_tarifa', '').strip()
@@ -96,8 +100,13 @@ def _retencion_inym_listado_filtrado(request):
         'operador_emisor__entidad', 'operador_emisor__tipo_operador',
         'operador_retenido__entidad', 'operador_retenido__tipo_operador',
     )
-    if q_fecha:
-        qs = qs.filter(fecha=q_fecha)
+    # Pedido de Gastón (24/09/2026): filtro de fecha "desde/hasta" en vez de
+    # una fecha exacta -- mismo criterio que ChequesRecibidosSinPagoFiltroForm
+    # (movimientos_caja), ambos extremos opcionales e independientes.
+    if q_fecha_desde:
+        qs = qs.filter(fecha__gte=q_fecha_desde)
+    if q_fecha_hasta:
+        qs = qs.filter(fecha__lte=q_fecha_hasta)
     if q_retenido:
         qs = qs.filter(operador_retenido__entidad__nombre__icontains=q_retenido)
     if q_agregado_desde == AGREGADO_DESDE_VACIO:
@@ -118,8 +127,8 @@ def _retencion_inym_listado_filtrado(request):
         'total': 'total',
     })
     return qs, {
-        'fecha': q_fecha, 'retenido': q_retenido, 'agregado_desde': q_agregado_desde,
-        'tipo_tarifa': q_tipo_tarifa, 'id': q_id, 'numero': q_numero,
+        'fecha_desde': q_fecha_desde, 'fecha_hasta': q_fecha_hasta, 'retenido': q_retenido,
+        'agregado_desde': q_agregado_desde, 'tipo_tarifa': q_tipo_tarifa, 'id': q_id, 'numero': q_numero,
     }
 
 
@@ -129,7 +138,8 @@ def retencion_inym_listado(request):
 
     return render(request, 'retenciones_inym/retencion_inym_listado.html', {
         'registros': registros,
-        'q_fecha': filtros['fecha'], 'q_retenido': filtros['retenido'],
+        'q_fecha_desde': filtros['fecha_desde'], 'q_fecha_hasta': filtros['fecha_hasta'],
+        'q_retenido': filtros['retenido'],
         'q_agregado_desde': filtros['agregado_desde'], 'q_tipo_tarifa': filtros['tipo_tarifa'],
         'q_id': filtros['id'], 'q_numero': filtros['numero'],
         'opciones_agregado_desde': _opciones_agregado_desde(),
