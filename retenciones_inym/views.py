@@ -2,13 +2,15 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.db.models import Count, Max, Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 
+from entidades.models import Inym_Operador
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
 from services.reportes import excel_response, pdf_response
 
-from .forms import ImportadorInymForm, RankingEntidadesForm, RetencionInymForm
+from .forms import ImportadorInymForm, RankingEntidadesForm, RetencionInymForm, texto_operador_inym
 from .importador import ErrorImportacion, importar_filas, leer_filas_excel
 from .models import InymRetencionTipo, RetencionInym
 
@@ -38,8 +40,36 @@ def _tiene_liquidacion_inym(retencion_inym_id):
 
 def _form_a_datos(cleaned_data):
     """Los ModelChoiceField del form devuelven instancias -- achica el
-    diccionario a lo que espera RetencionInym.objects.create()/save()."""
-    return dict(cleaned_data)
+    diccionario a lo que espera RetencionInym.objects.create()/save().
+    También saca los CharField "_nombre" del buscador de operador (sólo
+    existen para la UI -- ver operador_emisor_nombre/operador_retenido_nombre
+    en forms.py -- RetencionInym no tiene esos campos)."""
+    datos = dict(cleaned_data)
+    datos.pop('operador_emisor_nombre', None)
+    datos.pop('operador_retenido_nombre', None)
+    return datos
+
+
+def operador_inym_buscar(request):
+    """Devuelve, en JSON, hasta 20 operadores INYM (Inym_Operador) cuyo
+    nombre de entidad o CUIT contengan el texto buscado, o cuyo id de
+    operador coincida exactamente -- buscador para "Operador emisor"/
+    "Operador retenido" del alta y modificación de Retención INYM (antes
+    un <select> con todos los operadores cargados). Pedido de Gastón,
+    24/09/2026; mismo patrón que entidades.views.entidad_buscar /
+    retenciones.views.comprobante_buscar_para_retencion."""
+    q = request.GET.get('q', '').strip()
+    resultados = []
+    if len(q) >= 2:
+        filtro = Q(entidad__nombre__icontains=q) | Q(entidad__cuit__icontains=q)
+        if q.isdigit():
+            filtro |= Q(id=int(q))
+        operadores = (
+            Inym_Operador.objects.select_related('entidad', 'tipo_operador')
+            .filter(filtro).order_by('entidad__nombre')[:20]
+        )
+        resultados = [{'id': op.id, 'text': texto_operador_inym(op)} for op in operadores]
+    return JsonResponse({'resultados': resultados})
 
 
 SUFIJO_EDITADO_POR_APP = ' (editado por app)'
@@ -178,7 +208,12 @@ def _filas_retencion_inym_listado(registros):
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {9, 10, 11},  # Kgs, Tarifa, Total
+        # Tarifa (índice 10) queda afuera a propósito: columnas_numericas
+        # fuerza formato de 2 decimales (moneda, "#,##0.00" / separador de
+        # miles), y la Tarifa puede tener hasta 6 (pedido de Gastón,
+        # 24/09/2026 -- ver forms.py). Kgs y Total sí son montos/pesos de
+        # toda la vida, siguen en 2 decimales.
+        'columnas_numericas': {9, 11},  # Kgs, Total
         'anchos': [0.7, 0.7, 1.1, 1.0, 1.6, 1.0, 1.0, 1.6, 1.0, 0.7, 0.7, 0.9, 0.9, 0.8, 1.3],
     }
 
@@ -238,7 +273,9 @@ def retencion_inym_modificar(request, pk):
             'periodo': registro.periodo,
             'id_tipo_tarifa': registro.id_tipo_tarifa_id,
             'operador_emisor': registro.operador_emisor_id,
+            'operador_emisor_nombre': texto_operador_inym(registro.operador_emisor) if registro.operador_emisor_id else '',
             'operador_retenido': registro.operador_retenido_id,
+            'operador_retenido_nombre': texto_operador_inym(registro.operador_retenido) if registro.operador_retenido_id else '',
             'kgs': registro.kgs,
             'tarifa': registro.tarifa,
             'total': registro.total,

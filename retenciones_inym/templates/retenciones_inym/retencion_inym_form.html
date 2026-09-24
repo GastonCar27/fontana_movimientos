@@ -35,11 +35,6 @@
                         {{ form.id_tipo_tarifa }}
                     </div>
                     <div class="form-group col-md-2">
-                        <label>{{ form.eliminacion.label }}</label>
-                        {{ form.eliminacion }}
-                        <small class="form-text text-muted">Fecha en la que INYM anuló/eliminó esta retención en su registro oficial (si corresponde).</small>
-                    </div>
-                    <div class="form-group col-md-2">
                         <label>{{ form.id_certificado_inym.label }}</label>
                         {{ form.id_certificado_inym }}
                         <small class="form-text text-muted">{{ form.id_certificado_inym.help_text }}</small>
@@ -47,13 +42,18 @@
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group col-md-4">
-                        <label>{{ form.operador_emisor.label }}</label>
+                    <div class="form-group col-md-4 position-relative">
+                        <label id="label-operador-emisor-buscador">{{ form.operador_emisor_nombre.label }}</label>
+                        {{ form.operador_emisor_nombre }}
                         {{ form.operador_emisor }}
+                        <div id="operador-emisor-resultados" class="operador-inym-resultados"></div>
+                        {% if form.operador_emisor.errors %}<div class="text-danger small">{{ form.operador_emisor.errors|join:", " }}</div>{% endif %}
                     </div>
-                    <div class="form-group col-md-4">
-                        <label>{{ form.operador_retenido.label }}</label>
+                    <div class="form-group col-md-4 position-relative">
+                        <label id="label-operador-retenido-buscador">{{ form.operador_retenido_nombre.label }}</label>
+                        {{ form.operador_retenido_nombre }}
                         {{ form.operador_retenido }}
+                        <div id="operador-retenido-resultados" class="operador-inym-resultados"></div>
                         {% if form.operador_retenido.errors %}<div class="text-danger small">{{ form.operador_retenido.errors|join:", " }}</div>{% endif %}
                     </div>
                 </div>
@@ -75,6 +75,14 @@
                 {% if form.non_field_errors %}
                     <div class="text-danger small">{{ form.non_field_errors|join:", " }}</div>
                 {% endif %}
+                <hr>
+                <div class="form-row">
+                    <div class="form-group col-md-2">
+                        <label>{{ form.eliminacion.label }}</label>
+                        {{ form.eliminacion }}
+                        <small class="form-text text-muted">Fecha en la que INYM anuló/eliminó esta retención en su registro oficial (si corresponde).</small>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -83,22 +91,105 @@
     </form>
 </div>
 
+<style>
+/* Buscador de Operador emisor/retenido (pedido de Gastón, 24/09/2026) --
+   mismo criterio visual que .entidad-resultados en
+   retenciones/templates/retenciones/retencion_form.html. */
+.operador-inym-resultados {
+    position: absolute;
+    top: 100%;
+    left: 15px;
+    right: 15px;
+    background: #fff;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+.operador-inym-resultados div {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.operador-inym-resultados div:hover {
+    background: #f0f0f0;
+}
+</style>
+
 <script>
 (function () {
     const kgs = document.getElementById('id_kgs');
     const tarifa = document.getElementById('id_tarifa');
     const total = document.getElementById('id_total');
-    if (!kgs || !tarifa || !total) return;
-
-    function recalcular() {
-        const valKgs = parseFloat(kgs.value);
-        const valTarifa = parseFloat(tarifa.value);
-        if (!isNaN(valKgs) && !isNaN(valTarifa)) {
-            total.value = (valKgs * valTarifa).toFixed(2);
+    if (kgs && tarifa && total) {
+        function recalcular() {
+            const valKgs = parseFloat(kgs.value);
+            const valTarifa = parseFloat(tarifa.value);
+            if (!isNaN(valKgs) && !isNaN(valTarifa)) {
+                total.value = (valKgs * valTarifa).toFixed(2);
+            }
         }
+        kgs.addEventListener('input', recalcular);
+        tarifa.addEventListener('input', recalcular);
     }
-    kgs.addEventListener('input', recalcular);
-    tarifa.addEventListener('input', recalcular);
+
+    // --- Buscador de Operador emisor/retenido con autocompletado (pedido
+    // de Gastón, 24/09/2026 -- reemplaza los <select> con todos los
+    // operadores INYM cargados). Mismo patrón que el buscador de
+    // Entidad de retenciones/templates/retenciones/retencion_form.html:
+    // un input de texto visible + un campo oculto (id real, lo que se
+    // guarda) + un <div> con los resultados. ---
+    function conectarBuscadorOperador(idInput, idHidden, idResultados) {
+        const input = document.getElementById(idInput);
+        const hidden = document.getElementById(idHidden);
+        const resultados = document.getElementById(idResultados);
+        if (!input || !hidden || !resultados) return;
+        let timeoutId = null;
+
+        input.addEventListener('input', function () {
+            hidden.value = '';
+            const q = input.value.trim();
+
+            clearTimeout(timeoutId);
+            if (q.length < 2) {
+                resultados.style.display = 'none';
+                resultados.innerHTML = '';
+                return;
+            }
+
+            timeoutId = setTimeout(function () {
+                fetch(`{% url 'retenciones_inym:operador_buscar' %}?q=${encodeURIComponent(q)}`)
+                    .then(resp => resp.json())
+                    .then(data => {
+                        resultados.innerHTML = '';
+                        if (data.resultados.length === 0) {
+                            resultados.style.display = 'none';
+                            return;
+                        }
+                        data.resultados.forEach(function (item) {
+                            const div = document.createElement('div');
+                            div.textContent = item.text;
+                            div.addEventListener('click', function () {
+                                input.value = item.text;
+                                hidden.value = item.id;
+                                resultados.style.display = 'none';
+                            });
+                            resultados.appendChild(div);
+                        });
+                        resultados.style.display = 'block';
+                    });
+            }, 250);
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!resultados.contains(e.target) && e.target !== input) {
+                resultados.style.display = 'none';
+            }
+        });
+    }
+
+    conectarBuscadorOperador('id_operador_emisor_nombre', 'id_operador_emisor', 'operador-emisor-resultados');
+    conectarBuscadorOperador('id_operador_retenido_nombre', 'id_operador_retenido', 'operador-retenido-resultados');
 })();
 </script>
 {% endblock %}

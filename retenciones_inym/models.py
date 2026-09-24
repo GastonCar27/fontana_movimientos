@@ -21,7 +21,14 @@ class RetencionInym(models.Model):
     kgs = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
     total = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
     eliminacion = models.DateField(blank=True, null=True)
-    tarifa = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    # Pedido de Gastón (24/09/2026): hasta 6 decimales -- hay tarifas reales
+    # como 129,856600. La columna real en MySQL (managed=False) también hay
+    # que ampliarla a mano, ver
+    # sql/2026-09-24_ampliar_decimales_tarifa_retencion_inym.sql (primero en
+    # la base de pruebas, después en producción -- mismo criterio que
+    # id_certificado_inym más abajo). Sin correr ese script, MySQL sigue
+    # redondeando a 2 decimales al guardar aunque el ORM ya declare 6 acá.
+    tarifa = models.DecimalField(max_digits=20, decimal_places=6, blank=True, null=True)
     agregado_desde = models.CharField(max_length=45, blank=True, null=True)
     # N° de certificado de INYM (columna IDCERTIFICADO del Excel de importación).
     # OJO: NO es único por sí solo -- INYM lo numera por separado para cada

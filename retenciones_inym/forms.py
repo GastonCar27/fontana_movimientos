@@ -36,14 +36,19 @@ class RankingEntidadesForm(forms.Form):
         return cleaned_data
 
 
-class OperadorInymChoiceField(forms.ModelChoiceField):
-    """Mismo criterio de etiqueta que Inym_Operador.__str__ / que
-    fontana_escritorio usa para listar operadores INYM: entidad + tipo de
-    operador, para poder distinguir cuando una misma entidad tiene más de
-    un rol INYM (por ejemplo Productor y Secadero)."""
+def texto_operador_inym(operador):
+    """Mismo criterio de etiqueta que fontana_escritorio usa para listar
+    operadores INYM: entidad + tipo de operador, para poder distinguir
+    cuando una misma entidad tiene más de un rol INYM (por ejemplo
+    Productor y Secadero). Usado tanto por el <option>/valor precargado del
+    buscador (ver OperadorInymChoiceField abajo y retenciones_inym/views.py)
+    como por el resultado JSON del buscador (operador_inym_buscar)."""
+    return f'{operador.entidad.nombre} ({operador.tipo_operador.nombre})'
 
+
+class OperadorInymChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        return f'{obj.entidad.nombre} ({obj.tipo_operador.nombre})'
+        return texto_operador_inym(obj)
 
 
 class RetencionInymForm(forms.Form):
@@ -74,25 +79,58 @@ class RetencionInymForm(forms.Form):
         label='Tipo de tarifa',
         widget=forms.Select(attrs={'class': 'form-control form-control-sm'}),
     )
+    # Pedido de Gastón (24/09/2026): reemplazar los <select> de Operador
+    # emisor/retenido (con TODOS los operadores INYM cargados) por un
+    # buscador con autocompletado, mismo patrón que
+    # retenciones.forms.RetencionHeaderForm.entidad/entidad_nombre --
+    # ModelChoiceField oculto (valida el id elegido, sigue restringido al
+    # queryset) + CharField visible aparte para tipear y buscar (ver
+    # retenciones_inym/views.py::operador_inym_buscar y
+    # retencion_inym_form.html). El campo oculto sigue siendo la fuente de
+    # verdad que se guarda -- el CharField de texto es sólo para la UI.
     operador_emisor = OperadorInymChoiceField(
-        queryset=Inym_Operador.objects.select_related('entidad', 'tipo_operador').order_by('entidad__nombre'),
+        queryset=Inym_Operador.objects.select_related('entidad', 'tipo_operador'),
         required=False,
         label='Operador emisor',
-        widget=forms.Select(attrs={'class': 'form-control form-control-sm'}),
+        widget=forms.HiddenInput(),
+    )
+    operador_emisor_nombre = forms.CharField(
+        required=False,
+        label='Operador emisor',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-sm operador-inym-buscador',
+            'autocomplete': 'off',
+            'placeholder': 'Buscar por nombre o CUIT...',
+        }),
     )
     operador_retenido = OperadorInymChoiceField(
-        queryset=Inym_Operador.objects.select_related('entidad', 'tipo_operador').order_by('entidad__nombre'),
+        queryset=Inym_Operador.objects.select_related('entidad', 'tipo_operador'),
         required=True,
         label='Operador retenido',
-        widget=forms.Select(attrs={'class': 'form-control form-control-sm'}),
+        widget=forms.HiddenInput(),
+    )
+    operador_retenido_nombre = forms.CharField(
+        required=False,
+        label='Operador retenido',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-sm operador-inym-buscador',
+            'autocomplete': 'off',
+            'placeholder': 'Buscar por nombre o CUIT...',
+        }),
     )
     kgs = forms.DecimalField(
         required=False, label='Kgs', max_digits=20, decimal_places=2,
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'id': 'id_kgs'}),
     )
     tarifa = forms.DecimalField(
-        required=False, label='Tarifa', max_digits=20, decimal_places=2,
-        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'id': 'id_tarifa'}),
+        # Pedido de Gastón (24/09/2026): hasta 6 decimales -- hay tarifas
+        # reales como 129,856600. OJO: la columna real de MySQL
+        # (managed=False) también hay que ampliarla a mano, ver
+        # sql/2026-09-24_ampliar_decimales_tarifa_retencion_inym.sql -- sin
+        # correr ese script, MySQL sigue redondeando a 2 decimales al
+        # guardar aunque este form ya acepte hasta 6.
+        required=False, label='Tarifa', max_digits=20, decimal_places=6,
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.000001', 'id': 'id_tarifa'}),
     )
     total = forms.DecimalField(
         required=False, label='Total', max_digits=20, decimal_places=2,

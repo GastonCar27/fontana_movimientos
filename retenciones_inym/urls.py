@@ -9,6 +9,7 @@ urlpatterns = [
     path('listado/excel/', views.retencion_inym_listado_excel, name='listado_excel'),
     path('listado/pdf/', views.retencion_inym_listado_pdf, name='listado_pdf'),
     path('alta/', views.retencion_inym_alta, name='alta'),
+    path('operador-buscar/', views.operador_inym_buscar, name='operador_buscar'),
     path('<int:pk>/modificar/', views.retencion_inym_modificar, name='modificar'),
     path('<int:pk>/eliminar/', views.retencion_inym_eliminar, name='eliminar'),
     path('importar/', views.retencion_inym_importar, name='importar'),
