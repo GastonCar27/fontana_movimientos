@@ -701,6 +701,16 @@ def _pivot_tipo_tarifa_mes(qs):
     return filas_pivot
 
 
+def _totales_por_anio(filas_pivot, anios):
+    """Suma de kgs de todos los operadores, por año -- fila "Total" al pie
+    de la tabla de Kgs por operador y año (pantalla y export). Pedido de
+    Gastón, 24/09/2026."""
+    return [
+        sum((op['valores'].get(a) or 0 for op in filas_pivot), Decimal('0'))
+        for a in anios
+    ]
+
+
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs(request):
     form, qs, rol_operador = _historico_filtrado(request)
@@ -715,10 +725,7 @@ def retencion_inym_analisis_kgs(request):
         {'nombre': op['nombre'], 'valores': [op['valores'].get(a) for a in anios]}
         for op in filas_pivot
     ]
-    totales_por_anio = [
-        sum((op['valores'].get(a) or 0 for op in filas_pivot), Decimal('0'))
-        for a in anios
-    ]
+    totales_por_anio = _totales_por_anio(filas_pivot, anios)
     mensual_tabla = [
         {
             'nombre': t['nombre'],
@@ -751,6 +758,11 @@ def _filas_analisis_kgs_operadores(filas_pivot, anios):
         ]
         for op in filas_pivot
     ]
+    # Fila "Total" al pie -- pedido de Gastón (24/09/2026), mismo total que
+    # ya se mostraba en pantalla (tfoot de la tabla).
+    if filas_pivot:
+        totales = _totales_por_anio(filas_pivot, anios)
+        filas.append(['Total'] + [float(t) for t in totales])
     return {
         'columnas': columnas,
         'filas': filas,
