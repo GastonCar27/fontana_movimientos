@@ -171,12 +171,63 @@ def retencion_inym_importar(request):
                     )
                 else:
                     messages.info(request, 'No se importó ninguna retención nueva (revisá el detalle abajo).')
+                if resultado['modificadas']:
+                    messages.info(
+                        request,
+                        f"Se completaron datos que faltaban en {resultado['modificadas']} retención(es) "
+                        "que ya estaban cargadas a mano.",
+                    )
+                if resultado['con_diferencias']:
+                    messages.warning(
+                        request,
+                        f"Se encontraron diferencias en {resultado['con_diferencias']} retención(es) que ya "
+                        "tenían datos cargados -- no se modificaron, revisá el detalle abajo (y el Excel/PDF).",
+                    )
+                # Se guarda en la sesión para que los botones de descarga
+                # (Excel/PDF, ver más abajo) funcionen con un GET aparte,
+                # sin tener que volver a subir el archivo ni recalcular nada.
+                if resultado['diferencias']:
+                    request.session['inym_import_diferencias'] = resultado['diferencias']
+                else:
+                    request.session.pop('inym_import_diferencias', None)
     else:
         form = ImportadorInymForm()
 
     return render(request, 'retenciones_inym/retencion_inym_importar.html', {
         'form': form, 'resultado': resultado,
     })
+
+
+def _filas_diferencias_import_inym(diferencias):
+    columnas = ['Retención', 'Certificado INYM', 'Tipo de tarifa', 'Receptor', 'Campo', 'Valor guardado', 'Valor del Excel']
+    filas = [
+        [
+            d['id'], d['id_certificado'], d['tipo_tarifa'], d['receptor'],
+            d['campo'], d['valor_guardado'], d['valor_excel'],
+        ]
+        for d in diferencias
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'anchos': [0.6, 0.9, 1.2, 1.8, 1.0, 1.3, 1.3],
+    }
+
+
+def retencion_inym_importar_diferencias_excel(request):
+    diferencias = request.session.get('inym_import_diferencias') or []
+    resultado = _filas_diferencias_import_inym(diferencias)
+    return excel_response('diferencias_import_inym', resultado)
+
+
+def retencion_inym_importar_diferencias_pdf(request):
+    diferencias = request.session.get('inym_import_diferencias') or []
+    resultado = _filas_diferencias_import_inym(diferencias)
+    return pdf_response(
+        'diferencias_import_inym',
+        'Diferencias encontradas al importar Excel INYM (no aplicadas)',
+        resultado,
+    )
 
 
 # ---------------------------------------------------------------------------

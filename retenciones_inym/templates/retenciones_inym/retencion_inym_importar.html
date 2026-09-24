@@ -42,8 +42,50 @@
                 <li>Filas leídas del Excel: <strong>{{ resultado.total_en_archivo }}</strong></li>
                 <li>Filas dentro del rango de fecha elegido: <strong>{{ resultado.en_rango_fecha }}</strong></li>
                 <li>Retenciones importadas: <strong>{{ resultado.importadas }}</strong></li>
-                <li>Ya estaban cargadas (omitidas): <strong>{{ resultado.duplicadas }}</strong></li>
+                <li>Ya estaban cargadas: <strong>{{ resultado.duplicadas }}</strong></li>
             </ul>
+
+            {% if resultado.modificadas_detalle %}
+            <h6 class="mt-3">Retenciones cargadas a mano a las que se les completó algún dato ({{ resultado.modificadas_detalle|length }})</h6>
+            <p class="text-muted small">
+                Ya estaban cargadas desde este mismo sistema y les faltaba algún dato -- se completó con lo
+                que trae el Excel de INYM (quedaron marcadas como "Simple Modificado por Excel").
+            </p>
+            <ul class="small">
+                {% for m in resultado.modificadas_detalle %}
+                <li>Retención {{ m.id }} (certificado {{ m.id_certificado }}): se completó {{ m.campos|join:", " }}.</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if resultado.diferencias %}
+            <h6 class="mt-3 text-warning">Diferencias encontradas -- NO se modificaron ({{ resultado.diferencias|length }})</h6>
+            <p class="text-muted small">
+                Estos campos ya tenían un dato cargado a mano y el Excel trae uno distinto. No se tocaron --
+                revisalos y, si corresponde, corregilos vos mismo desde "Modificar".
+            </p>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped small">
+                    <thead>
+                        <tr>
+                            <th>Retención</th><th>Certificado</th><th>Tipo de tarifa</th><th>Receptor</th>
+                            <th>Campo</th><th>Valor guardado</th><th>Valor del Excel</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in resultado.diferencias %}
+                        <tr>
+                            <td>{{ d.id }}</td><td>{{ d.id_certificado }}</td><td>{{ d.tipo_tarifa }}</td>
+                            <td>{{ d.receptor }}</td><td>{{ d.campo }}</td><td>{{ d.valor_guardado }}</td>
+                            <td>{{ d.valor_excel }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <a href="{% url 'retenciones_inym:importar_diferencias_excel' %}" class="btn btn-outline-success btn-sm">Descargar Excel</a>
+            <a href="{% url 'retenciones_inym:importar_diferencias_pdf' %}" class="btn btn-outline-danger btn-sm">Descargar PDF</a>
+            {% endif %}
 
             {% if resultado.operadores_creados %}
             <h6 class="mt-3">Operadores INYM creados automáticamente ({{ resultado.operadores_creados|length }})</h6>

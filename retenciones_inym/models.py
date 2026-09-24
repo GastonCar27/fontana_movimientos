@@ -73,3 +73,11 @@ class InymRetencionTipo(models.Model):
     class Meta:
         managed = False
         db_table = 'inym_retencion_tipo'
+
+    def __str__(self):
+        # Pedido de Gastón (24/09/2026): en el <select> de "Tipo de tarifa"
+        # de retencion_inym_form.html (alta Y modificación comparten el
+        # mismo template/form) faltaba este __str__, así que el ModelChoiceField
+        # mostraba el string genérico de Django ("InymRetencionTipo object
+        # (N)") en vez del nombre real de cada tipo de tarifa.
+        return self.nombre or f'Tipo de tarifa {self.id}'

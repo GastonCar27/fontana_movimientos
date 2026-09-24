@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import messages
 from django.db import IntegrityError
 from django.db.models import Max, ProtectedError
@@ -40,18 +41,58 @@ def tipo_listado(request, slug):
     })
 
 
+def _form_class_para_alta(config):
+    """Igual que form_class_para(config), pero si el catálogo tiene
+    `'id_editable': True` en el registry (por ahora sólo "Tipo de
+    Retención INYM" -- pedido de Gastón, 24/09/2026: el id local suele
+    tener que coincidir con el que usa INYM para ese mismo tipo de
+    tarifa) le agrega un campo "ID" opcional: vacío, se sigue asignando
+    el próximo disponible como siempre (`_siguiente_id`); cargado, se usa
+    ese valor tal cual (se valida en `tipo_alta` que no esté repetido).
+
+    A propósito SÓLO se usa en el ALTA (`tipo_alta`), nunca en
+    `tipo_modificar`: el id ya puede estar referenciado desde otra tabla
+    (por ejemplo RetencionInym.id_tipo_tarifa) y cambiarlo ahí rompería
+    esos vínculos -- no es lo que se pidió."""
+    FormClass = form_class_para(config)
+    if not config.get('id_editable'):
+        return FormClass
+
+    class FormClassConId(FormClass):
+        id = forms.IntegerField(
+            required=False,
+            label='ID',
+            help_text=(
+                'Dejalo vacío para asignar el próximo disponible automáticamente. '
+                'Completalo si tiene que coincidir con el ID que usa INYM para este tipo de tarifa.'
+            ),
+            widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
+        )
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # "ID" primero, antes de los campos propios del catálogo.
+            self.fields = {'id': self.fields.pop('id'), **self.fields}
+
+    return FormClassConId
+
+
 def tipo_alta(request, slug):
     config = _config_o_404(slug)
-    FormClass = form_class_para(config)
+    FormClass = _form_class_para_alta(config)
 
     if request.method == 'POST':
         form = FormClass(request.POST)
         if form.is_valid():
-            objeto = form.save(commit=False)
-            objeto.id = _siguiente_id(config['model'])
-            objeto.save(force_insert=True)
-            messages.success(request, f'{config["nombre_singular"]} "{objeto}" se creó correctamente.')
-            return redirect('tipos:listado', slug=slug)
+            id_elegido = form.cleaned_data.get('id') if config.get('id_editable') else None
+            if id_elegido and config['model'].objects.filter(pk=id_elegido).exists():
+                form.add_error('id', f'Ya existe un {config["nombre_singular"].lower()} con el ID {id_elegido}.')
+            else:
+                objeto = form.save(commit=False)
+                objeto.id = id_elegido or _siguiente_id(config['model'])
+                objeto.save(force_insert=True)
+                messages.success(request, f'{config["nombre_singular"]} "{objeto}" se creó correctamente.')
+                return redirect('tipos:listado', slug=slug)
     else:
         form = FormClass()
 

@@ -103,6 +103,12 @@ TIPOS_REGISTRY = [
         'model': InymRetencionTipo,
         'campos': [('nombre', 'Nombre')],
         'orden': 'nombre',
+        # Pedido de Gastón (24/09/2026): en el alta de este catálogo en
+        # particular, el ID local suele tener que coincidir con el que
+        # usa INYM para ese mismo tipo de tarifa -- se puede elegir a
+        # mano (opcional, ver tipos/views.py::_form_class_para_alta).
+        # Ningún otro catálogo del registry usa esto por ahora.
+        'id_editable': True,
     },
     {
         'slug': 'item-tipo',

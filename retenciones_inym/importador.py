@@ -14,11 +14,27 @@ Cómo funciona, en criollo:
   2. `importar_filas` recibe esa lista + un rango de fecha (desde/hasta,
      ambos opcionales) y hace el trabajo pesado:
        - Filtra por fecha.
-       - Descarta las filas cuyo (id_certificado, id_tipo_tarifa) ya está
+       - Para las filas cuyo (id_certificado, id_tipo_tarifa) ya está
          cargado en `retencion_inym` (ese es el par que identifica a una
          retención de INYM sin ambigüedad -- el N° de certificado por sí
          solo NO alcanza, porque INYM lo numera por separado para cada tipo
-         de tarifa).
+         de tarifa):
+           - Si esa retención se había guardado a mano desde este mismo
+             app (agregado_desde == AGREGADO_DESDE_MANUAL, un alta
+             "simple" hecha por Gastón desde el form), no se descarta sin
+             más: se completan los campos que en la base están vacíos con
+             el dato del Excel (y se marca
+             agregado_desde = AGREGADO_DESDE_SIMPLE_MODIFICADO), y si
+             algún campo YA tenía un valor cargado y el Excel trae uno
+             distinto, ESE campo no se toca -- queda registrado aparte, en
+             resultado['diferencias'], para revisar y decidir a mano (no
+             se pisa nada que Gastón ya haya cargado él mismo). Ver
+             _actualizar_desde_excel más abajo. Pedido de Gastón,
+             24/09/2026.
+           - Si ya venía de un import anterior (agregado_desde ==
+             AGREGADO_DESDE_EXCEL o AGREGADO_DESDE_SIMPLE_MODIFICADO), se
+             sigue descartando sin más (mismo comportamiento de siempre) --
+             ese caso ya pasó por esta misma lógica una vez.
        - Si el operador emisor o retenido de una fila no existe todavía en
          `inym_operador`, lo crea (junto con la entidad y/o el tipo de
          operador, si tampoco existen), usando el mismo ID de operador que
@@ -33,10 +49,14 @@ Cómo funciona, en criollo:
          inventar sobre la marcha).
        - Inserta las retenciones nuevas dentro de una transacción, con el
          mismo criterio de ID manual (MAX(id)+1) que usa el resto del app
-         para esta tabla.
+         para esta tabla. Las filas nuevas quedan con
+         agregado_desde = AGREGADO_DESDE_EXCEL.
      Devuelve un dict-resumen para mostrarle a Gastón: cuántas se
-     importaron, cuántas ya estaban, qué operadores se crearon solos, y
-     qué filas no se pudieron cargar (con el motivo).
+     importaron, cuántas ya estaban, a cuántas de las que ya estaban se
+     les completó algún dato vacío, en cuántas se encontraron diferencias
+     sin aplicar (con el detalle en 'diferencias', para mostrar en
+     pantalla y/o exportar a Excel/PDF), qué operadores se crearon solos,
+     y qué filas no se pudieron cargar (con el motivo).
 
 Las columnas OPER_ORIGEN/IDEMPRESA_ORIGEN/NOMBRE_ORIGEN/TIPO_OPER_ORIGEN
 (tabla `retencion_inym_origen`), IDCERT_NO_APLICACION/IMPORTE_NO_RETENIDO
@@ -59,6 +79,37 @@ COLUMNAS_REQUERIDAS = [
     'IDOPERADOR', 'TIPO_OPER', 'IDEMPRESA', 'NOMBRE',
     'OPER_RETENIDO', 'IDEMPRESA_RETENIDO', 'TIPO_OPER_RETENIDO', 'NOMBRE_RETENIDO',
     'KILOS', 'IMPORTE', 'FECHA_ELIMINACION',
+]
+
+# Valores de `retencion_inym.agregado_desde` que usa el sistema -- ver
+# también retenciones_inym/views.py (alta manual) y este mismo archivo
+# (import por Excel). 'importador_excel_inym' fue el valor original que se
+# usó del 2026-09-15 al 2026-09-24; se cambió a 'excel_inym' a pedido de
+# Gastón (24/09/2026) por ser más corto/claro, sin efecto en ningún otro
+# lado del código (no se filtra ni se lee por ese valor en ningún otro
+# archivo).
+AGREGADO_DESDE_MANUAL = 'retenciones_inym_app'
+AGREGADO_DESDE_EXCEL = 'excel_inym'
+AGREGADO_DESDE_SIMPLE_MODIFICADO = 'Simple Modificado por Excel'
+
+# Campos que se comparan/completan cuando el Excel encuentra una retención
+# que ya existía y fue cargada a mano (agregado_desde == AGREGADO_DESDE_MANUAL)
+# -- ver _actualizar_desde_excel. Cada entrada:
+#   (nombre_campo, etiqueta, es_operador, campo_id_en_fila)
+# es_operador=True  -> el campo es una FK a Inym_Operador; 'campo_id_en_fila'
+#                       es la clave de `fila` de donde sale el id crudo del
+#                       Excel para comparar (se compara por id -- no hace
+#                       falta resolver/crear el operador salvo que haya que
+#                       completar el campo).
+CAMPOS_COMPARABLES = [
+    ('fecha', 'Fecha', False, None),
+    ('periodo', 'Período', False, None),
+    ('operador_emisor', 'Operador emisor', True, 'id_operador_emisor'),
+    ('operador_retenido', 'Operador retenido', True, 'id_operador_retenido'),
+    ('kgs', 'Kilos', False, None),
+    ('tarifa', 'Tarifa', False, None),
+    ('total', 'Importe', False, None),
+    ('eliminacion', 'Fecha de eliminación', False, None),
 ]
 
 
@@ -256,6 +307,78 @@ def _resolver_operador(id_operador, cuit, nombre, tipo_oper_nombre, contexto):
     return operador
 
 
+def _formatear_valor_comparacion(valor):
+    if valor is None or valor == '':
+        return '(vacío)'
+    return str(valor)
+
+
+def _actualizar_desde_excel(registro, fila, contexto, resultado):
+    """`registro` ya existe y se había guardado a mano desde este app
+    (agregado_desde == AGREGADO_DESDE_MANUAL) -- pedido de Gastón,
+    24/09/2026. Completa con el dato del Excel los campos de
+    CAMPOS_COMPARABLES que en la base están vacíos (y si completó algo,
+    marca agregado_desde = AGREGADO_DESDE_SIMPLE_MODIFICADO y guarda). Si
+    un campo YA tenía un valor cargado y el Excel trae uno distinto, NO lo
+    toca -- solo lo agrega a resultado['diferencias'] para que se pueda
+    revisar aparte (pantalla + Excel/PDF descargable, ver
+    retenciones_inym/views.py)."""
+    campos_completados = []
+    hubo_diferencia = False
+
+    for campo, etiqueta, es_operador, campo_id_en_fila in CAMPOS_COMPARABLES:
+        valor_guardado = getattr(registro, f'{campo}_id' if es_operador else campo)
+        valor_excel_crudo = fila.get(campo_id_en_fila) if es_operador else fila.get(campo)
+        excel_vacio = (not valor_excel_crudo) if es_operador else (valor_excel_crudo is None)
+
+        if valor_guardado is None and not excel_vacio:
+            if es_operador:
+                sufijo = 'emisor' if campo == 'operador_emisor' else 'retenido'
+                nuevo_valor = _resolver_operador(
+                    valor_excel_crudo, fila.get(f'cuit_{sufijo}'), fila.get(f'nombre_{sufijo}'),
+                    fila.get(f'tipo_oper_{sufijo}'), contexto,
+                )
+            else:
+                nuevo_valor = valor_excel_crudo
+            setattr(registro, campo, nuevo_valor)
+            campos_completados.append(etiqueta)
+        elif valor_guardado is not None and not excel_vacio and valor_guardado != valor_excel_crudo:
+            hubo_diferencia = True
+            if es_operador:
+                valor_guardado_texto = str(getattr(registro, campo))
+                operador_excel = contexto['operadores_por_id'].get(valor_excel_crudo)
+                if operador_excel is not None:
+                    valor_excel_texto = str(operador_excel)
+                else:
+                    sufijo = 'emisor' if campo == 'operador_emisor' else 'retenido'
+                    valor_excel_texto = f'{fila.get(f"nombre_{sufijo}") or "(sin nombre)"} (op. INYM {valor_excel_crudo})'
+            else:
+                valor_guardado_texto = _formatear_valor_comparacion(valor_guardado)
+                valor_excel_texto = _formatear_valor_comparacion(valor_excel_crudo)
+            resultado['diferencias'].append({
+                'id': registro.id,
+                'id_certificado': registro.id_certificado_inym,
+                'tipo_tarifa': str(registro.id_tipo_tarifa) if registro.id_tipo_tarifa_id else '',
+                'receptor': str(registro.operador_retenido) if registro.operador_retenido_id else '',
+                'campo': etiqueta,
+                'valor_guardado': valor_guardado_texto,
+                'valor_excel': valor_excel_texto,
+            })
+
+    if campos_completados:
+        registro.agregado_desde = AGREGADO_DESDE_SIMPLE_MODIFICADO
+        registro.save()
+        resultado['modificadas'] += 1
+        resultado['modificadas_detalle'].append({
+            'id': registro.id,
+            'id_certificado': registro.id_certificado_inym,
+            'campos': campos_completados,
+        })
+
+    if hubo_diferencia:
+        resultado['con_diferencias'] += 1
+
+
 def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
     """filas: la lista que devuelve leer_filas_excel (puede traer entradas
     con clave '_error', de filas que no se pudieron interpretar -- se
@@ -265,6 +388,10 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
         'en_rango_fecha': 0,
         'importadas': 0,
         'duplicadas': 0,
+        'modificadas': 0,
+        'modificadas_detalle': [],
+        'con_diferencias': 0,
+        'diferencias': [],
         'operadores_creados': [],
         'tipos_tarifa_no_encontrados': set(),
         'filas_con_error': [(f['fila_excel'], f['_error']) for f in filas if '_error' in f],
@@ -279,10 +406,11 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
     ]
     resultado['en_rango_fecha'] = len(filas_en_rango)
 
-    pares_existentes = set(
-        RetencionInym.objects.exclude(id_certificado_inym__isnull=True)
-        .values_list('id_certificado_inym', 'id_tipo_tarifa_id')
-    )
+    existentes_por_clave = {
+        (r.id_certificado_inym, r.id_tipo_tarifa_id): r
+        for r in RetencionInym.objects.exclude(id_certificado_inym__isnull=True)
+        .select_related('id_tipo_tarifa', 'operador_emisor__entidad', 'operador_retenido__entidad')
+    }
     tipos_por_id = {t.id: t for t in InymRetencionTipo.objects.all()}
 
     contexto = {
@@ -304,8 +432,11 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
     with transaction.atomic():
         for fila in filas_en_rango:
             clave = (fila['id_certificado'], fila['id_tipo_tarifa'])
-            if clave in pares_existentes:
+            registro_existente = existentes_por_clave.get(clave)
+            if registro_existente is not None:
                 resultado['duplicadas'] += 1
+                if registro_existente.agregado_desde == AGREGADO_DESDE_MANUAL:
+                    _actualizar_desde_excel(registro_existente, fila, contexto, resultado)
                 continue
 
             tipo_tarifa = tipos_por_id.get(fila['id_tipo_tarifa'])
@@ -335,7 +466,7 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
                 resultado['filas_con_error'].append((fila['fila_excel'], f'No se pudo resolver el operador: {exc}'))
                 continue
 
-            RetencionInym.objects.create(
+            nueva_retencion = RetencionInym.objects.create(
                 id=siguiente_id_retencion,
                 fecha=fila['fecha'], periodo=fila['periodo'],
                 id_tipo_tarifa=tipo_tarifa,
@@ -343,10 +474,10 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
                 kgs=fila['kgs'], tarifa=fila['tarifa'], total=fila['total'],
                 eliminacion=fila['eliminacion'],
                 id_certificado_inym=fila['id_certificado'],
-                agregado_desde='importador_excel_inym',
+                agregado_desde=AGREGADO_DESDE_EXCEL,
             )
             siguiente_id_retencion += 1
-            pares_existentes.add(clave)
+            existentes_por_clave[clave] = nueva_retencion
             resultado['importadas'] += 1
 
     return resultado
