@@ -261,11 +261,18 @@ class ImportadorInymHistoricoForm(forms.Form):
 
 class AnalisisKgsInymForm(forms.Form):
     """Filtros de la pantalla "Análisis Kgs INYM" (histórico) -- rango de
-    fecha opcional sobre RetencionInymHistorico, y qué operador de la
-    retención representa "quién entregó/recibió" los kgs (pedido de
+    fecha opcional, tipo de tarifa (OBLIGATORIO, ver abajo) y qué operador
+    de la retención representa "quién entregó/recibió" los kgs (pedido de
     Gastón, 24/09/2026: para "Hoja verde" es el operador retenido; para
     otros tipos de tarifa todavía no está definido, así que se deja
-    elegible en pantalla en vez de asumir uno solo)."""
+    elegible en pantalla en vez de asumir uno solo).
+
+    `id_tipo_tarifa` es obligatorio y SIN opción "todas" a propósito --
+    pedido de Gastón (24/09/2026): "que no me permita mezclar los kgs de
+    distintas tarifas" (kgs de Hoja verde y de Hoja verde y yerba mate
+    canchada, por ejemplo, no son comparables/sumables entre sí). El valor
+    por defecto es "Hoja verde" (se resuelve por nombre en la vista, no
+    por id -- el id de cada tipo de tarifa lo define INYM, no es fijo)."""
     ROL_OPERADOR_CHOICES = [
         ('retenido', 'Operador retenido (quien recibe)'),
         ('emisor', 'Operador emisor (quien entrega)'),
@@ -279,6 +286,13 @@ class AnalisisKgsInymForm(forms.Form):
         required=False,
         label='Fecha hasta',
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    id_tipo_tarifa = forms.ModelChoiceField(
+        queryset=InymRetencionTipo.objects.all().order_by('nombre'),
+        required=True,
+        empty_label=None,
+        label='Tipo de tarifa',
+        widget=forms.Select(attrs={'class': 'form-control form-control-sm'}),
     )
     rol_operador = forms.ChoiceField(
         required=False,

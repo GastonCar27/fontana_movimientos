@@ -57,10 +57,22 @@
                         <label>{{ header_form.numero.label }}</label>
                         {{ header_form.numero }}
                     </div>
+                    <div class="form-group col-md-2">
+                        <label>{{ header_form.total.label }}</label>
+                        {{ header_form.total }}
+                        {% if header_form.total.errors %}
+                            <div class="text-danger small">{{ header_form.total.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
                 </div>
                 {% if header_form.non_field_errors %}
                     <div class="text-danger small">{{ header_form.non_field_errors|join:", " }}</div>
                 {% endif %}
+                <p class="text-muted small mb-0 mt-2">
+                    El Total es el de la retención completa (este comprobante/certificado). La suma de
+                    los renglones de abajo no puede superarlo -- si falta vincular alguna factura, puede
+                    quedar por debajo por ahora.
+                </p>
             </div>
         </div>
 
@@ -91,9 +103,12 @@
                     {% for form in formset %}
                     <tr class="renglon-row">
                         <td class="position-relative">
-                            <input type="text" class="form-control form-control-sm comprobante-buscador"
-                                   placeholder="Buscar factura ya cargada..." autocomplete="off">
+                            {{ form.comprobante_texto }}
+                            {{ form.comprobante }}
                             <div class="comprobante-resultados"></div>
+                            {% if form.comprobante.errors %}
+                                <div class="text-danger small">{{ form.comprobante.errors|join:", " }}</div>
+                            {% endif %}
                         </td>
                         <td>{{ form.tipo_comp_origen }}</td>
                         <td>{{ form.punto_venta }}</td>
@@ -116,8 +131,8 @@
         <table style="display:none;"><tbody>
             <tr id="fila-plantilla">
                 <td class="position-relative">
-                    <input type="text" class="form-control form-control-sm comprobante-buscador"
-                           placeholder="Buscar factura ya cargada..." autocomplete="off">
+                    {{ formset.empty_form.comprobante_texto }}
+                    {{ formset.empty_form.comprobante }}
                     <div class="comprobante-resultados"></div>
                 </td>
                 <td>{{ formset.empty_form.tipo_comp_origen }}</td>
@@ -133,13 +148,14 @@
 
         <button type="button" id="btn-agregar-renglon" class="btn btn-sm btn-outline-secondary mb-3">+ Agregar renglón</button>
 
-        <!-- Total sumado de la columna "Retención" de todos los renglones
-             (sin contar los marcados para "Quitar"), se recalcula solo a
-             medida que se completan/editan los renglones -- así se ve antes
-             de guardar, no hace falta esperar a imprimir el PDF/Excel. -->
+        <!-- Suma de la columna "Retención" de todos los renglones (sin
+             contar los marcados para "Quitar"), se recalcula solo a medida
+             que se completan/editan los renglones -- para comparar contra
+             el Total cargado arriba en el encabezado antes de guardar (no
+             pueden superarlo). -->
         <div class="d-flex justify-content-end mb-3">
             <div class="border rounded px-3 py-2 bg-light text-end">
-                <span class="text-muted small">Total retenciones:</span>
+                <span class="text-muted small">Suma de los renglones:</span>
                 <strong id="total-general-retenciones" class="ms-1">$ 0,00</strong>
             </div>
         </div>
@@ -378,12 +394,33 @@
         }
     }
 
+    // --- Bloquea (de sólo lectura) los campos Tipo/Punto de venta/Número/
+    // Fecha de una fila: se usa tanto al elegir una factura del buscador
+    // como al cargar la página con filas ya vinculadas (Modificación). ---
+    function bloquearCamposFila(fila) {
+        const selectTipo = fila.querySelector('select[name$="-tipo_comp_origen"]');
+        const inputPuntoVenta = fila.querySelector('input[name$="-punto_venta"]');
+        const inputNumero = fila.querySelector('input[name$="-numero_comprobante"]');
+        const inputFecha = fila.querySelector('input[name$="-fecha_comp_origen"]');
+        [inputPuntoVenta, inputNumero, inputFecha].forEach(function (campo) {
+            if (campo) {
+                campo.readOnly = true;
+                campo.classList.add('campo-bloqueado');
+            }
+        });
+        if (selectTipo) {
+            selectTipo.classList.add('campo-bloqueado');
+            selectTipo.setAttribute('tabindex', '-1');
+        }
+    }
+
     // --- Buscador de "factura ya cargada" por renglón: según la entidad
     // elegida arriba y la dirección de la retención, ofrece los
     // comprobantes que corresponden (ver
     // retenciones.views.comprobante_buscar_para_retencion) y, al elegir
     // uno, completa Tipo/Punto de venta/Número/Fecha/Importe de esa fila
-    // en vez de tipearlos a mano. ---
+    // en vez de tipearlos a mano, y guarda el vínculo real (campo oculto
+    // "comprobante") -- eso es lo que se guarda como RetencionRenglon. ---
     function buscarComprobantesFila(fila) {
         const input = fila.querySelector('.comprobante-buscador');
         const resultados = fila.querySelector('.comprobante-resultados');
@@ -425,12 +462,20 @@
                     div.addEventListener('click', function () {
                         input.value = item.text;
 
+                        const inputComprobante = fila.querySelector('input[name$="-comprobante"]');
                         const selectTipo = fila.querySelector('select[name$="-tipo_comp_origen"]');
                         const inputPuntoVenta = fila.querySelector('input[name$="-punto_venta"]');
                         const inputNumero = fila.querySelector('input[name$="-numero_comprobante"]');
                         const inputFecha = fila.querySelector('input[name$="-fecha_comp_origen"]');
                         const inputImporte = fila.querySelector('.importe-input');
 
+                        // Esto es lo que realmente se guarda como
+                        // RetencionRenglon.comprobante -- el resto de los
+                        // campos de abajo son sólo para mostrar de un
+                        // vistazo a qué factura corresponde el renglón.
+                        if (inputComprobante) {
+                            inputComprobante.value = item.id;
+                        }
                         if (selectTipo && item.tipo_comp_origen) {
                             selectTipo.value = String(item.tipo_comp_origen);
                         }
@@ -451,20 +496,9 @@
                         // Una vez elegida la factura, sus datos propios quedan
                         // bloqueados (no Importe/Porcentaje/Retención, esos
                         // siguen editables a mano) -- pedido de Gastón,
-                        // 23/09/2026. <select> no soporta "readonly", así que
-                        // ahí se bloquea con la clase (pointer-events: none +
-                        // sin foco por teclado).
-                        [inputPuntoVenta, inputNumero, inputFecha].forEach(function (campo) {
-                            if (campo) {
-                                campo.readOnly = true;
-                                campo.classList.add('campo-bloqueado');
-                            }
-                        });
-                        if (selectTipo) {
-                            selectTipo.classList.add('campo-bloqueado');
-                            selectTipo.setAttribute('tabindex', '-1');
-                        }
-                        input.readOnly = false; // el buscador sigue activo: buscar y elegir otra factura reemplaza y vuelve a bloquear estos campos.
+                        // 23/09/2026.
+                        bloquearCamposFila(fila);
+                        input.readOnly = false; // el buscador sigue activo: buscar y elegir otra factura reemplaza el vínculo y vuelve a bloquear estos campos.
 
                         resultados.style.display = 'none';
                     });
@@ -513,6 +547,13 @@
             eliminar.addEventListener('change', recalcularTotalGeneral);
         }
         conectarBuscadorComprobante(fila);
+        // Si la fila ya vino con una factura vinculada (Modificación, con
+        // renglones ya guardados) sus campos de la factura arrancan
+        // bloqueados, igual que si se acabara de elegir del buscador.
+        const inputComprobante = fila.querySelector('input[name$="-comprobante"]');
+        if (inputComprobante && inputComprobante.value) {
+            bloquearCamposFila(fila);
+        }
     }
 
     document.querySelectorAll('#tabla-renglones tbody tr.renglon-row').forEach(conectarFila);

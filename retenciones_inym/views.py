@@ -586,24 +586,55 @@ MESES_NOMBRE = [
 ]
 
 
+def _tipo_tarifa_por_defecto():
+    """"Hoja verde" es el valor por defecto del filtro de tipo de tarifa de
+    Análisis Kgs INYM -- se busca por NOMBRE (no por id): el id de cada
+    tipo de tarifa lo asigna INYM, no es una constante fija de este
+    sistema. None si el catálogo está vacío o todavía no tiene ese nombre
+    cargado (el form queda sin default y exige elegir uno a mano)."""
+    return (
+        InymRetencionTipo.objects.filter(nombre__iexact='Hoja verde').order_by('id').first()
+        or InymRetencionTipo.objects.filter(nombre__icontains='hoja verde').order_by('id').first()
+    )
+
+
 def _historico_filtrado(request):
-    """Aplica los filtros de AnalisisKgsInymForm (fecha desde/hasta,
-    opcionales) sobre RetencionInymHistorico. Devuelve (form, queryset,
-    rol_operador) -- centralizado para que la pantalla y las 6
-    exportaciones (Excel/PDF x 3 secciones) usen siempre el mismo
-    criterio."""
-    form = AnalisisKgsInymForm(request.GET or None)
-    qs = RetencionInymHistorico.objects.all()
+    """Aplica los filtros de AnalisisKgsInymForm sobre RetencionInymHistorico:
+    fecha desde/hasta (opcionales) y tipo de tarifa (OBLIGATORIO, por
+    defecto "Hoja verde" -- pedido de Gastón, 24/09/2026: "que no me
+    permita mezclar los kgs de distintas tarifas"). Devuelve (form,
+    queryset, rol_operador, tipo_tarifa) -- centralizado para que la
+    pantalla y las 8 exportaciones (Excel/PDF x 4 secciones) usen siempre
+    el mismo criterio.
+
+    El default se inyecta en los datos ANTES de bindear el form (no se usa
+    'initial', que sólo se ve en un form sin bindear) -- así en la primera
+    visita, sin ningún parámetro en la URL, ya queda filtrado por Hoja
+    verde en vez de mostrar un error de "campo obligatorio" o mezclar
+    todo. Si no hay ningún tipo de tarifa válido elegido (catálogo vacío),
+    el queryset queda vacío -- nunca se devuelven datos de varias tarifas
+    mezcladas."""
+    datos = request.GET.copy()
+    if not datos.get('id_tipo_tarifa'):
+        tipo_por_defecto = _tipo_tarifa_por_defecto()
+        if tipo_por_defecto:
+            datos['id_tipo_tarifa'] = str(tipo_por_defecto.id)
+
+    form = AnalisisKgsInymForm(datos)
+    qs = RetencionInymHistorico.objects.none()
     rol_operador = 'retenido'
+    tipo_tarifa = None
     if form.is_valid():
         fecha_desde = form.cleaned_data.get('fecha_desde')
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
         rol_operador = form.cleaned_data.get('rol_operador') or 'retenido'
+        tipo_tarifa = form.cleaned_data['id_tipo_tarifa']
+        qs = RetencionInymHistorico.objects.filter(id_tipo_tarifa=tipo_tarifa)
         if fecha_desde:
             qs = qs.filter(fecha__gte=fecha_desde)
         if fecha_hasta:
             qs = qs.filter(fecha__lte=fecha_hasta)
-    return form, qs, rol_operador
+    return form, qs, rol_operador, tipo_tarifa
 
 
 def _campo_operador(rol_operador):
@@ -711,21 +742,58 @@ def _totales_por_anio(filas_pivot, anios):
     ]
 
 
+def _total_operador(op, anios):
+    """Suma de kgs de UN operador, de todos los años juntos -- columna
+    "Total" al final de cada fila. Pedido de Gastón, 24/09/2026."""
+    return sum((op['valores'].get(a) or 0 for a in anios), Decimal('0'))
+
+
+def _incidencia_pct(valor, total):
+    """% que representa 'valor' sobre 'total' -- None si no hay dato o el
+    total es 0 (para no dividir por cero)."""
+    if valor is None or not total:
+        return None
+    return valor / total * 100
+
+
+def _tabla_incidencia(filas_pivot, anios, totales_por_anio, total_general):
+    """Para cada operador: % que representó sobre el total de CADA año, y %
+    que representa su total sobre el total general (todos los años juntos).
+    Pedido de Gastón, 24/09/2026 -- pantalla y export separados de la tabla
+    de Kgs (misma info, en porcentaje en vez de kilos)."""
+    filas = []
+    for op in filas_pivot:
+        valores_pct = [
+            _incidencia_pct(op['valores'].get(a), totales_por_anio[i])
+            for i, a in enumerate(anios)
+        ]
+        total_pct = _incidencia_pct(_total_operador(op, anios), total_general)
+        filas.append({'nombre': op['nombre'], 'valores': valores_pct, 'total_pct': total_pct})
+    return filas
+
+
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs(request):
-    form, qs, rol_operador = _historico_filtrado(request)
+    form, qs, rol_operador, tipo_tarifa = _historico_filtrado(request)
     filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
     varianza = _analisis_varianza(filas_pivot, anios)
     mensual = _pivot_tipo_tarifa_mes(qs)
+
+    totales_por_anio = _totales_por_anio(filas_pivot, anios)
+    total_general = sum(totales_por_anio, Decimal('0'))
 
     # El template no puede indexar un dict con una variable de loop --
     # se arman acá listas ya ordenadas (mismo orden que 'anios'/1..12) para
     # poder iterarlas en paralelo con un solo {% for %} por fila.
     filas_tabla = [
-        {'nombre': op['nombre'], 'valores': [op['valores'].get(a) for a in anios]}
+        {
+            'nombre': op['nombre'],
+            'valores': [op['valores'].get(a) for a in anios],
+            'total': _total_operador(op, anios),
+        }
         for op in filas_pivot
     ]
-    totales_por_anio = _totales_por_anio(filas_pivot, anios)
+    incidencia_tabla = _tabla_incidencia(filas_pivot, anios, totales_por_anio, total_general)
     mensual_tabla = [
         {
             'nombre': t['nombre'],
@@ -739,9 +807,12 @@ def retencion_inym_analisis_kgs(request):
     return render(request, 'retenciones_inym/retencion_inym_analisis_kgs.html', {
         'form': form,
         'rol_operador': rol_operador,
+        'tipo_tarifa': tipo_tarifa,
         'anios': anios,
         'filas_tabla': filas_tabla,
         'totales_por_anio': totales_por_anio,
+        'total_general': total_general,
+        'incidencia_tabla': incidencia_tabla,
         'varianza': varianza,
         'mensual_tabla': mensual_tabla,
         'meses_nombre_cortos': ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
@@ -750,30 +821,32 @@ def retencion_inym_analisis_kgs(request):
 
 
 def _filas_analisis_kgs_operadores(filas_pivot, anios):
-    columnas = ['Operador'] + [str(a) for a in anios]
+    columnas = ['Operador'] + [str(a) for a in anios] + ['Total']
     filas = [
         [op['nombre']] + [
             float(op['valores'][a]) if op['valores'].get(a) is not None else None
             for a in anios
-        ]
+        ] + [float(_total_operador(op, anios))]
         for op in filas_pivot
     ]
     # Fila "Total" al pie -- pedido de Gastón (24/09/2026), mismo total que
-    # ya se mostraba en pantalla (tfoot de la tabla).
+    # ya se mostraba en pantalla (tfoot de la tabla); la última celda (abajo
+    # a la derecha) es el total general.
     if filas_pivot:
         totales = _totales_por_anio(filas_pivot, anios)
-        filas.append(['Total'] + [float(t) for t in totales])
+        total_general = sum(totales, Decimal('0'))
+        filas.append(['Total'] + [float(t) for t in totales] + [float(total_general)])
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': set(range(1, len(anios) + 1)),
-        'anchos': [2.2] + [0.8] * len(anios),
+        'columnas_numericas': set(range(1, len(anios) + 2)),
+        'anchos': [2.2] + [0.8] * len(anios) + [0.9],
     }
 
 
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs_operadores_excel(request):
-    _form, qs, rol_operador = _historico_filtrado(request)
+    _form, qs, rol_operador, _tipo_tarifa = _historico_filtrado(request)
     filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
     resultado = _filas_analisis_kgs_operadores(filas_pivot, anios)
     return excel_response('analisis_kgs_inym_operadores', resultado)
@@ -781,10 +854,46 @@ def retencion_inym_analisis_kgs_operadores_excel(request):
 
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs_operadores_pdf(request):
-    _form, qs, rol_operador = _historico_filtrado(request)
+    _form, qs, rol_operador, _tipo_tarifa = _historico_filtrado(request)
     filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
     resultado = _filas_analisis_kgs_operadores(filas_pivot, anios)
     return pdf_response('analisis_kgs_inym_operadores', 'Kgs INYM por operador y año', resultado)
+
+
+def _filas_analisis_kgs_incidencia(filas_pivot, anios):
+    totales_por_anio = _totales_por_anio(filas_pivot, anios)
+    total_general = sum(totales_por_anio, Decimal('0'))
+    incidencia = _tabla_incidencia(filas_pivot, anios, totales_por_anio, total_general)
+
+    columnas = ['Operador'] + [f'{a} (%)' for a in anios] + ['Incidencia total (%)']
+    filas = [
+        [fila['nombre']] + [
+            float(v) if v is not None else None for v in fila['valores']
+        ] + [float(fila['total_pct']) if fila['total_pct'] is not None else None]
+        for fila in incidencia
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': set(range(1, len(anios) + 2)),
+        'anchos': [2.2] + [0.8] * len(anios) + [1.1],
+    }
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_incidencia_excel(request):
+    _form, qs, rol_operador, _tipo_tarifa = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    resultado = _filas_analisis_kgs_incidencia(filas_pivot, anios)
+    return excel_response('analisis_kgs_inym_incidencia', resultado)
+
+
+@requiere_grupo('Rankings')
+def retencion_inym_analisis_kgs_incidencia_pdf(request):
+    _form, qs, rol_operador, _tipo_tarifa = _historico_filtrado(request)
+    filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
+    resultado = _filas_analisis_kgs_incidencia(filas_pivot, anios)
+    return pdf_response('analisis_kgs_inym_incidencia', 'Incidencia % de kgs INYM por operador y año', resultado)
 
 
 def _filas_analisis_kgs_varianza(varianza):
@@ -806,7 +915,7 @@ def _filas_analisis_kgs_varianza(varianza):
 
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs_varianza_excel(request):
-    _form, qs, rol_operador = _historico_filtrado(request)
+    _form, qs, rol_operador, _tipo_tarifa = _historico_filtrado(request)
     filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
     varianza = _analisis_varianza(filas_pivot, anios)
     resultado = _filas_analisis_kgs_varianza(varianza)
@@ -815,7 +924,7 @@ def retencion_inym_analisis_kgs_varianza_excel(request):
 
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs_varianza_pdf(request):
-    _form, qs, rol_operador = _historico_filtrado(request)
+    _form, qs, rol_operador, _tipo_tarifa = _historico_filtrado(request)
     filas_pivot, anios = _pivot_operador_anio(qs, rol_operador)
     varianza = _analisis_varianza(filas_pivot, anios)
     resultado = _filas_analisis_kgs_varianza(varianza)
@@ -841,7 +950,7 @@ def _filas_analisis_kgs_mensual(mensual):
 
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs_mensual_excel(request):
-    _form, qs, _rol_operador = _historico_filtrado(request)
+    _form, qs, _rol_operador, _tipo_tarifa = _historico_filtrado(request)
     mensual = _pivot_tipo_tarifa_mes(qs)
     resultado = _filas_analisis_kgs_mensual(mensual)
     return excel_response('analisis_kgs_inym_mensual', resultado)
@@ -849,7 +958,7 @@ def retencion_inym_analisis_kgs_mensual_excel(request):
 
 @requiere_grupo('Rankings')
 def retencion_inym_analisis_kgs_mensual_pdf(request):
-    _form, qs, _rol_operador = _historico_filtrado(request)
+    _form, qs, _rol_operador, _tipo_tarifa = _historico_filtrado(request)
     mensual = _pivot_tipo_tarifa_mes(qs)
     resultado = _filas_analisis_kgs_mensual(mensual)
     return pdf_response('analisis_kgs_inym_mensual', 'Kgs INYM por mes y tipo de tarifa', resultado)

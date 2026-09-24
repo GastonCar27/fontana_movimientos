@@ -33,6 +33,14 @@ urlpatterns = [
         name='analisis_kgs_operadores_pdf',
     ),
     path(
+        'analisis-kgs/incidencia/excel/', views.retencion_inym_analisis_kgs_incidencia_excel,
+        name='analisis_kgs_incidencia_excel',
+    ),
+    path(
+        'analisis-kgs/incidencia/pdf/', views.retencion_inym_analisis_kgs_incidencia_pdf,
+        name='analisis_kgs_incidencia_pdf',
+    ),
+    path(
         'analisis-kgs/varianza/excel/', views.retencion_inym_analisis_kgs_varianza_excel,
         name='analisis_kgs_varianza_excel',
     ),

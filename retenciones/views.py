@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from types import SimpleNamespace
 
 from django.contrib import messages
 from django.db import IntegrityError, transaction
@@ -196,20 +197,123 @@ def _texto_comprobante_origen(retencion, tipos_por_id):
     return f'{abreviatura} {origen}'.strip()
 
 
-def _armar_formset_inicial(lineas, tipos_por_id):
+def _texto_comprobante(comprobante):
+    """Texto para mostrar un Comprobante REAL en el buscador de 'Detalle de
+    las operaciones' y para precargar el campo de sólo-lectura de un
+    RetencionRenglon ya vinculado -- mismo formato en los dos lugares
+    (antes sólo vivía adentro de comprobante_buscar_para_retencion)."""
+    if not comprobante:
+        return ''
+    from movimientos.templatetags.movimientos_extras import separador_miles
+
+    identificador = _combinar_comprobante_origen(
+        comprobante.punto_de_venta, comprobante.numero
+    ) or (comprobante.comprobante_string or '')
+    tipo = comprobante.tipo_comprobante
+    partes = [
+        (tipo.abreviatura or tipo.nombre) if tipo else None,
+        identificador or None,
+        comprobante.fecha.strftime('%d/%m/%Y') if comprobante.fecha else None,
+        f'${separador_miles(comprobante.total)}' if comprobante.total is not None else None,
+    ]
+    return ' - '.join(p for p in partes if p)
+
+
+def _resolver_comprobante_legacy(retencion):
+    """Puente para migrar de forma transparente una Retencion VIEJA (de
+    antes del rediseño de 24/09/2026, con sus propios tipo_comp_origen/
+    comprobante_origen/fecha_comp_origen sueltos y sin ningún
+    RetencionRenglon todavía) al modelo nuevo: intenta encontrar el
+    Comprobante real que le corresponde, con el mismo criterio de
+    dirección/entidad que ya usa comprobante_buscar_para_retencion. Si lo
+    encuentra, Modificación puede guardarse sin que el usuario tenga que
+    volver a buscar y elegir la factura a mano. Devuelve None si no hay
+    datos suficientes o no hay ningún Comprobante que coincida exacto (nunca
+    inventa un vínculo) -- en ese caso el usuario tiene que buscarla y
+    elegirla de nuevo."""
+    if not retencion.entidad_id or not retencion.comprobante_origen:
+        return None
+    punto_venta, numero_comprobante = _parsear_comprobante_origen(retencion.comprobante_origen)
+    if punto_venta is None or numero_comprobante is None:
+        return None
+
+    es_emisor_retencion = retencion.es_emisor if retencion.es_emisor is not None else Retencion.ES_EMISOR
+    qs = Comprobante.objects.filter(
+        entidad_emisor_id=retencion.entidad_id,
+        punto_de_venta=punto_venta,
+        numero=numero_comprobante,
+    )
+    if es_emisor_retencion == Retencion.ES_EMISOR:
+        qs = qs.filter(Q(es_emisor=1) | Q(es_emisor__isnull=True))
+    else:
+        qs = qs.filter(es_emisor=0)
+    if retencion.tipo_comp_origen:
+        qs = qs.filter(tipo_comprobante_id=retencion.tipo_comp_origen)
+    return qs.select_related('tipo_comprobante').first()
+
+
+def _armar_formset_inicial(retencion):
+    """Arma el initial del formset de renglones para Modificación.
+
+    Caso normal (retención creada con la pantalla nueva, o ya migrada):
+    un renglón por cada RetencionRenglon ya vinculado.
+
+    Caso retención VIEJA (de antes del rediseño de 24/09/2026: un solo
+    renglón suelto en la propia Retencion, todavía sin ningún
+    RetencionRenglon) -- para no perder esos datos al abrir Modificar, se
+    arma UN renglón inicial con lo que ya tenía cargado, intentando
+    resolver el Comprobante real que le corresponde (ver
+    _resolver_comprobante_legacy) para que quede prellenado y listo para
+    guardar sin tocar nada; si no se pudo resolver, se prellena igual el
+    texto (para no mostrar la fila en blanco) pero el usuario tiene que
+    buscar y elegir la factura de nuevo antes de poder guardar."""
+    renglones = (
+        RetencionRenglon.objects.filter(retencion=retencion)
+        .select_related('comprobante', 'comprobante__tipo_comprobante')
+        .order_by('id')
+    )
     inicial = []
-    for r in lineas:
-        punto_venta, numero_comprobante = _parsear_comprobante_origen(r.comprobante_origen)
+    for rn in renglones:
+        c = rn.comprobante
         inicial.append({
-            'tipo_comp_origen': r.tipo_comp_origen,
-            'punto_venta': punto_venta,
-            'numero_comprobante': numero_comprobante,
-            'fecha_comp_origen': r.fecha_comp_origen,
-            'subtotal': r.subtotal,
-            'porcentaje': r.porcentaje,
-            'total': r.total,
+            'comprobante': c.id if c else None,
+            'comprobante_texto': _texto_comprobante(c),
+            'tipo_comp_origen': c.tipo_comprobante_id if c else None,
+            'punto_venta': c.punto_de_venta if c else None,
+            'numero_comprobante': c.numero if c else None,
+            'fecha_comp_origen': c.fecha if c else None,
+            'subtotal': rn.neto_gravado,
+            'porcentaje': rn.porcentaje,
+            'total': rn.total,
         })
-    return inicial
+    if inicial:
+        return inicial
+
+    tiene_dato_legacy = retencion.subtotal is not None or retencion.tipo_comp_origen is not None \
+        or retencion.comprobante_origen
+    if not tiene_dato_legacy:
+        return []
+
+    comprobante_legacy = _resolver_comprobante_legacy(retencion)
+    punto_venta, numero_comprobante = _parsear_comprobante_origen(retencion.comprobante_origen)
+    if comprobante_legacy:
+        texto = _texto_comprobante(comprobante_legacy)
+    else:
+        texto = (
+            f'{_texto_comprobante_origen(retencion, _tipos_comprobante_por_id())} '
+            '(factura no vinculada todavía -- buscala y elegila de nuevo)'
+        ).strip()
+    return [{
+        'comprobante': comprobante_legacy.id if comprobante_legacy else None,
+        'comprobante_texto': texto,
+        'tipo_comp_origen': retencion.tipo_comp_origen,
+        'punto_venta': punto_venta,
+        'numero_comprobante': numero_comprobante,
+        'fecha_comp_origen': retencion.fecha_comp_origen,
+        'subtotal': retencion.subtotal,
+        'porcentaje': retencion.porcentaje,
+        'total': retencion.total,
+    }]
 
 
 def comprobante_buscar_para_retencion(request):
@@ -235,8 +339,6 @@ def comprobante_buscar_para_retencion(request):
     emitimos). Mismo criterio direccional que ya usa
     liquidaciones.views._armar_items para ofrecer comprobantes según el
     tipo (pago/cobro) de una liquidación."""
-    from movimientos.templatetags.movimientos_extras import separador_miles
-
     entidad_id = request.GET.get('entidad', '').strip()
     es_emisor_retencion = request.GET.get('es_emisor', '').strip()
     q = request.GET.get('q', '').strip()
@@ -262,16 +364,9 @@ def comprobante_buscar_para_retencion(request):
 
     resultados = []
     for c in comprobantes:
-        identificador = _combinar_comprobante_origen(c.punto_de_venta, c.numero) or (c.comprobante_string or '')
-        partes_texto = [
-            c.tipo_comprobante.abreviatura or c.tipo_comprobante.nombre if c.tipo_comprobante else None,
-            identificador or None,
-            c.fecha.strftime('%d/%m/%Y') if c.fecha else None,
-            f'${separador_miles(c.total)}' if c.total is not None else None,
-        ]
         resultados.append({
             'id': c.id,
-            'text': ' - '.join(p for p in partes_texto if p),
+            'text': _texto_comprobante(c),
             'tipo_comp_origen': c.tipo_comprobante_id,
             'punto_venta': c.punto_de_venta,
             'numero_comprobante': c.numero,
@@ -288,9 +383,20 @@ def comprobante_buscar_para_retencion(request):
 # Alta / Modificación (comparten casi toda la lógica de guardado)
 # ---------------------------------------------------------------------------
 
-def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
-    """Crea los renglones (Retencion) de un comprobante a partir del header
-    form y el formset ya validados. Devuelve la lista de ids creados."""
+def _guardar_grupo(header_form, formset):
+    """Crea UNA Retencion (el encabezado -- un solo comprobante/certificado,
+    con su propio Total cargado a mano) y un RetencionRenglon por cada línea
+    con datos del formset, vinculado al Comprobante real elegido en el
+    buscador (rediseño de 24/09/2026, pedido de Gastón: "cuando cargo una
+    retención con dos renglones me debería guardar solo una retención con
+    el total, y el vínculo nomás debería ser con dos renglones distintos" --
+    antes cada renglón del formset generaba su propia Retencion suelta).
+
+    Devuelve (retencion, cantidad_de_renglones_creados). Las filas marcadas
+    "Quitar" (DELETE) se ignoran -- antes del rediseño esa marca sólo
+    afectaba la suma que se mostraba en pantalla (JS), pero el guardado
+    igual las creaba; se corrige acá de paso, ya que se estaba reescribiendo
+    este mismo loop."""
     entidad = header_form.cleaned_data.get('entidad')
     entidad_nombre = header_form.cleaned_data.get('entidad_nombre') or (entidad.nombre if entidad else '')
     id_impuesto = header_form.cleaned_data.get('id_impuesto')
@@ -298,57 +404,55 @@ def _guardar_grupo(request, header_form, formset, entidad_nombre_snapshot):
     es_emisor = header_form.cleaned_data.get('es_emisor', Retencion.ES_EMISOR)
     anio = header_form.cleaned_data['año']
     numero = header_form.cleaned_data['numero']
+    total_header = header_form.cleaned_data.get('total')
 
     # Fecha de la retención en sí, cargada a mano en el encabezado (no se
     # deriva más de la fecha del comprobante origen de cada renglón -- son
     # dos cosas distintas, ver comentario en RetencionHeaderForm.fecha).
     fecha_retencion = header_form.cleaned_data.get('fecha')
 
-    siguiente_id = _siguiente_id_retencion()
-    creados = []
-    comprobante_string = f'{anio}-{numero:04d}'
+    retencion = Retencion.objects.create(
+        id=_siguiente_id_retencion(),
+        entidad=entidad,
+        entidad_nombre=entidad_nombre,
+        es_emisor=es_emisor,
+        total=total_header,
+        comprobante_string=f'{anio}-{numero:04d}',
+        fecha=fecha_retencion,
+        id_impuesto=id_impuesto,
+        id_regimen=id_regimen,
+        año=anio,
+        numero=numero,
+        agregado_desde='retenciones_app',
+    )
 
+    cantidad = 0
     for form in formset:
         datos = form.cleaned_data
-        if not datos or datos.get('_vacio'):
+        if not datos or datos.get('_vacio') or datos.get('DELETE'):
             continue
-        punto_venta = datos.get('punto_venta')
-        numero_comprobante = datos.get('numero_comprobante')
-        subtotal = datos.get('subtotal')
+        comprobante = datos.get('comprobante')
+        neto_gravado = datos.get('subtotal')
         porcentaje = datos.get('porcentaje')
         # El campo "Retención" (total) se autocompleta en el JS con Importe
         # x Porcentaje / 100, pero queda editable a mano (puede haber una
         # diferencia de centavos con lo que realmente retuvo la otra
         # parte). Se respeta lo que vino cargado en el form; sólo se
         # recalcula acá como red de seguridad si llegara vacío.
-        total = datos.get('total')
-        if total is None:
-            total = _calcular_total(subtotal, porcentaje)
+        total_renglon = datos.get('total')
+        if total_renglon is None:
+            total_renglon = _calcular_total(neto_gravado, porcentaje)
 
-        Retencion.objects.create(
-            id=siguiente_id,
-            entidad=entidad,
-            entidad_nombre=entidad_nombre,
-            es_emisor=es_emisor,
-            subtotal=subtotal,
+        RetencionRenglon.objects.create(
+            retencion=retencion,
+            comprobante=comprobante,
+            neto_gravado=neto_gravado,
             porcentaje=porcentaje,
-            total=total,
-            comprobante_string=comprobante_string,
-            fecha=fecha_retencion,
-            id_impuesto=id_impuesto,
-            id_regimen=id_regimen,
-            tipo_comp_origen=datos.get('tipo_comp_origen').id if datos.get('tipo_comp_origen') else None,
-            comprobante_origen=_combinar_comprobante_origen(punto_venta, numero_comprobante),
-            fecha_comp_origen=datos.get('fecha_comp_origen'),
-            monto_comp_origen=subtotal,
-            año=anio,
-            numero=numero,
-            agregado_desde='retenciones_app',
+            total=total_renglon,
         )
-        creados.append(siguiente_id)
-        siguiente_id += 1
+        cantidad += 1
 
-    return creados
+    return retencion, cantidad
 
 
 def retencion_alta(request):
@@ -357,33 +461,52 @@ def retencion_alta(request):
         formset = RetencionRenglonFormSet(request.POST, prefix='form')
 
         if header_form.is_valid() and formset.is_valid():
-            lineas_validas = [f for f in formset if f.cleaned_data and not f.cleaned_data.get('_vacio')]
+            lineas_validas = [
+                f for f in formset
+                if f.cleaned_data and not f.cleaned_data.get('_vacio') and not f.cleaned_data.get('DELETE')
+            ]
             if not lineas_validas:
                 messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
-                with transaction.atomic():
-                    creados = _guardar_grupo(request, header_form, formset, None)
-
-                anio = header_form.cleaned_data['año']
-                numero = header_form.cleaned_data['numero']
-                accion = request.POST.get('accion')
-                messages.success(
-                    request,
-                    f'El comprobante de retención {anio}-{numero:04d} se guardó correctamente '
-                    f'({len(creados)} renglón{"es" if len(creados) != 1 else ""}).'
-                )
-                if len(creados) > 1:
-                    messages.warning(
+                try:
+                    with transaction.atomic():
+                        retencion, cantidad = _guardar_grupo(header_form, formset)
+                        suma, total_retencion = _chequear_suma_renglones(retencion)
+                except IntegrityError:
+                    messages.error(
                         request,
-                        f'Se cargaron {len(creados)} renglones -- cada uno quedó como una retención '
-                        'independiente. Si necesitás imprimir más de una, hacelo por separado desde '
-                        'el listado.'
+                        'Una de las facturas elegidas ya tiene esta misma retención (mismo impuesto y '
+                        'régimen) vinculada en otra retención -- no se puede repetir. Revisá los '
+                        'renglones cargados.'
                     )
-                if accion == 'pdf':
-                    return retencion_pdf(request, creados[0])
-                if accion == 'excel':
-                    return retencion_excel(request, creados[0])
-                return redirect('retenciones:listado')
+                except _SumaRenglonesExcedeTotal as exc:
+                    messages.error(
+                        request,
+                        f'No se guardó: la suma de los renglones (${exc.suma}) superaría el Total de la '
+                        f'retención (${exc.total}). Corregí el Total del encabezado o los renglones.'
+                    )
+                else:
+                    anio = header_form.cleaned_data['año']
+                    numero = header_form.cleaned_data['numero']
+                    accion = request.POST.get('accion')
+                    messages.success(
+                        request,
+                        f'La retención {anio}-{numero:04d} se guardó correctamente '
+                        f'({cantidad} renglón{"es" if cantidad != 1 else ""} vinculado'
+                        f'{"s" if cantidad != 1 else ""}).'
+                    )
+                    if total_retencion is not None and suma < total_retencion:
+                        messages.warning(
+                            request,
+                            f'La suma de los renglones (${suma}) todavía no llega al Total cargado '
+                            f'(${total_retencion}). Podés agregar los renglones que falten después, '
+                            'volviendo a Modificar esta retención.'
+                        )
+                    if accion == 'pdf':
+                        return retencion_pdf(request, retencion.id)
+                    if accion == 'excel':
+                        return retencion_excel(request, retencion.id)
+                    return redirect('retenciones:listado')
     else:
         hoy = __import__('datetime').date.today()
         anio_actual = hoy.year
@@ -575,44 +698,63 @@ def retencion_modificar(request, id):
         )
         return _retencion_vincular_renglones(request, id, [primera], renglones_nuevos)
 
-    tipos_por_id = _tipos_comprobante_por_id()
-
     if request.method == 'POST':
         header_form = RetencionHeaderForm(request.POST)
         formset = RetencionRenglonFormSet(request.POST, prefix='form')
 
         if header_form.is_valid() and formset.is_valid():
-            lineas_validas = [f for f in formset if f.cleaned_data and not f.cleaned_data.get('_vacio')]
+            lineas_validas = [
+                f for f in formset
+                if f.cleaned_data and not f.cleaned_data.get('_vacio') and not f.cleaned_data.get('DELETE')
+            ]
             if not lineas_validas:
                 messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
-                with transaction.atomic():
-                    # Sólo se toca esta fila puntual (por id) -- nunca otras
-                    # filas que puedan compartir año+numero (con otra entidad,
-                    # u otro impuesto/régimen de la misma entidad).
-                    Retencion.objects.filter(pk=id).delete()
-                    creados = _guardar_grupo(request, header_form, formset, None)
-
-                nuevo_anio = header_form.cleaned_data['año']
-                nuevo_numero = header_form.cleaned_data['numero']
-                accion = request.POST.get('accion')
-                messages.success(
-                    request,
-                    f'El comprobante de retención {nuevo_anio}-{nuevo_numero:04d} se modificó correctamente.'
-                )
-                if len(creados) > 1:
-                    messages.warning(
+                try:
+                    with transaction.atomic():
+                        # Sólo se toca esta fila puntual (por id) -- nunca otras
+                        # filas que puedan compartir año+numero (con otra
+                        # entidad, u otro impuesto/régimen de la misma
+                        # entidad). Al borrar la Retencion se van en cascada
+                        # sus RetencionRenglon (on_delete=CASCADE), así que se
+                        # recrean todos de cero con los datos del form.
+                        Retencion.objects.filter(pk=id).delete()
+                        retencion, cantidad = _guardar_grupo(header_form, formset)
+                        suma, total_retencion = _chequear_suma_renglones(retencion)
+                except IntegrityError:
+                    messages.error(
                         request,
-                        f'Se cargaron {len(creados)} renglones nuevos -- cada uno quedó como una '
-                        'retención independiente. Si necesitás imprimir más de una, hacelo por '
-                        'separado desde el listado.'
+                        'Una de las facturas elegidas ya tiene esta misma retención (mismo impuesto y '
+                        'régimen) vinculada en otra retención -- no se puede repetir. Revisá los '
+                        'renglones cargados.'
                     )
-                nuevo_id = creados[0] if creados else id
-                if accion == 'pdf':
-                    return retencion_pdf(request, nuevo_id)
-                if accion == 'excel':
-                    return retencion_excel(request, nuevo_id)
-                return redirect('retenciones:listado')
+                except _SumaRenglonesExcedeTotal as exc:
+                    messages.error(
+                        request,
+                        f'No se guardó: la suma de los renglones (${exc.suma}) superaría el Total de la '
+                        f'retención (${exc.total}). Corregí el Total del encabezado o los renglones.'
+                    )
+                else:
+                    nuevo_anio = header_form.cleaned_data['año']
+                    nuevo_numero = header_form.cleaned_data['numero']
+                    accion = request.POST.get('accion')
+                    messages.success(
+                        request,
+                        f'La retención {nuevo_anio}-{nuevo_numero:04d} se modificó correctamente '
+                        f'({cantidad} renglón{"es" if cantidad != 1 else ""} vinculado'
+                        f'{"s" if cantidad != 1 else ""}).'
+                    )
+                    if total_retencion is not None and suma < total_retencion:
+                        messages.warning(
+                            request,
+                            f'La suma de los renglones (${suma}) todavía no llega al Total cargado '
+                            f'(${total_retencion}).'
+                        )
+                    if accion == 'pdf':
+                        return retencion_pdf(request, retencion.id)
+                    if accion == 'excel':
+                        return retencion_excel(request, retencion.id)
+                    return redirect('retenciones:listado')
     else:
         header_form = RetencionHeaderForm(initial={
             'entidad': primera.entidad,
@@ -623,10 +765,11 @@ def retencion_modificar(request, id):
             'fecha': primera.fecha,
             'año': primera.año,
             'numero': primera.numero,
+            'total': primera.total,
         })
         formset = RetencionRenglonFormSet(
             prefix='form',
-            initial=_armar_formset_inicial([primera], tipos_por_id),
+            initial=_armar_formset_inicial(primera),
         )
         formset.extra = 1
 
@@ -738,17 +881,56 @@ def retencion_listado(request):
 # Impresión (PDF / Excel), formato "Constancia de Retención"
 # ---------------------------------------------------------------------------
 
+def _lineas_impresion(retencion, tipos_por_id):
+    """Filas de 'Detalle de las operaciones' a imprimir: una Retencion NUEVA
+    (creada con la pantalla rediseñada del 24/09/2026, sin datos en sus
+    propios campos sueltos subtotal/tipo_comp_origen) imprime una fila por
+    cada RetencionRenglon vinculado, con los datos de ESE renglón (su
+    comprobante real, su neto/porcentaje/total propios). Una Retencion
+    VIEJA (o cualquiera que todavía tenga cargados sus propios subtotal/
+    tipo_comp_origen -- comportamiento histórico, de antes de que existiera
+    RetencionRenglon) sigue imprimiendo su única línea de siempre, aunque
+    también tenga RetencionRenglon agregados después por 'Vincular
+    renglones' (eso es sólo documentación adicional, nunca reemplaza el
+    total/porcentaje ya cargado en el encabezado)."""
+    if retencion.subtotal is None and retencion.tipo_comp_origen is None:
+        renglones = list(
+            retencion.renglones.select_related('comprobante', 'comprobante__tipo_comprobante').order_by('id')
+        )
+        if renglones:
+            return [
+                SimpleNamespace(
+                    fecha_comp_origen=rn.comprobante.fecha if rn.comprobante else None,
+                    texto_factura=_texto_comprobante(rn.comprobante),
+                    subtotal=rn.neto_gravado,
+                    porcentaje=rn.porcentaje,
+                    total=rn.total,
+                )
+                for rn in renglones
+            ]
+    return [SimpleNamespace(
+        fecha_comp_origen=retencion.fecha_comp_origen,
+        texto_factura=_texto_comprobante_origen(retencion, tipos_por_id),
+        subtotal=retencion.subtotal,
+        porcentaje=retencion.porcentaje,
+        total=retencion.total,
+    )]
+
+
 def _contexto_impresion(id):
     primera = Retencion.objects.filter(pk=id).select_related('entidad', 'id_impuesto', 'id_regimen').first()
     if primera is None or primera.año is None or primera.numero is None:
         return None
-    lineas = [primera]
     tipos_por_id = _tipos_comprobante_por_id()
+    lineas = _lineas_impresion(primera, tipos_por_id)
 
-    for l in lineas:
-        l.texto_factura = _texto_comprobante_origen(l, tipos_por_id)
-
-    total = sum((l.total or Decimal('0')) for l in lineas)
+    # El total impreso es siempre el de la Retencion (el dato maestro,
+    # cargado a mano en el encabezado -- ver RetencionHeaderForm.total) y no
+    # la suma de las líneas: para una retención nueva la suma de renglones
+    # nunca puede superarlo (_chequear_suma_renglones) pero puede quedar
+    # por debajo si falta vincular algún comprobante, y en ese caso el
+    # total impreso tiene que seguir siendo el real, no uno parcial.
+    total = primera.total if primera.total is not None else sum((l.total or Decimal('0')) for l in lineas)
     es_emisor = primera.es_emisor if primera.es_emisor is not None else Retencion.ES_EMISOR
 
     return {

@@ -3,7 +3,10 @@
 {% block content %}
 <div class="col">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <h4 class="mb-0">Análisis Kgs INYM (histórico)</h4>
+        <h4 class="mb-0">
+            Análisis Kgs INYM (histórico)
+            {% if tipo_tarifa %}<span class="text-muted fw-normal">-- {{ tipo_tarifa.nombre }}</span>{% endif %}
+        </h4>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'retenciones_inym:historico_importar' %}">
             Importar más datos al histórico
         </a>
@@ -18,6 +21,14 @@
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-12 col-md-4 col-lg-3">
+                    {{ form.id_tipo_tarifa.label_tag }}
+                    {{ form.id_tipo_tarifa }}
+                    <small class="form-text text-muted">
+                        Los kgs de tarifas distintas no se suman entre sí -- siempre se ve una tarifa a la vez.
+                    </small>
+                    {% if form.id_tipo_tarifa.errors %}<div class="text-danger small">{{ form.id_tipo_tarifa.errors|join:", " }}</div>{% endif %}
+                </div>
                 <div class="col-6 col-md-3 col-lg-2">
                     {{ form.fecha_desde.label_tag }}
                     {{ form.fecha_desde }}
@@ -34,9 +45,9 @@
                         otros tipos de tarifa, elegí acá cuál mirar.
                     </small>
                 </div>
-                <div class="col-12 col-lg-3 d-flex gap-2">
+                <div class="col-12 col-lg-2 d-flex gap-2">
                     <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
-                    <a href="{% url 'retenciones_inym:analisis_kgs' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                    <a href="{% url 'retenciones_inym:analisis_kgs' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar</a>
                 </div>
                 {% if form.non_field_errors %}
                 <div class="col-12">
@@ -70,6 +81,7 @@
                 <tr>
                     <th>Operador</th>
                     {% for anio in anios %}<th class="text-end">{{ anio }}</th>{% endfor %}
+                    <th class="text-end">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -79,9 +91,10 @@
                     {% for valor in fila.valores %}
                     <td class="text-end">{{ valor|separador_miles }}</td>
                     {% endfor %}
+                    <td class="text-end fw-semibold">{{ fila.total|separador_miles }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="{{ anios|length|add:1 }}" class="text-center text-muted py-4">Sin datos.</td></tr>
+                <tr><td colspan="{{ anios|length|add:2 }}" class="text-center text-muted py-4">Sin datos.</td></tr>
                 {% endfor %}
             </tbody>
             {% if filas_tabla %}
@@ -89,9 +102,47 @@
                 <tr class="table-light fw-bold">
                     <td class="text-end">Total</td>
                     {% for total in totales_por_anio %}<td class="text-end">{{ total|separador_miles }}</td>{% endfor %}
+                    <td class="text-end">{{ total_general|separador_miles }}</td>
                 </tr>
             </tfoot>
             {% endif %}
+        </table>
+    </div>
+
+    <!-- Sección A2: incidencia % por operador y año (misma info que arriba, en porcentaje) -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 mt-4">
+        <h5 class="mb-0">Incidencia % por operador y año</h5>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-success" href="{% url 'retenciones_inym:analisis_kgs_incidencia_excel' %}?{{ request.GET.urlencode }}">Exportar a Excel</a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones_inym:analisis_kgs_incidencia_pdf' %}?{{ request.GET.urlencode }}">Exportar a PDF</a>
+        </div>
+    </div>
+    <p class="text-muted small">
+        Por cada año, qué % de los kgs totales de ESE año representó cada operador; "Incidencia total"
+        es el % que representa el total del operador (todos los años juntos) sobre el total general.
+    </p>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Operador</th>
+                    {% for anio in anios %}<th class="text-end">{{ anio }}</th>{% endfor %}
+                    <th class="text-end">Incidencia total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in incidencia_tabla %}
+                <tr>
+                    <td>{{ fila.nombre }}</td>
+                    {% for pct in fila.valores %}
+                    <td class="text-end">{{ pct|separador_miles }}%</td>
+                    {% endfor %}
+                    <td class="text-end fw-semibold">{{ fila.total_pct|separador_miles }}%</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="{{ anios|length|add:2 }}" class="text-center text-muted py-4">Sin datos.</td></tr>
+                {% endfor %}
+            </tbody>
         </table>
     </div>
 
@@ -132,9 +183,9 @@
         </table>
     </div>
 
-    <!-- Sección C: análisis mensual por tipo de tarifa -->
+    <!-- Sección C: análisis mensual (de la tarifa filtrada arriba) -->
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 mt-4">
-        <h5 class="mb-0">Kgs por mes y tipo de tarifa (todos los años juntos)</h5>
+        <h5 class="mb-0">Kgs por mes (todos los años juntos)</h5>
         <div class="d-flex gap-2 flex-wrap">
             <a class="btn btn-sm btn-outline-success" href="{% url 'retenciones_inym:analisis_kgs_mensual_excel' %}?{{ request.GET.urlencode }}">Exportar a Excel</a>
             <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones_inym:analisis_kgs_mensual_pdf' %}?{{ request.GET.urlencode }}">Exportar a PDF</a>

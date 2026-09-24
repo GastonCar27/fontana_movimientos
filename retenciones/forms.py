@@ -1,6 +1,6 @@
 from django import forms
 
-from comprobantes.models import ComprobanteTipo
+from comprobantes.models import Comprobante, ComprobanteTipo
 from entidades.models import Entidad
 from .models import RetencionTipoImpuesto, RetencionTipoRegimen
 
@@ -112,6 +112,24 @@ class RetencionHeaderForm(forms.Form):
         label='Número de comprobante',
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
     )
+    # Total de LA RETENCIÓN completa (un solo comprobante/certificado),
+    # cargado a mano -- pedido de Gastón, 24/09/2026: "cuando cargo una
+    # retención con dos renglones me debería guardar solo una retención con
+    # el total, y el vínculo nomás debería ser con dos renglones distintos".
+    # Mismo criterio que ya usaba la pantalla de "vincular renglones"
+    # (retencion_vincular_renglones.html): el total es el dato maestro del
+    # encabezado, y la suma de los renglones nunca puede superarlo (ver
+    # _chequear_suma_renglones en views.py) aunque sí puede quedar por
+    # debajo (por si falta vincular algún comprobante más).
+    total = forms.DecimalField(
+        required=True,
+        label='Total de la retención',
+        max_digits=20,
+        decimal_places=2,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control form-control-sm', 'step': '0.01', 'id': 'id_total_header',
+        }),
+    )
 
     def clean(self):
         cleaned = super().clean()
@@ -138,9 +156,34 @@ class RetencionHeaderForm(forms.Form):
 
 
 class RetencionRenglonForm(forms.Form):
-    """Un renglón de 'Detalle de las operaciones': un comprobante (factura)
-    sobre el que se practicó la retención."""
+    """Un renglón de 'Detalle de las operaciones': un Comprobante REAL
+    (factura ya cargada en el sistema) sobre el que se practicó la
+    retención -- se guarda como un RetencionRenglon vinculado a esa
+    Retencion (encabezado), nunca como una Retencion aparte (rediseño de
+    24/09/2026, ver _guardar_grupo en views.py).
 
+    `comprobante` (oculto) es el vínculo real, elegido con el buscador de
+    `comprobante_texto` -- mismo patrón que `entidad`/`entidad_nombre` en
+    RetencionHeaderForm. tipo_comp_origen/punto_venta/numero_comprobante/
+    fecha_comp_origen se siguen mostrando (se autocompletan solos al elegir
+    la factura, de sólo lectura) para que se vea de un vistazo a qué
+    comprobante corresponde cada renglón, pero ya no se guardan sueltos --
+    esos datos se leen del Comprobante vinculado."""
+
+    comprobante_texto = forms.CharField(
+        required=False,
+        label='Factura',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-sm comprobante-buscador',
+            'autocomplete': 'off',
+            'placeholder': 'Buscar factura ya cargada...',
+        }),
+    )
+    comprobante = forms.ModelChoiceField(
+        queryset=Comprobante.objects.all(),
+        required=False,
+        widget=forms.HiddenInput(),
+    )
     tipo_comp_origen = forms.ModelChoiceField(
         queryset=ComprobanteTipo.objects.all().order_by('nombre'),
         required=False,
@@ -194,8 +237,8 @@ class RetencionRenglonForm(forms.Form):
         # exigir que se completen los campos requeridos: así el formset puede
         # tener de sobra filas vacías sin que tiren error de validación.
         valores = [cleaned.get(campo) for campo in (
-            'tipo_comp_origen', 'punto_venta', 'numero_comprobante',
-            'fecha_comp_origen', 'subtotal', 'porcentaje',
+            'comprobante', 'comprobante_texto', 'tipo_comp_origen', 'punto_venta',
+            'numero_comprobante', 'fecha_comp_origen', 'subtotal', 'porcentaje',
         )]
         if not any(v not in (None, '') for v in valores):
             cleaned['_vacio'] = True
@@ -203,8 +246,8 @@ class RetencionRenglonForm(forms.Form):
         cleaned['_vacio'] = False
 
         faltantes = []
-        if cleaned.get('fecha_comp_origen') is None:
-            faltantes.append('Fecha')
+        if cleaned.get('comprobante') is None:
+            faltantes.append('Factura (elegila de la lista de "Buscar factura")')
         if cleaned.get('subtotal') is None:
             faltantes.append('Importe')
         if cleaned.get('porcentaje') is None:
