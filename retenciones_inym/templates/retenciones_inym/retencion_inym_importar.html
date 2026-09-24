@@ -9,6 +9,7 @@
     </p>
 
     <form method="post" enctype="multipart/form-data" class="card mb-4">
+        {% csrf_token %}
         <div class="card-body">
             <div class="form-row">
                 <div class="form-group col-md-5">
