@@ -9,6 +9,14 @@
 
     <form method="get" class="form-row align-items-end mb-3">
         <div class="form-group col-auto">
+            <label for="id_id" class="mb-1">Id</label>
+            <input type="number" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" style="width: 6.5rem;">
+        </div>
+        <div class="form-group col-auto">
+            <label for="id_numero" class="mb-1">N° cert. INYM</label>
+            <input type="number" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}" style="width: 8rem;">
+        </div>
+        <div class="form-group col-auto">
             <label for="id_fecha" class="mb-1">Fecha</label>
             <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
         </div>
@@ -17,15 +25,40 @@
             <input type="text" id="id_retenido" name="retenido" class="form-control form-control-sm" value="{{ q_retenido }}" placeholder="Nombre">
         </div>
         <div class="form-group col-auto">
+            <label for="id_tipo_tarifa" class="mb-1">Tipo de tarifa</label>
+            <select id="id_tipo_tarifa" name="tipo_tarifa" class="form-control form-control-sm">
+                <option value="">Todos</option>
+                {% for t in opciones_tipo_tarifa %}
+                <option value="{{ t.id }}" {% if q_tipo_tarifa == t.id|stringformat:"s" %}selected{% endif %}>{{ t.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group col-auto">
+            <label for="id_agregado_desde" class="mb-1">Agregado desde</label>
+            <select id="id_agregado_desde" name="agregado_desde" class="form-control form-control-sm">
+                <option value="">Todos</option>
+                {% for valor in opciones_agregado_desde %}
+                <option value="{{ valor }}" {% if q_agregado_desde == valor %}selected{% endif %}>{{ valor }}</option>
+                {% endfor %}
+                <option value="{{ AGREGADO_DESDE_VACIO }}" {% if q_agregado_desde == AGREGADO_DESDE_VACIO %}selected{% endif %}>(sin dato -- viejas)</option>
+            </select>
+        </div>
+        <div class="form-group col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'retenciones_inym:listado' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
         </div>
     </form>
 
+    <div class="mb-3">
+        <a href="{% url 'retenciones_inym:listado_excel' %}?{{ request.GET.urlencode }}" class="btn btn-sm btn-outline-success">Descargar Excel (con todos los detalles)</a>
+        <a href="{% url 'retenciones_inym:listado_pdf' %}?{{ request.GET.urlencode }}" class="btn btn-sm btn-outline-danger">Descargar PDF (con todos los detalles)</a>
+    </div>
+
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle">
             <thead class="table-light">
                 <tr>
+                    <th>Id</th>
                     <th>{% sort_th 'fecha' 'Fecha' %}</th>
                     <th>Período</th>
                     <th>Tipo tarifa</th>
@@ -36,12 +69,14 @@
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
                     <th>Eliminación (INYM)</th>
                     <th>N° cert. INYM</th>
+                    <th>Agregado desde</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in registros %}
                 <tr>
+                    <td>{{ r.id }}</td>
                     <td>{{ r.fecha|default:"-" }}</td>
                     <td>{{ r.periodo|default:"-" }}</td>
                     <td>{{ r.id_tipo_tarifa.nombre|default:"-" }}</td>
@@ -52,6 +87,7 @@
                     <td class="text-end">{{ r.total|separador_miles }}</td>
                     <td>{{ r.eliminacion|default:"-" }}</td>
                     <td>{{ r.id_certificado_inym|default:"-" }}</td>
+                    <td>{{ r.agregado_desde|default:"-" }}</td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'retenciones_inym:modificar' pk=r.id %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones_inym:eliminar' pk=r.id %}">Eliminar</a>
@@ -59,7 +95,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="11" class="text-center text-muted">No se encontraron retenciones INYM.</td>
+                    <td colspan="13" class="text-center text-muted">No se encontraron retenciones INYM.</td>
                 </tr>
                 {% endfor %}
             </tbody>

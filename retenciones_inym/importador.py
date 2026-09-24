@@ -435,7 +435,12 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
             registro_existente = existentes_por_clave.get(clave)
             if registro_existente is not None:
                 resultado['duplicadas'] += 1
-                if registro_existente.agregado_desde == AGREGADO_DESDE_MANUAL:
+                # startswith (no ==): si esa retención manual se modificó
+                # después desde la pantalla de Modificar, agregado_desde
+                # queda como 'retenciones_inym_app (editado por app)' --
+                # sigue siendo una carga manual a todos los efectos de
+                # completar/reportar diferencias (views.py::_agregado_desde_tras_editar).
+                if (registro_existente.agregado_desde or '').startswith(AGREGADO_DESDE_MANUAL):
                     _actualizar_desde_excel(registro_existente, fila, contexto, resultado)
                 continue
 

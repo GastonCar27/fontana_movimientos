@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.contrib import messages
-from django.db.models import Count, Max, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.shortcuts import render, redirect, get_object_or_404
 
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
@@ -10,7 +10,7 @@ from services.reportes import excel_response, pdf_response
 
 from .forms import ImportadorInymForm, RankingEntidadesForm, RetencionInymForm
 from .importador import ErrorImportacion, importar_filas, leer_filas_excel
-from .models import RetencionInym
+from .models import InymRetencionTipo, RetencionInym
 
 
 # ---------------------------------------------------------------------------
@@ -42,17 +42,74 @@ def _form_a_datos(cleaned_data):
     return dict(cleaned_data)
 
 
-def retencion_inym_listado(request):
+SUFIJO_EDITADO_POR_APP = ' (editado por app)'
+MAX_LEN_AGREGADO_DESDE = 45  # RetencionInym.agregado_desde = CharField(max_length=45)
+
+
+def _agregado_desde_tras_editar(valor_actual):
+    """Pedido de Gastón (24/09/2026): "agregado_desde" no se puede editar a
+    mano desde el form (no hay campo para eso), pero si la retención se
+    modifica desde esta pantalla, queda marcada como editada por la app --
+    sin perder el origen que ya tenía (a mano, Excel, etc.). Idempotente:
+    si ya estaba marcada, no duplica el sufijo en ediciones sucesivas."""
+    valor_actual = (valor_actual or '').strip()
+    if not valor_actual:
+        nuevo = 'editado por app'
+    elif SUFIJO_EDITADO_POR_APP.strip() in valor_actual:
+        return valor_actual
+    else:
+        nuevo = valor_actual + SUFIJO_EDITADO_POR_APP
+    return nuevo[:MAX_LEN_AGREGADO_DESDE]
+
+
+AGREGADO_DESDE_VACIO = '__vacio__'  # opción del filtro para "sin agregado_desde cargado" (datos viejos, de antes de que este campo se usara)
+
+
+def _opciones_agregado_desde():
+    """Valores de agregado_desde que realmente existen en la tabla (no una
+    lista fija a mano) -- así el filtro sirve también para valores viejos
+    que puedan quedar de antes de este app (o de una carga manual en la
+    base). Ordenados alfabéticamente, sin duplicados."""
+    return sorted(
+        RetencionInym.objects.exclude(agregado_desde__isnull=True).exclude(agregado_desde='')
+        .order_by().values_list('agregado_desde', flat=True).distinct()
+    )
+
+
+def _retencion_inym_listado_filtrado(request):
+    """Arma el queryset filtrado de RetencionInym (SIN cortar) según los
+    filtros de la pantalla de listado -- lo usan tanto la pantalla como los
+    exports a Excel/PDF (con "todos los detalles"), para que exporten
+    siempre lo mismo que se está viendo. Pedido de Gastón (24/09/2026):
+    poder filtrar por "desde dónde fue agregada" (agregado_desde), tipo de
+    tarifa, id y N° de certificado INYM, además de los filtros que ya había
+    (fecha, operador retenido)."""
     q_fecha = request.GET.get('fecha', '').strip()
     q_retenido = request.GET.get('retenido', '').strip()
+    q_agregado_desde = request.GET.get('agregado_desde', '').strip()
+    q_tipo_tarifa = request.GET.get('tipo_tarifa', '').strip()
+    q_id = request.GET.get('id', '').strip()
+    q_numero = request.GET.get('numero', '').strip()
 
     qs = RetencionInym.objects.select_related(
-        'id_tipo_tarifa', 'operador_emisor__entidad', 'operador_retenido__entidad',
+        'id_tipo_tarifa',
+        'operador_emisor__entidad', 'operador_emisor__tipo_operador',
+        'operador_retenido__entidad', 'operador_retenido__tipo_operador',
     )
     if q_fecha:
         qs = qs.filter(fecha=q_fecha)
     if q_retenido:
         qs = qs.filter(operador_retenido__entidad__nombre__icontains=q_retenido)
+    if q_agregado_desde == AGREGADO_DESDE_VACIO:
+        qs = qs.filter(Q(agregado_desde__isnull=True) | Q(agregado_desde=''))
+    elif q_agregado_desde:
+        qs = qs.filter(agregado_desde=q_agregado_desde)
+    if q_tipo_tarifa.isdigit():
+        qs = qs.filter(id_tipo_tarifa_id=q_tipo_tarifa)
+    if q_id.isdigit():
+        qs = qs.filter(id=q_id)
+    if q_numero.isdigit():
+        qs = qs.filter(id_certificado_inym=q_numero)
 
     qs = qs.order_by('-fecha', '-id')
     qs = aplicar_orden_queryset(request, qs, {
@@ -60,11 +117,72 @@ def retencion_inym_listado(request):
         'retenido': 'operador_retenido__entidad__nombre',
         'total': 'total',
     })
+    return qs, {
+        'fecha': q_fecha, 'retenido': q_retenido, 'agregado_desde': q_agregado_desde,
+        'tipo_tarifa': q_tipo_tarifa, 'id': q_id, 'numero': q_numero,
+    }
+
+
+def retencion_inym_listado(request):
+    qs, filtros = _retencion_inym_listado_filtrado(request)
     registros = list(qs[:500])
 
     return render(request, 'retenciones_inym/retencion_inym_listado.html', {
-        'registros': registros, 'q_fecha': q_fecha, 'q_retenido': q_retenido,
+        'registros': registros,
+        'q_fecha': filtros['fecha'], 'q_retenido': filtros['retenido'],
+        'q_agregado_desde': filtros['agregado_desde'], 'q_tipo_tarifa': filtros['tipo_tarifa'],
+        'q_id': filtros['id'], 'q_numero': filtros['numero'],
+        'opciones_agregado_desde': _opciones_agregado_desde(),
+        'opciones_tipo_tarifa': InymRetencionTipo.objects.all().order_by('nombre'),
+        'AGREGADO_DESDE_VACIO': AGREGADO_DESDE_VACIO,
     })
+
+
+def _filas_retencion_inym_listado(registros):
+    """Columnas/filas para el export "con todos los detalles" (Excel/PDF)
+    de la pantalla de listado -- pedido de Gastón (24/09/2026). Trae, además
+    de lo que ya se ve en pantalla, el CUIT y tipo de operador de emisor y
+    retenido, y de dónde se cargó cada retención (agregado_desde)."""
+    columnas = [
+        'Fecha', 'Período', 'Tipo de tarifa',
+        'CUIT emisor', 'Emisor', 'Tipo oper. emisor',
+        'CUIT retenido', 'Retenido', 'Tipo oper. retenido',
+        'Kgs', 'Tarifa', 'Total', 'Eliminación (INYM)', 'N° cert. INYM', 'Agregado desde',
+    ]
+    filas = [
+        [
+            r.fecha, r.periodo, r.id_tipo_tarifa.nombre if r.id_tipo_tarifa_id else '',
+            r.operador_emisor.entidad.cuit if r.operador_emisor_id else '',
+            r.operador_emisor.entidad.nombre if r.operador_emisor_id else '',
+            r.operador_emisor.tipo_operador.nombre if r.operador_emisor_id else '',
+            r.operador_retenido.entidad.cuit if r.operador_retenido_id else '',
+            r.operador_retenido.entidad.nombre if r.operador_retenido_id else '',
+            r.operador_retenido.tipo_operador.nombre if r.operador_retenido_id else '',
+            float(r.kgs) if r.kgs is not None else None,
+            float(r.tarifa) if r.tarifa is not None else None,
+            float(r.total) if r.total is not None else None,
+            r.eliminacion, r.id_certificado_inym, r.agregado_desde or '',
+        ]
+        for r in registros
+    ]
+    return {
+        'columnas': columnas,
+        'filas': filas,
+        'columnas_numericas': {9, 10, 11},  # Kgs, Tarifa, Total
+        'anchos': [0.7, 0.7, 1.1, 1.0, 1.6, 1.0, 1.0, 1.6, 1.0, 0.7, 0.7, 0.9, 0.9, 0.8, 1.3],
+    }
+
+
+def retencion_inym_listado_excel(request):
+    qs, _filtros = _retencion_inym_listado_filtrado(request)
+    resultado = _filas_retencion_inym_listado(qs)
+    return excel_response('retenciones_inym', resultado)
+
+
+def retencion_inym_listado_pdf(request):
+    qs, _filtros = _retencion_inym_listado_filtrado(request)
+    resultado = _filas_retencion_inym_listado(qs)
+    return pdf_response('retenciones_inym', 'Retenciones INYM', resultado)
 
 
 def retencion_inym_alta(request):
@@ -100,6 +218,7 @@ def retencion_inym_modificar(request, pk):
         if form.is_valid():
             for campo, valor in _form_a_datos(form.cleaned_data).items():
                 setattr(registro, campo, valor)
+            registro.agregado_desde = _agregado_desde_tras_editar(registro.agregado_desde)
             registro.save()
             messages.success(request, 'La retención INYM se modificó correctamente.')
             return redirect('retenciones_inym:listado')

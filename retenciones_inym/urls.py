@@ -6,6 +6,8 @@ app_name = 'retenciones_inym'  # para poder usar {% url 'retenciones_inym:...' %
 
 urlpatterns = [
     path('', views.retencion_inym_listado, name='listado'),
+    path('listado/excel/', views.retencion_inym_listado_excel, name='listado_excel'),
+    path('listado/pdf/', views.retencion_inym_listado_pdf, name='listado_pdf'),
     path('alta/', views.retencion_inym_alta, name='alta'),
     path('<int:pk>/modificar/', views.retencion_inym_modificar, name='modificar'),
     path('<int:pk>/eliminar/', views.retencion_inym_eliminar, name='eliminar'),
