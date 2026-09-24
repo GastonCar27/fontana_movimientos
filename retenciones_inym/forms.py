@@ -104,10 +104,25 @@ class RetencionInymForm(forms.Form):
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
     )
     id_certificado_inym = forms.IntegerField(
-        required=False,
+        required=True,
         label='N° certificado INYM',
+        help_text='Obligatorio: es lo que usa el importador de Excel para reconocer esta '
+                   'retención y no cargarla dos veces (ver "editado por app"/historial, '
+                   '24/09/2026). Se repite entre retenciones de distinto tipo de tarifa, '
+                   'pero no dentro del mismo tipo de tarifa.',
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
     )
+
+    def __init__(self, *args, instance_id=None, **kwargs):
+        """instance_id: pk de la retención que se está modificando (None en
+        alta) -- se necesita para que la validación de "no repetido dentro
+        del mismo tipo de tarifa" no se dispare contra sí misma al guardar
+        sin cambiar nada. Pedido de Gastón, 24/09/2026 (ver bug de la
+        importación que creó una copia en vez de reconocer la retención
+        2868 -- pasó porque "N° cert. INYM" podía quedar vacío en una carga
+        manual; de acá en más es obligatorio y no se puede repetir)."""
+        self.instance_id = instance_id
+        super().__init__(*args, **kwargs)
 
     def clean(self):
         cleaned = super().clean()
@@ -121,6 +136,27 @@ class RetencionInymForm(forms.Form):
         tarifa = cleaned.get('tarifa')
         if kgs is not None and tarifa is not None:
             cleaned['total'] = (kgs * tarifa).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        # "N° cert. INYM" no puede repetirse dentro del mismo tipo de
+        # tarifa (ver models.py::RetencionInym.id_certificado_inym) -- se
+        # valida acá porque este form no es un ModelForm. Pedido de
+        # Gastón, 24/09/2026.
+        id_certificado_inym = cleaned.get('id_certificado_inym')
+        id_tipo_tarifa = cleaned.get('id_tipo_tarifa')
+        if id_certificado_inym is not None and id_tipo_tarifa is not None:
+            from .models import RetencionInym
+            existe = RetencionInym.objects.filter(
+                id_certificado_inym=id_certificado_inym, id_tipo_tarifa=id_tipo_tarifa,
+            )
+            if self.instance_id is not None:
+                existe = existe.exclude(id=self.instance_id)
+            duplicada = existe.first()
+            if duplicada is not None:
+                self.add_error(
+                    'id_certificado_inym',
+                    f'Ya existe la retención {duplicada.id} con este N° de certificado y este '
+                    'tipo de tarifa.',
+                )
         return cleaned
 
 

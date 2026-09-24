@@ -214,7 +214,7 @@ def retencion_inym_modificar(request, pk):
         return redirect('retenciones_inym:listado')
 
     if request.method == 'POST':
-        form = RetencionInymForm(request.POST)
+        form = RetencionInymForm(request.POST, instance_id=registro.id)
         if form.is_valid():
             for campo, valor in _form_a_datos(form.cleaned_data).items():
                 setattr(registro, campo, valor)
@@ -223,7 +223,7 @@ def retencion_inym_modificar(request, pk):
             messages.success(request, 'La retención INYM se modificó correctamente.')
             return redirect('retenciones_inym:listado')
     else:
-        form = RetencionInymForm(initial={
+        form = RetencionInymForm(instance_id=registro.id, initial={
             'fecha': registro.fecha,
             'periodo': registro.periodo,
             'id_tipo_tarifa': registro.id_tipo_tarifa_id,

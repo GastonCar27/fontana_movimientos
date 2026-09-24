@@ -42,7 +42,8 @@
                     <div class="form-group col-md-2">
                         <label>{{ form.id_certificado_inym.label }}</label>
                         {{ form.id_certificado_inym }}
-                        <small class="form-text text-muted">Lo completa solo el importador de Excel; cargalo a mano solo si corresponde.</small>
+                        <small class="form-text text-muted">{{ form.id_certificado_inym.help_text }}</small>
+                        {% if form.id_certificado_inym.errors %}<div class="text-danger small">{{ form.id_certificado_inym.errors|join:", " }}</div>{% endif %}
                     </div>
                 </div>
                 <div class="form-row">
