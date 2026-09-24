@@ -105,6 +105,7 @@
                         <td class="position-relative">
                             {{ form.comprobante_texto }}
                             {{ form.comprobante }}
+                            <button type="button" class="btn btn-link btn-sm p-0 mt-1 comprobante-cambiar" style="display:none;">Cambiar factura</button>
                             <div class="comprobante-resultados"></div>
                             {% if form.comprobante.errors %}
                                 <div class="text-danger small">{{ form.comprobante.errors|join:", " }}</div>
@@ -133,6 +134,7 @@
                 <td class="position-relative">
                     {{ formset.empty_form.comprobante_texto }}
                     {{ formset.empty_form.comprobante }}
+                    <button type="button" class="btn btn-link btn-sm p-0 mt-1 comprobante-cambiar" style="display:none;">Cambiar factura</button>
                     <div class="comprobante-resultados"></div>
                 </td>
                 <td>{{ formset.empty_form.tipo_comp_origen }}</td>
@@ -217,13 +219,14 @@
     background: transparent;
 }
 /* Campos con los datos de la factura elegida (Tipo/Punto de venta/Número/
-   Fecha): una vez que se selecciona una factura del buscador quedan
-   bloqueados para que no se puedan tipear valores que no correspondan a
-   esa factura -- ver conectarBuscadorComprobante/buscarComprobantesFila.
-   Importe, Porcentaje y Retención NO se bloquean, siguen editables a
-   mano. Para "cambiar" la factura de un renglón hay que volver a buscar y
-   elegir otra: eso reemplaza estos valores y los deja bloqueados de
-   nuevo. */
+   Fecha) y el propio cuadro "Buscar factura": una vez que se selecciona una
+   factura del buscador quedan bloqueados para que no se puedan tipear
+   valores que no correspondan a esa factura -- ver
+   bloquearCamposFila/bloquearBuscador. Importe, Porcentaje y Retención NO
+   se bloquean, siguen editables a mano. Para cambiar la factura de un
+   renglón hay que tocar el botón "Cambiar factura" (ver
+   desbloquearBuscador), buscar y elegir otra: eso reemplaza estos valores
+   y los deja bloqueados de nuevo. */
 .campo-bloqueado {
     background-color: #e9ecef !important;
     cursor: not-allowed !important;
@@ -414,6 +417,56 @@
         }
     }
 
+    // --- Bloquea también el propio cuadro "Buscar factura" una vez que ya
+    // quedó vinculada una factura -- antes se dejaba siempre editable (a
+    // propósito, para poder re-buscar) pero eso daba la impresión de que
+    // se podían "modificar los datos de la factura" desde ahí (Gastón,
+    // 24/09/2026). Ahora hay que tocar "Cambiar factura" para volver a
+    // habilitarlo; mientras tanto, escribir ahí no hace nada (ver
+    // pointer-events:none en .campo-bloqueado). ---
+    function bloquearBuscador(fila) {
+        const input = fila.querySelector('.comprobante-buscador');
+        const boton = fila.querySelector('.comprobante-cambiar');
+        const resultados = fila.querySelector('.comprobante-resultados');
+        if (input) {
+            input.readOnly = true;
+            input.classList.add('campo-bloqueado');
+            input.dataset.textoVinculado = input.value;
+        }
+        if (boton) boton.style.display = 'inline-block';
+        if (resultados) resultados.style.display = 'none';
+    }
+
+    function desbloquearBuscador(fila) {
+        const input = fila.querySelector('.comprobante-buscador');
+        const boton = fila.querySelector('.comprobante-cambiar');
+        if (input) {
+            input.readOnly = false;
+            input.classList.remove('campo-bloqueado');
+            input.focus();
+            input.select();
+        }
+        if (boton) boton.style.display = 'none';
+    }
+
+    // --- Ubica el desplegable de resultados arriba o abajo del cuadro de
+    // búsqueda según el espacio disponible en la pantalla, para que no
+    // termine tapando al botón "+ Agregar renglón" (u otros controles) que
+    // están debajo de la tabla -- pasaba sobre todo con el último renglón
+    // de la tabla, justo arriba del botón (Gastón, 24/09/2026). ---
+    function posicionarResultados(input, resultados) {
+        const rect = input.getBoundingClientRect();
+        const espacioNecesario = 230; // alto máximo del desplegable + margen
+        const espacioAbajo = window.innerHeight - rect.bottom;
+        if (espacioAbajo < espacioNecesario && rect.top > espacioNecesario) {
+            resultados.style.top = 'auto';
+            resultados.style.bottom = '100%';
+        } else {
+            resultados.style.top = '100%';
+            resultados.style.bottom = 'auto';
+        }
+    }
+
     // --- Buscador de "factura ya cargada" por renglón: según la entidad
     // elegida arriba y la dirección de la retención, ofrece los
     // comprobantes que corresponden (ver
@@ -434,6 +487,7 @@
             aviso.className = 'comprobante-resultado-vacio';
             aviso.textContent = 'Elegí primero la entidad, arriba.';
             resultados.appendChild(aviso);
+            posicionarResultados(input, resultados);
             resultados.style.display = 'block';
             return;
         }
@@ -453,6 +507,7 @@
                     vacio.className = 'comprobante-resultado-vacio';
                     vacio.textContent = 'No se encontraron facturas para esa entidad/dirección.';
                     resultados.appendChild(vacio);
+                    posicionarResultados(input, resultados);
                     resultados.style.display = 'block';
                     return;
                 }
@@ -496,14 +551,17 @@
                         // Una vez elegida la factura, sus datos propios quedan
                         // bloqueados (no Importe/Porcentaje/Retención, esos
                         // siguen editables a mano) -- pedido de Gastón,
-                        // 23/09/2026.
+                        // 23/09/2026. El propio cuadro "Buscar factura" también
+                        // se bloquea (pedido de Gastón, 24/09/2026): para
+                        // elegir otra factura hay que tocar "Cambiar factura".
                         bloquearCamposFila(fila);
-                        input.readOnly = false; // el buscador sigue activo: buscar y elegir otra factura reemplaza el vínculo y vuelve a bloquear estos campos.
+                        bloquearBuscador(fila);
 
                         resultados.style.display = 'none';
                     });
                     resultados.appendChild(div);
                 });
+                posicionarResultados(input, resultados);
                 resultados.style.display = 'block';
             });
     }
@@ -511,6 +569,8 @@
     function conectarBuscadorComprobante(fila) {
         const input = fila.querySelector('.comprobante-buscador');
         const resultados = fila.querySelector('.comprobante-resultados');
+        const boton = fila.querySelector('.comprobante-cambiar');
+        const inputComprobante = fila.querySelector('input[name$="-comprobante"]');
         if (!input || !resultados) return;
         let timeoutId = null;
 
@@ -522,6 +582,26 @@
             clearTimeout(timeoutId);
             timeoutId = setTimeout(function () { buscarComprobantesFila(fila); }, 250);
         });
+        // Si se tocó "Cambiar factura" pero al final no se eligió ninguna de
+        // la lista, se descarta lo tipeado y se vuelve a bloquear con el
+        // texto de la factura que sigue vinculada -- así nunca queda un
+        // texto en pantalla que no corresponda a la factura realmente
+        // guardada (setTimeout para dejar que el click sobre un resultado
+        // se procese antes de que el blur revierta el cuadro).
+        input.addEventListener('blur', function () {
+            setTimeout(function () {
+                if (input.readOnly) return; // ya se volvió a bloquear (se eligió una factura)
+                if (inputComprobante && inputComprobante.value) {
+                    input.value = input.dataset.textoVinculado || input.value;
+                    bloquearBuscador(fila);
+                }
+            }, 200);
+        });
+        if (boton) {
+            boton.addEventListener('click', function () {
+                desbloquearBuscador(fila);
+            });
+        }
         document.addEventListener('click', function (e) {
             if (!resultados.contains(e.target) && e.target !== input) {
                 resultados.style.display = 'none';
@@ -548,11 +628,13 @@
         }
         conectarBuscadorComprobante(fila);
         // Si la fila ya vino con una factura vinculada (Modificación, con
-        // renglones ya guardados) sus campos de la factura arrancan
-        // bloqueados, igual que si se acabara de elegir del buscador.
+        // renglones ya guardados) sus campos de la factura -- y el propio
+        // cuadro "Buscar factura" -- arrancan bloqueados, igual que si se
+        // acabara de elegir del buscador.
         const inputComprobante = fila.querySelector('input[name$="-comprobante"]');
         if (inputComprobante && inputComprobante.value) {
             bloquearCamposFila(fila);
+            bloquearBuscador(fila);
         }
     }
 

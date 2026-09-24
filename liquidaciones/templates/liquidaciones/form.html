@@ -110,7 +110,7 @@
 
     <h2>Movimientos de caja</h2>
     <table border="1" cellpadding="5" class="tabla-items">
-        <thead><tr><th>Sel.</th><th>ID</th><th>Fecha</th><th>Tipo</th><th>Número</th><th>Concepto</th><th>Monto</th><th>Debe/Haber</th></tr></thead>
+        <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>ID</th><th>Fecha</th><th>Tipo</th><th>Número</th><th>Concepto</th><th>Monto</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for m in items.movimientos %}
             <tr>
@@ -137,7 +137,7 @@
 
     <h2>Comprobantes</h2>
     <table border="1" cellpadding="5" class="tabla-items">
-        <thead><tr><th>Sel.</th><th>Fecha</th><th>ID</th><th>Tipo Comprobante</th><th>Punto de Venta</th><th>Número</th><th>Total</th><th>Debe/Haber</th></tr></thead>
+        <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>ID</th><th>Tipo Comprobante</th><th>Punto de Venta</th><th>Número</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for c in items.comprobantes %}
             <tr>
@@ -164,7 +164,7 @@
 
     <h2>Retenciones</h2>
     <table border="1" cellpadding="5" class="tabla-items">
-        <thead><tr><th>Sel.</th><th>Fecha</th><th>ID</th><th>Año</th><th>Número</th><th>Régimen</th><th>Impuesto</th><th>Total</th><th>Debe/Haber</th></tr></thead>
+        <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>ID</th><th>Año</th><th>Número</th><th>Régimen</th><th>Impuesto</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for r in items.retenciones %}
             <tr>
@@ -192,7 +192,7 @@
 
     <h2>Retenciones INYM</h2>
     <table border="1" cellpadding="5" class="tabla-items">
-        <thead><tr><th>Sel.</th><th>Fecha</th><th>Kgs</th><th>Total</th><th>Debe/Haber</th></tr></thead>
+        <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>Kgs</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for ri in items.retenciones_inym %}
             <tr>
@@ -229,7 +229,7 @@
     </div>
 
     <table border="1" cellpadding="5" class="tabla-items" id="tabla-otros-items" style="margin-top:10px;">
-        <thead><tr><th>Sel.</th><th>Tipo</th><th>Entidad</th><th>Fecha</th><th>Detalle</th><th>Monto</th><th>Debe/Haber</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Tipo</th><th>Entidad</th><th>Fecha</th><th>Detalle</th><th>Monto</th><th>Debe/Haber</th><th></th></tr></thead>
         <tbody id="tbody-otros-items">
         {% for m in items.movimientos_otros %}
             <tr>
@@ -246,7 +246,7 @@
                         <option value="haber" {% if m.tipo_actual == "haber" or not m.tipo_actual %}selected{% endif %}>Haber</option>
                     </select>
                 </td>
-                <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales();">Quitar</button></td>
+                <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales(); actualizarTablaOtrosSeleccionTodos();">Quitar</button></td>
             </tr>
         {% endfor %}
         {% for c in items.comprobantes_otros %}
@@ -264,7 +264,7 @@
                         <option value="haber" {% if c.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
                     </select>
                 </td>
-                <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales();">Quitar</button></td>
+                <td><button type="button" class="btn-quitar-otro" onclick="this.closest('tr').remove(); recalcularTotales(); actualizarTablaOtrosSeleccionTodos();">Quitar</button></td>
             </tr>
         {% endfor %}
         </tbody>
@@ -361,6 +361,7 @@ function agregarOtroItem(item) {
     if (yaExiste) {
         yaExiste.checked = true;
         recalcularTotales();
+        actualizarTablaOtrosSeleccionTodos();
         return;
     }
 
@@ -395,10 +396,15 @@ function agregarOtroItem(item) {
     tr.querySelector('.btn-quitar-otro').addEventListener('click', function () {
         tr.remove();
         recalcularTotales();
+        actualizarTablaOtrosSeleccionTodos();
     });
-    tr.querySelector('.chk-item').addEventListener('change', recalcularTotales);
+    tr.querySelector('.chk-item').addEventListener('change', function () {
+        recalcularTotales();
+        actualizarTablaOtrosSeleccionTodos();
+    });
     tr.querySelector('.sel-tipo').addEventListener('change', recalcularTotales);
     recalcularTotales();
+    actualizarTablaOtrosSeleccionTodos();
 }
 
 // --- Buscador de "Otros movimientos / comprobantes" (de otra entidad) ---
@@ -510,6 +516,47 @@ document.querySelectorAll('.chk-item, .sel-tipo').forEach(function (el) {
 });
 
 recalcularTotales();
+
+// --- "Seleccionar todos" por recuadro: cada tabla de ítems (Movimientos de
+// caja, Comprobantes, Retenciones, Retenciones INYM, Otros movimientos/
+// comprobantes) tiene su propio checkbox en el encabezado de la columna
+// "Sel." -- pedido de Gastón, 24/09/2026, para no tener que tildar uno por
+// uno cuando hay muchos ítems. Tilda/destilda sólo los ítems de SU tabla; si
+// se destilda algún ítem a mano, el checkbox del encabezado pasa a
+// "indeterminado" (ni todo tildado ni todo vacío). ---
+function actualizarSeleccionarTodos(tabla) {
+    const master = tabla.querySelector('.chk-select-all');
+    if (!master) return;
+    const items = Array.from(tabla.querySelectorAll('tbody .chk-item'));
+    if (items.length === 0) {
+        master.checked = false;
+        master.indeterminate = false;
+        return;
+    }
+    const marcados = items.filter(function (c) { return c.checked; }).length;
+    master.checked = marcados === items.length;
+    master.indeterminate = marcados > 0 && marcados < items.length;
+}
+
+function actualizarTablaOtrosSeleccionTodos() {
+    const tabla = document.getElementById('tabla-otros-items');
+    if (tabla) actualizarSeleccionarTodos(tabla);
+}
+
+document.querySelectorAll('.tabla-items').forEach(function (tabla) {
+    const master = tabla.querySelector('.chk-select-all');
+    if (!master) return;
+    master.addEventListener('change', function () {
+        tabla.querySelectorAll('tbody .chk-item').forEach(function (chk) {
+            chk.checked = master.checked;
+        });
+        recalcularTotales();
+    });
+    tabla.querySelectorAll('tbody .chk-item').forEach(function (chk) {
+        chk.addEventListener('change', function () { actualizarSeleccionarTodos(tabla); });
+    });
+    actualizarSeleccionarTodos(tabla);
+});
 
 // --- Confirmación al guardar si hay diferencia entre Debe y Haber ---
 (function () {
