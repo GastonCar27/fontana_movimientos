@@ -95,6 +95,21 @@
     z-index: 1050;
     box-shadow: 0 2px 8px rgba(0,0,0,0.35);
 }
+/* Filtro de fechas "Desde/Hasta" por recuadro (Movimientos de caja,
+   Comprobantes, Retenciones, Retenciones INYM) -- pedido de Gastón,
+   24/09/2026, para achicar la lista cuando hay muchos ítems. Sólo esconde
+   filas en pantalla (filtro del lado del cliente, con JS): no cambia qué
+   ítems trajo el servidor ni pisa ninguna selección ya hecha. */
+.filtro-fecha-caja {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 4px 0 8px;
+    font-size: 0.9rem;
+}
+.filtro-fecha-caja input[type="date"] {
+    margin-left: 4px;
+}
 </style>
 
 {% if entidad %}
@@ -109,11 +124,16 @@
     </label>
 
     <h2>Movimientos de caja</h2>
-    <table border="1" cellpadding="5" class="tabla-items">
+    <div class="filtro-fecha-caja" data-tabla="tabla-movimientos">
+        <label class="small mb-0">Desde <input type="date" class="filtro-fecha-desde"></label>
+        <label class="small mb-0">Hasta <input type="date" class="filtro-fecha-hasta"></label>
+        <span class="text-muted small filtro-sin-resultados" style="display:none;">Ningún ítem visible con ese filtro de fechas.</span>
+    </div>
+    <table border="1" cellpadding="5" class="tabla-items" id="tabla-movimientos">
         <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>ID</th><th>Fecha</th><th>Tipo</th><th>Número</th><th>Concepto</th><th>Monto</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for m in items.movimientos %}
-            <tr>
+            <tr data-fecha="{{ m.emision|date:'Y-m-d' }}">
                 <td><input type="checkbox" name="mov_selected" value="{{ m.pk }}" class="chk-item"
                            data-monto="{{ m.monto_mostrar }}" {% if m.seleccionado %}checked{% endif %}></td>
                 <td>{{ m.id }}</td>
@@ -136,11 +156,16 @@
     </table>
 
     <h2>Comprobantes</h2>
-    <table border="1" cellpadding="5" class="tabla-items">
+    <div class="filtro-fecha-caja" data-tabla="tabla-comprobantes">
+        <label class="small mb-0">Desde <input type="date" class="filtro-fecha-desde"></label>
+        <label class="small mb-0">Hasta <input type="date" class="filtro-fecha-hasta"></label>
+        <span class="text-muted small filtro-sin-resultados" style="display:none;">Ningún ítem visible con ese filtro de fechas.</span>
+    </div>
+    <table border="1" cellpadding="5" class="tabla-items" id="tabla-comprobantes">
         <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>ID</th><th>Tipo Comprobante</th><th>Punto de Venta</th><th>Número</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for c in items.comprobantes %}
-            <tr>
+            <tr data-fecha="{{ c.fecha|date:'Y-m-d' }}">
                 <td><input type="checkbox" name="comp_selected" value="{{ c.pk }}" class="chk-item"
                            data-monto="{{ c.monto_mostrar }}" {% if c.seleccionado %}checked{% endif %}></td>
                 <td>{{ c.fecha }}</td>
@@ -163,11 +188,16 @@
     </table>
 
     <h2>Retenciones</h2>
-    <table border="1" cellpadding="5" class="tabla-items">
+    <div class="filtro-fecha-caja" data-tabla="tabla-retenciones">
+        <label class="small mb-0">Desde <input type="date" class="filtro-fecha-desde"></label>
+        <label class="small mb-0">Hasta <input type="date" class="filtro-fecha-hasta"></label>
+        <span class="text-muted small filtro-sin-resultados" style="display:none;">Ningún ítem visible con ese filtro de fechas.</span>
+    </div>
+    <table border="1" cellpadding="5" class="tabla-items" id="tabla-retenciones">
         <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>ID</th><th>Año</th><th>Número</th><th>Régimen</th><th>Impuesto</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for r in items.retenciones %}
-            <tr>
+            <tr data-fecha="{{ r.fecha|date:'Y-m-d' }}">
                 <td><input type="checkbox" name="ret_selected" value="{{ r.pk }}" class="chk-item"
                            data-monto="{{ r.monto_mostrar }}" {% if r.seleccionado %}checked{% endif %}></td>
                 <td>{{ r.fecha }}</td>
@@ -191,11 +221,16 @@
     </table>
 
     <h2>Retenciones INYM</h2>
-    <table border="1" cellpadding="5" class="tabla-items">
+    <div class="filtro-fecha-caja" data-tabla="tabla-retenciones-inym">
+        <label class="small mb-0">Desde <input type="date" class="filtro-fecha-desde"></label>
+        <label class="small mb-0">Hasta <input type="date" class="filtro-fecha-hasta"></label>
+        <span class="text-muted small filtro-sin-resultados" style="display:none;">Ningún ítem visible con ese filtro de fechas.</span>
+    </div>
+    <table border="1" cellpadding="5" class="tabla-items" id="tabla-retenciones-inym">
         <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>Kgs</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for ri in items.retenciones_inym %}
-            <tr>
+            <tr data-fecha="{{ ri.fecha|date:'Y-m-d' }}">
                 <td><input type="checkbox" name="retinym_selected" value="{{ ri.pk }}" class="chk-item"
                            data-monto="{{ ri.monto_mostrar }}" {% if ri.seleccionado %}checked{% endif %}></td>
                 <td>{{ ri.fecha }}</td>
@@ -521,13 +556,19 @@ recalcularTotales();
 // caja, Comprobantes, Retenciones, Retenciones INYM, Otros movimientos/
 // comprobantes) tiene su propio checkbox en el encabezado de la columna
 // "Sel." -- pedido de Gastón, 24/09/2026, para no tener que tildar uno por
-// uno cuando hay muchos ítems. Tilda/destilda sólo los ítems de SU tabla; si
-// se destilda algún ítem a mano, el checkbox del encabezado pasa a
-// "indeterminado" (ni todo tildado ni todo vacío). ---
+// uno cuando hay muchos ítems. Tilda/destilda sólo los ítems VISIBLES de SU
+// tabla (si hay un filtro de fecha aplicado, los que quedaron escondidos no
+// se tocan); si se destilda algún ítem a mano, el checkbox del encabezado
+// pasa a "indeterminado" (ni todo tildado ni todo vacío). ---
+function filaVisible(chk) {
+    const fila = chk.closest('tr');
+    return fila && fila.style.display !== 'none';
+}
+
 function actualizarSeleccionarTodos(tabla) {
     const master = tabla.querySelector('.chk-select-all');
     if (!master) return;
-    const items = Array.from(tabla.querySelectorAll('tbody .chk-item'));
+    const items = Array.from(tabla.querySelectorAll('tbody .chk-item')).filter(filaVisible);
     if (items.length === 0) {
         master.checked = false;
         master.indeterminate = false;
@@ -548,6 +589,7 @@ document.querySelectorAll('.tabla-items').forEach(function (tabla) {
     if (!master) return;
     master.addEventListener('change', function () {
         tabla.querySelectorAll('tbody .chk-item').forEach(function (chk) {
+            if (!filaVisible(chk)) return; // no tocar lo que el filtro de fecha esconde
             chk.checked = master.checked;
         });
         recalcularTotales();
@@ -556,6 +598,49 @@ document.querySelectorAll('.tabla-items').forEach(function (tabla) {
         chk.addEventListener('change', function () { actualizarSeleccionarTodos(tabla); });
     });
     actualizarSeleccionarTodos(tabla);
+});
+
+// --- Filtro de fechas "Desde/Hasta" por recuadro (Movimientos de caja,
+// Comprobantes, Retenciones, Retenciones INYM) -- pedido de Gastón,
+// 24/09/2026: sólo esconde/muestra filas ya traídas por el servidor (no
+// dispara ningún pedido nuevo), así que no arriesga perder nada tipeado ni
+// tildado en la pantalla. Las filas "No hay X pendientes..." (sin
+// data-fecha) nunca se tocan. Al filtrar, el checkbox "Seleccionar todos"
+// se recalcula para reflejar sólo lo que quedó visible. ---
+document.querySelectorAll('.filtro-fecha-caja').forEach(function (contenedor) {
+    const tabla = document.getElementById(contenedor.dataset.tabla);
+    const inputDesde = contenedor.querySelector('.filtro-fecha-desde');
+    const inputHasta = contenedor.querySelector('.filtro-fecha-hasta');
+    const avisoSinResultados = contenedor.querySelector('.filtro-sin-resultados');
+    if (!tabla || !inputDesde || !inputHasta) return;
+
+    function aplicarFiltro() {
+        const desde = inputDesde.value;
+        const hasta = inputHasta.value;
+        let totalConFecha = 0;
+        let totalVisibles = 0;
+        tabla.querySelectorAll('tbody tr[data-fecha]').forEach(function (fila) {
+            totalConFecha += 1;
+            const fecha = fila.dataset.fecha;
+            let visible = true;
+            if (!fecha) {
+                // Sin fecha cargada en el ítem: no se puede filtrar, se deja siempre visible.
+                visible = true;
+            } else {
+                if (desde && fecha < desde) visible = false;
+                if (hasta && fecha > hasta) visible = false;
+            }
+            fila.style.display = visible ? '' : 'none';
+            if (visible) totalVisibles += 1;
+        });
+        if (avisoSinResultados) {
+            avisoSinResultados.style.display = (totalConFecha > 0 && totalVisibles === 0) ? '' : 'none';
+        }
+        actualizarSeleccionarTodos(tabla);
+    }
+
+    inputDesde.addEventListener('change', aplicarFiltro);
+    inputHasta.addEventListener('change', aplicarFiltro);
 });
 
 // --- Confirmación al guardar si hay diferencia entre Debe y Haber ---
