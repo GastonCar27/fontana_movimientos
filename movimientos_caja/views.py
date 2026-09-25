@@ -608,6 +608,24 @@ def _movimientos_reporte_filtrados(request):
     return form, movimientos, filtros_activos
 
 
+# Mapeo columna (parámetro GET 'orden') -> campo ORM, compartido por la
+# pantalla del reporte y sus exportaciones (Excel/PDF), para que las tres
+# ordenen siempre exactamente igual.
+CAMPOS_ORDEN_REPORTE_MC = {
+    'id': 'id',
+    'caja': 'caja__nombre',
+    'tipo': 'tipo__nombre',
+    'concepto': 'rel_concepto__concepto_tipo__nombre',
+    'numero': 'rel_numero__numero',
+    'emision': 'emision',
+    'emisor': 'emisor_relacion__id_entidad__nombre',
+    'receptor': 'receptor__nombre',
+    'monto': 'monto',
+    'diferido': 'movimientocajadiferido__diferido',
+    'efectivizacion': 'efectivizacion',
+}
+
+
 def movimiento_caja_reporte(request):
     form, movimientos, filtros_activos = _movimientos_reporte_filtrados(request)
 
@@ -616,19 +634,7 @@ def movimiento_caja_reporte(request):
     )
 
     cantidad_total = movimientos.count()
-    movimientos = aplicar_orden_queryset(request, movimientos, {
-        'id': 'id',
-        'caja': 'caja__nombre',
-        'tipo': 'tipo__nombre',
-        'concepto': 'rel_concepto__concepto_tipo__nombre',
-        'numero': 'rel_numero__numero',
-        'emision': 'emision',
-        'emisor': 'emisor_relacion__id_entidad__nombre',
-        'receptor': 'receptor__nombre',
-        'monto': 'monto',
-        'diferido': 'movimientocajadiferido__diferido',
-        'efectivizacion': 'efectivizacion',
-    })
+    movimientos = aplicar_orden_queryset(request, movimientos, CAMPOS_ORDEN_REPORTE_MC)
     movimientos = movimientos[:500]
 
     receptor_id = form['receptor'].value()
@@ -808,12 +814,14 @@ def _pdf_response(nombre_archivo, titulo, resultado):
 
 def movimiento_caja_reporte_excel(request):
     _form, movimientos, _filtros_activos = _movimientos_reporte_filtrados(request)
+    movimientos = aplicar_orden_queryset(request, movimientos, CAMPOS_ORDEN_REPORTE_MC)
     resultado = _filas_movimiento_caja_reporte(movimientos)
     return _excel_response('reporte_movimientos_caja', resultado)
 
 
 def movimiento_caja_reporte_pdf(request):
     _form, movimientos, _filtros_activos = _movimientos_reporte_filtrados(request)
+    movimientos = aplicar_orden_queryset(request, movimientos, CAMPOS_ORDEN_REPORTE_MC)
     resultado = _filas_movimiento_caja_reporte(movimientos)
     return _pdf_response('reporte_movimientos_caja', 'Reporte de movimientos de caja', resultado)
 
