@@ -302,7 +302,9 @@ def movimiento_caja_listado(request):
     liquidado y con qué id, sin pegarle a la base una vez por fila.
     """
     movimientos = (
-        MovimientoCaja.objects.select_related('caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad')
+        MovimientoCaja.objects.select_related(
+            'caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad', 'movimientocajadiferido',
+        )
         .prefetch_related('liquidaciones__liquidacion')
         .order_by('-emision', '-id')
     )

@@ -88,3 +88,23 @@ class SinLiquidarFiltroForm(forms.Form):
     )
     fecha_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
     fecha_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
+
+
+class ComprobantesSinLiquidarFiltroForm(SinLiquidarFiltroForm):
+    """Mismo filtro que `SinLiquidarFiltroForm`, con dos checkboxes de más
+    sólo para el listado de Comprobantes sin liquidar (pedido de Gastón,
+    25/09/2026): poder excluir los comprobantes donde Fontana es la
+    EMISORA y/o los que Fontana es la RECEPTORA -- son independientes (se
+    puede tildar uno solo, los dos, o ninguno) para poder quedarse viendo
+    sólo "lo que le compramos a terceros" o sólo "lo que le facturamos a
+    terceros", según haga falta."""
+    excluir_fontana_emisora = forms.BooleanField(
+        required=False,
+        label='Excluir donde Fontana es la emisora',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+    excluir_fontana_receptora = forms.BooleanField(
+        required=False,
+        label='Excluir donde Fontana es la receptora',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )

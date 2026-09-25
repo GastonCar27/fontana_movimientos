@@ -38,6 +38,18 @@
           </p>
           <p>{{ form.fecha_desde.label_tag }}<br>{{ form.fecha_desde }}</p>
           <p>{{ form.fecha_hasta.label_tag }}<br>{{ form.fecha_hasta }}</p>
+          <div class="form-check">
+            {{ form.excluir_fontana_emisora }}
+            <label class="form-check-label" for="{{ form.excluir_fontana_emisora.id_for_label }}">
+              {{ form.excluir_fontana_emisora.label }}
+            </label>
+          </div>
+          <div class="form-check">
+            {{ form.excluir_fontana_receptora }}
+            <label class="form-check-label" for="{{ form.excluir_fontana_receptora.id_for_label }}">
+              {{ form.excluir_fontana_receptora.label }}
+            </label>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="submit" class="btn btn-primary">Filtrar</button>

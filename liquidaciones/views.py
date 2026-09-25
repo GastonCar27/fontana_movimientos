@@ -20,7 +20,13 @@ from retenciones.models import Retencion
 from retenciones_inym.models import RetencionInym
 
 from . import documentos
-from .forms import LiquidacionSeleccionForm, LiquidacionReporteForm, RankingEntidadesForm, SinLiquidarFiltroForm
+from .forms import (
+    ComprobantesSinLiquidarFiltroForm,
+    LiquidacionSeleccionForm,
+    LiquidacionReporteForm,
+    RankingEntidadesForm,
+    SinLiquidarFiltroForm,
+)
 from .models import (
     Liquidacion,
     LiquidacionComprobante,
@@ -938,7 +944,7 @@ def _entidad_propia():
 # --- Comprobantes -----------------------------------------------------------
 
 def _comprobantes_sin_liquidar(request):
-    form = SinLiquidarFiltroForm(request.GET or None)
+    form = ComprobantesSinLiquidarFiltroForm(request.GET or None)
     comprobantes = (
         Comprobante.objects.filter(liquidaciones__isnull=True)
         .select_related('entidad_emisor', 'tipo_comprobante')
@@ -948,12 +954,22 @@ def _comprobantes_sin_liquidar(request):
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
+        excluir_fontana_emisora = form.cleaned_data.get('excluir_fontana_emisora')
+        excluir_fontana_receptora = form.cleaned_data.get('excluir_fontana_receptora')
         if entidad:
             comprobantes = comprobantes.filter(entidad_emisor=entidad)
         if fecha_desde:
             comprobantes = comprobantes.filter(fecha__gte=fecha_desde)
         if fecha_hasta:
             comprobantes = comprobantes.filter(fecha__lte=fecha_hasta)
+        # es_emisor=0 -> Fontana es la emisora (nosotros facturamos);
+        # es_emisor=1 o vacío (default) -> Fontana es la receptora (nos
+        # facturan) -- mismo criterio que sin_liquidar_comprobantes() y
+        # _filas_comprobantes_sin_liquidar() de más abajo.
+        if excluir_fontana_emisora:
+            comprobantes = comprobantes.exclude(es_emisor=0)
+        if excluir_fontana_receptora:
+            comprobantes = comprobantes.exclude(Q(es_emisor=1) | Q(es_emisor__isnull=True))
     return form, comprobantes
 
 
