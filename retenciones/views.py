@@ -506,7 +506,27 @@ def retencion_alta(request):
                         return retencion_pdf(request, retencion.id)
                     if accion == 'excel':
                         return retencion_excel(request, retencion.id)
-                    return redirect('retenciones:listado')
+
+                    # "Guardar" (sin ir a PDF/Excel): en vez de mandar al
+                    # listado, se vuelve a mostrar la propia alta lista para
+                    # cargar la siguiente retención -- pedido de Gastón
+                    # (25/09/2026): "por lo general se tienen varias
+                    # retenciones a la vez para cargar en la misma dirección
+                    # y fecha". Se conservan Entidad/Dirección/Fecha/Año (lo
+                    # que se repite) y sólo se limpian Número (recalculado al
+                    # siguiente disponible de ese año), Impuesto/Régimen y
+                    # Total, más los renglones. Sigue hasta el render() de
+                    # abajo (mismo que usa el GET inicial).
+                    datos_previos = header_form.cleaned_data
+                    header_form = RetencionHeaderForm(initial={
+                        'entidad': datos_previos.get('entidad'),
+                        'entidad_nombre': datos_previos.get('entidad_nombre'),
+                        'es_emisor': datos_previos.get('es_emisor'),
+                        'fecha': datos_previos.get('fecha'),
+                        'año': datos_previos.get('año'),
+                        'numero': _siguiente_numero_retencion(datos_previos.get('año')),
+                    })
+                    formset = RetencionRenglonFormSet(prefix='form')
     else:
         hoy = __import__('datetime').date.today()
         anio_actual = hoy.year

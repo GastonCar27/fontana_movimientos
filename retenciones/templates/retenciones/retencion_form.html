@@ -9,6 +9,12 @@
         {% endif %}
     </h4>
 
+    {% if messages %}
+    <ul class="list-unstyled">
+      {% for message in messages %}<li class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
     <form method="post" id="form-retencion">
         {% csrf_token %}
 
@@ -376,6 +382,23 @@
         recalcularTotalGeneral();
     }
 
+    // --- Cálculo inverso: si ya se cargaron Importe y Retención (total) a
+    // mano pero Porcentaje todavía está vacío, se completa solo (total /
+    // importe x 100). Nunca pisa un Porcentaje que el usuario ya cargó --
+    // sólo actúa mientras ese campo sigue en blanco. ---
+    function recalcularPorcentajeSiFalta(fila) {
+        const importe = fila.querySelector('.importe-input');
+        const porcentaje = fila.querySelector('.porcentaje-input');
+        const total = fila.querySelector('.total-input');
+        if (!importe || !porcentaje || !total) return;
+        if (porcentaje.value.trim() !== '') return;
+        const valImporte = parseFloat(importe.value);
+        const valTotal = parseFloat(total.value);
+        if (!isNaN(valImporte) && valImporte !== 0 && !isNaN(valTotal)) {
+            porcentaje.value = (valTotal / valImporte * 100).toFixed(2);
+        }
+    }
+
     // --- Total general: suma de la columna "Retención" de todos los
     // renglones, sin contar los marcados para "Quitar" (checkbox DELETE) --
     // se muestra antes de guardar, se recalcula solo con cada cambio. ---
@@ -613,12 +636,21 @@
         fila.querySelectorAll('.importe-input, .porcentaje-input').forEach(function (el) {
             el.addEventListener('input', function () { recalcularFila(fila); });
         });
+        // Importe también puede completar el Porcentaje (si Retención ya
+        // está cargada y Porcentaje sigue vacío) -- ver
+        // recalcularPorcentajeSiFalta.
+        const importe = fila.querySelector('.importe-input');
+        if (importe) {
+            importe.addEventListener('input', function () { recalcularPorcentajeSiFalta(fila); });
+        }
         // "Retención" queda editable a mano (ver más abajo el aviso de
         // diferencia al guardar); cualquier cambio ahí también tiene que
-        // reflejarse en el total general.
+        // reflejarse en el total general, y si todavía no hay Porcentaje
+        // cargado, completarlo a partir de Importe y Retención.
         const total = fila.querySelector('.total-input');
         if (total) {
             total.addEventListener('input', recalcularTotalGeneral);
+            total.addEventListener('input', function () { recalcularPorcentajeSiFalta(fila); });
         }
         // Si se marca "Quitar", ese renglón no debe seguir sumando en el
         // total general (se va a borrar al guardar).
