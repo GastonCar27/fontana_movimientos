@@ -252,6 +252,17 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
         retenciones_inym_qs = RetencionInym.objects.filter(
             operador_retenido__entidad=entidad, operador_emisor__entidad_id=ENTIDAD_PROPIA_ID,
         )
+    # No ofrecer como opción NUEVA una retención INYM que INYM ya dio de baja
+    # (campo `eliminacion` cargado) -- pedido de Gastón, 25/09/2026. Si ya
+    # estaba vinculada a ESTA MISMA liquidación de antes (modo edición, está
+    # en retinym_tipo), se la sigue mostrando igual -- si no, al reguardar
+    # la liquidación se perdería el vínculo sin que nadie lo haya pedido,
+    # sólo porque el ítem dejó de listarse. Se marca aparte en la plantilla
+    # (ri.eliminacion) para que quede visible que corresponde a un
+    # certificado dado de baja.
+    retenciones_inym_qs = retenciones_inym_qs.filter(
+        Q(eliminacion__isnull=True) | Q(id__in=retinym_tipo.keys())
+    )
     retenciones_inym = list(
         retenciones_inym_qs
         .exclude(id__in=retinym_excl)
@@ -1103,7 +1114,11 @@ def sin_liquidar_retenciones(request):
 def _retenciones_inym_sin_liquidar(request):
     form = SinLiquidarFiltroForm(request.GET or None)
     retenciones_inym = (
-        RetencionInym.objects.filter(liquidaciones__isnull=True)
+        # No tiene sentido ofrecer para liquidar un certificado que INYM ya
+        # dio de baja (campo `eliminacion` cargado) -- pedido de Gastón,
+        # 25/09/2026. Mismo criterio que en liquidaciones/views.py::
+        # _armar_items (pantalla de alta).
+        RetencionInym.objects.filter(liquidaciones__isnull=True, eliminacion__isnull=True)
         .select_related(
             'operador_emisor__entidad', 'operador_emisor__tipo_operador',
             'operador_retenido__entidad', 'operador_retenido__tipo_operador',

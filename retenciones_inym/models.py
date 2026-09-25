@@ -16,7 +16,21 @@ class RetencionInym(models.Model):
     fecha = models.DateField(blank=True, null=True)
     periodo = models.DateField(blank=True, null=True)
     id_tipo_tarifa = models.ForeignKey('InymRetencionTipo', models.DO_NOTHING, db_column='id_tipo_tarifa', blank=True, null=True)
-    operador_emisor = models.ForeignKey(Inym_Operador, models.DO_NOTHING, db_column='id_operador_emisor', blank=True, null=True)
+    # operador_emisor pasó a ser obligatorio (25/09/2026, pedido de Gastón --
+    # caso real: la entidad 12650 tenía un certificado con este campo vacío,
+    # que quedaba "pendiente de liquidar" en el listado general pero nunca
+    # se podía ofrecer en el alta de liquidación, ver
+    # liquidaciones/views.py::_armar_items). Ya no alcanza con exigirlo sólo
+    # en RetencionInymForm: acá se refleja también en el modelo para que
+    # quede obligatorio en cualquier ModelForm (por ejemplo el admin de
+    # Django, que antes lo dejaba pasar vacío igual). Como esta tabla es
+    # managed=False, este cambio sólo actualiza el estado del ORM -- la
+    # restricción real en MySQL hay que agregarla a mano con
+    # sql/2026-09-25_operador_emisor_not_null_retencion_inym.sql, y ANTES de
+    # correr ese script hay que completar (con
+    # `python manage.py auditar_operador_emisor_vacio`) cualquier fila vieja
+    # que todavía lo tenga vacío -- si no, el ALTER TABLE va a fallar.
+    operador_emisor = models.ForeignKey(Inym_Operador, models.DO_NOTHING, db_column='id_operador_emisor')
     operador_retenido = models.ForeignKey(Inym_Operador, models.DO_NOTHING, db_column='id_operador_retenido', related_name='retencioninym_id_operador_retenido_set', blank=True, null=True)
     kgs = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
     total = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)

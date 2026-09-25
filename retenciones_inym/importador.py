@@ -43,6 +43,13 @@ Cómo funciona, en criollo:
          que la constante OPERADOR_FONTANA_SECADERO_ID del lado
          fontana_escritorio), así que hay que conservarlo tal cual, nunca
          asignarle un ID nuevo.
+       - Operador emisor es obligatorio (25/09/2026): si la fila del Excel no
+         trae IDOPERADOR, se omite y se reporta en 'filas_con_error' -- antes
+         se guardaba igual con operador_emisor=None, lo que dejaba
+         certificados "pendientes de liquidar" en el listado general pero
+         imposibles de ofrecer en el alta de liquidación (ver
+         models.py::RetencionInym.operador_emisor). Operador retenido sigue
+         siendo opcional en el importador, sin cambios.
        - Si el tipo de tarifa de una fila no existe en `inym_retencion_tipo`,
          la fila se omite y se reporta (los tipos de tarifa son una lista
          chica y estable a cargo de INYM, no algo que este importador deba
@@ -454,12 +461,26 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
                 ))
                 continue
 
+            # operador_emisor pasó a ser obligatorio (25/09/2026, pedido de
+            # Gastón -- ver models.py::RetencionInym.operador_emisor). Antes,
+            # si la fila del Excel no traía IDOPERADOR, se guardaba igual con
+            # operador_emisor=None -- eso generaba certificados que quedaban
+            # "pendientes de liquidar" en el listado general pero imposibles
+            # de ofrecer en el alta de liquidación. Ahora esa fila se omite y
+            # se reporta como error (mismo tratamiento que ya recibía un tipo
+            # de tarifa no reconocido), en vez de crearse con el campo vacío.
+            if not fila['id_operador_emisor']:
+                resultado['filas_con_error'].append((
+                    fila['fila_excel'],
+                    'La fila no trae Operador emisor (columna IDOPERADOR vacía) -- se omitió, '
+                    'completar a mano desde /retenciones-inym/alta/ si corresponde.',
+                ))
+                continue
+
             try:
-                operador_emisor = (
-                    _resolver_operador(
-                        fila['id_operador_emisor'], fila['cuit_emisor'], fila['nombre_emisor'],
-                        fila['tipo_oper_emisor'], contexto,
-                    ) if fila['id_operador_emisor'] else None
+                operador_emisor = _resolver_operador(
+                    fila['id_operador_emisor'], fila['cuit_emisor'], fila['nombre_emisor'],
+                    fila['tipo_oper_emisor'], contexto,
                 )
                 operador_retenido = (
                     _resolver_operador(

@@ -233,7 +233,9 @@
             <tr data-fecha="{{ ri.fecha|date:'Y-m-d' }}">
                 <td><input type="checkbox" name="retinym_selected" value="{{ ri.pk }}" class="chk-item"
                            data-monto="{{ ri.monto_mostrar }}" {% if ri.seleccionado %}checked{% endif %}></td>
-                <td>{{ ri.fecha }}</td>
+                <td>{{ ri.fecha }}
+                    {% if ri.eliminacion %}<br><span class="text-danger small">Eliminada en INYM ({{ ri.eliminacion }})</span>{% endif %}
+                </td>
                 <td>{{ ri.kgs|separador_miles }}</td>
                 <td>{{ ri.monto_mostrar|separador_miles }}</td>
                 <td>

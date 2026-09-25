@@ -1,0 +1,32 @@
+-- Restricción NOT NULL real en id_operador_emisor de retencion_inym.
+-- Pedido de Gastón (25/09/2026), a raíz de un caso real (entidad 12650): un
+-- certificado con operador_emisor vacío quedaba "pendiente de liquidar" en
+-- el listado general (que sólo mira operador_retenido) pero nunca se podía
+-- ofrecer en el alta de liquidación (que exige que la otra parte sea
+-- explícitamente Fontana) -- quedaba visible pero imposible de liquidar.
+--
+-- IMPORTANTE -- ORDEN OBLIGATORIO, no te lo saltees:
+--   1) ANTES de correr este script, corré en esa misma base:
+--        python manage.py auditar_operador_emisor_vacio
+--      y completá a mano (desde /retenciones-inym/) TODAS las retenciones
+--      que liste. Si queda una sola fila con id_operador_emisor vacío, el
+--      ALTER TABLE de acá abajo va a fallar (MySQL no deja poner NOT NULL
+--      en una columna que todavía tiene algún NULL).
+--   2) Recién con el comando dando "No hay ninguna", corré este script.
+--
+-- CÓMO CORRERLO
+--   1) Primero en tu base de PRUEBAS.
+--   2) Después, exactamente el mismo script (con el mismo paso previo del
+--      comando de auditoría), en la base de PRODUCCIÓN.
+--
+-- El código ya está actualizado para no volver a generar filas con este
+-- campo vacío (el formulario de alta/modificación lo exige, y el
+-- importador de Excel de INYM ahora descarta y reporta -- en vez de
+-- guardar con NULL -- cualquier fila del Excel que no traiga operador
+-- emisor).
+--
+-- Se puede correr con cualquier cliente de MySQL (línea de comandos,
+-- phpMyAdmin, MySQL Workbench, etc.), conectado a la base correspondiente.
+
+ALTER TABLE retencion_inym
+    MODIFY COLUMN id_operador_emisor INT NOT NULL;

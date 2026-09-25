@@ -384,18 +384,30 @@
 
     // --- Cálculo inverso: si ya se cargaron Importe y Retención (total) a
     // mano pero Porcentaje todavía está vacío, se completa solo (total /
-    // importe x 100). Nunca pisa un Porcentaje que el usuario ya cargó --
-    // sólo actúa mientras ese campo sigue en blanco. ---
+    // importe x 100). Nunca pisa un Porcentaje que el usuario ya cargó a
+    // mano -- pero mientras el valor que tiene lo puso ESTA misma función
+    // (marcado con data-autocalculado), sigue recalculando en cada tecla:
+    // si sólo mirara "¿está vacío?", se autocompletaría con el primer
+    // dígito que se tipeara en Importe o Retención y se quedaría pegado en
+    // ese valor a medio tipear para siempre (bug real reportado por
+    // Gastón, 25/09/2026 -- con Importe/Retención grandes, quedaba en
+    // "0,00" apenas se tipeaba el primer dígito de Retención). ---
     function recalcularPorcentajeSiFalta(fila) {
         const importe = fila.querySelector('.importe-input');
         const porcentaje = fila.querySelector('.porcentaje-input');
         const total = fila.querySelector('.total-input');
         if (!importe || !porcentaje || !total) return;
-        if (porcentaje.value.trim() !== '') return;
+        if (porcentaje.value.trim() !== '' && porcentaje.dataset.autocalculado !== '1') return;
         const valImporte = parseFloat(importe.value);
         const valTotal = parseFloat(total.value);
         if (!isNaN(valImporte) && valImporte !== 0 && !isNaN(valTotal)) {
             porcentaje.value = (valTotal / valImporte * 100).toFixed(2);
+            porcentaje.dataset.autocalculado = '1';
+        } else if (porcentaje.dataset.autocalculado === '1') {
+            // Se borró Importe o Retención después de haber autocompletado
+            // el Porcentaje: no dejamos un valor "fantasma" a medio calcular.
+            porcentaje.value = '';
+            delete porcentaje.dataset.autocalculado;
         }
     }
 
@@ -642,6 +654,14 @@
         const importe = fila.querySelector('.importe-input');
         if (importe) {
             importe.addEventListener('input', function () { recalcularPorcentajeSiFalta(fila); });
+        }
+        // Si el usuario toca el Porcentaje a mano, deja de ser "autocalculado"
+        // -- a partir de ahí Importe/Retención ya no lo vuelven a pisar.
+        const porcentajeInput = fila.querySelector('.porcentaje-input');
+        if (porcentajeInput) {
+            porcentajeInput.addEventListener('input', function () {
+                delete porcentajeInput.dataset.autocalculado;
+            });
         }
         // "Retención" queda editable a mano (ver más abajo el aviso de
         // diferencia al guardar); cualquier cambio ahí también tiene que

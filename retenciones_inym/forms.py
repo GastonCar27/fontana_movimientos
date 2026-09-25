@@ -90,7 +90,17 @@ class RetencionInymForm(forms.Form):
     # verdad que se guarda -- el CharField de texto es sólo para la UI.
     operador_emisor = OperadorInymChoiceField(
         queryset=Inym_Operador.objects.select_related('entidad', 'tipo_operador'),
-        required=False,
+        # Pasó a ser obligatorio (25/09/2026, pedido de Gastón): un
+        # operador_emisor vacío hace que la retención no calce con ninguna
+        # dirección de liquidación (ver liquidaciones/views.py::_armar_items,
+        # que exige que la otra parte sea explícitamente Fontana) aunque sí
+        # aparezca como "pendiente de liquidar" en el listado general (que
+        # sólo mira operador_retenido) -- quedaba visible pero imposible de
+        # liquidar. Ver también el comando `auditar_operador_emisor_vacio`
+        # para detectar los registros legacy que ya quedaron así (creados
+        # antes de este cambio, o por una importación de Excel cuya fila no
+        # traía el operador emisor).
+        required=True,
         label='Operador emisor',
         widget=forms.HiddenInput(),
     )
