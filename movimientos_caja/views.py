@@ -971,8 +971,10 @@ def _movimientos_firmes_de_libro(libro, fecha):
 
 def _calcular_estado_caja(caja, fecha):
     """Arma el estado de una caja a una fecha dada: último libro, su saldo
-    inicial, el saldo resultante a esa fecha y, para poder proyectar hacia
-    adelante, los movimientos de ese mismo libro que todavía están
+    inicial, el saldo resultante a esa fecha (incluyendo lo que se haya
+    "graduado" de libros anteriores, ver _movimientos_graduados_libros_
+    anteriores) y, para poder proyectar hacia adelante, los movimientos de
+    ESA CAJA (cualquier libro, no sólo el vigente) que todavía están
     pendientes (con diferido posterior a la fecha elegida), agrupados por
     día. Devuelve un dict lista para el template y para armar la
     exportación.
@@ -1001,22 +1003,24 @@ def _calcular_estado_caja(caja, fecha):
     # suma de montos, nunca se resta.
     saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
     total_firme = _movimientos_firmes_de_libro(libro, fecha).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-    saldo_a_fecha = saldo_inicial + total_firme
+    total_graduados = _movimientos_graduados_libros_anteriores(caja, libro, fecha)
+    saldo_a_fecha = saldo_inicial + total_firme + total_graduados
 
-    pendientes = (
-        MovimientoCaja.objects.filter(asiento_libro__libro=libro, movimientocajadiferido__diferido__gt=fecha)
-        .values('movimientocajadiferido__diferido')
-        .annotate(total_dia=Sum('monto'))
-        .order_by('movimientocajadiferido__diferido')
-    )
-
+    # Caja-wide (no restringido al libro vigente): un diferido futuro puede
+    # estar cargado en un libro viejo -- un libro es sólo una seguidilla de
+    # movimientos, no se "cierra" ni se lleva sus pendientes al libro nuevo
+    # (mismo criterio que ya usaba _movimientos_diferidos_pendientes para la
+    # pantalla "por defecto"; unificado acá 25/09/2026, bug real reportado
+    # por Gastón: antes esta proyección SÍ estaba restringida al libro
+    # vigente, así que un diferido futuro de un libro viejo ni siquiera
+    # aparecía como pendiente en la pantalla "Calcular" genérica).
     proyeccion = []
     saldo_corriendo = saldo_a_fecha
-    for fila in pendientes:
-        saldo_corriendo = saldo_corriendo + fila['total_dia']
+    for evento in _movimientos_diferidos_pendientes(caja, fecha):
+        saldo_corriendo = saldo_corriendo + evento['monto']
         proyeccion.append({
-            'fecha': fila['movimientocajadiferido__diferido'],
-            'monto_dia': fila['total_dia'],
+            'fecha': evento['fecha'],
+            'monto_dia': evento['monto'],
             'saldo': saldo_corriendo,
         })
 
@@ -1179,6 +1183,16 @@ def movimiento_caja_estado_pdf(request):
 #     anteriores a la fecha elegida que estan en dicho libro". Los
 #     cheques en cartera que también caen dentro de este mismo libro NO
 #     se cuentan dos veces (ver _movimientos_firmes_excluyendo_cartera).
+#     Corregido de nuevo (25/09/2026, bug real reportado por Gastón al
+#     crear el libro 3 del Macro): se agregó un renglón intermedio
+#     "Movimientos de libros anteriores" -- un libro es sólo una
+#     seguidilla de movimientos, uno viejo no se cierra ni se "muda" al
+#     nuevo, así que un movimiento cargado ahí puede tener diferido
+#     futuro o estar sin efectivizar y resolverse mucho después. Sin
+#     este renglón, apenas se creaba un libro nuevo, esos movimientos
+#     "graduados" del libro anterior (diferido ya llegado, o cheque en
+#     cartera ya cobrado) desaparecían del cálculo por completo -- ver
+#     _movimientos_graduados_libros_anteriores.
 #     Después de este primer renglón, sigue un renglón por cada fecha
 #     futura con movimientos propios de esa caja que SÍ tengan diferido
 #     (cualquier tipo/concepto, no sólo cheques de cartera) posterior a
@@ -1453,27 +1467,87 @@ def _movimientos_firmes_excluyendo_cartera(libro, caja, fecha):
     return total
 
 
+def _movimientos_graduados_libros_anteriores(caja, libro_actual, fecha):
+    """Bug real reportado por Gastón (25/09/2026, al crear el libro 3 del
+    Macro): un libro es sólo una seguidilla de movimientos -- se anotan
+    TODOS los movimientos bancarios ahí, no hace falta que estén
+    efectivizados y pueden tener un diferido posterior que todavía no
+    sucedió. Un movimiento cargado en un libro VIEJO no se "muda" al
+    libro nuevo cuando éste se crea: se queda donde estaba, y puede
+    resolverse (llegar su diferido, o cobrarse si es un cheque en
+    cartera) mucho después.
+
+    El saldo_inicial del libro más nuevo es el arrastre del saldo final
+    del libro anterior a la fecha en que se creó (`libro_actual.
+    fecha_creacion`) -- por lo tanto YA tiene en cuenta todo lo que
+    estaba firme hasta ese día. Lo que ese día todavía estaba pendiente
+    (diferido futuro, o cheque en cartera sin cobrar) NO está en ese
+    arrastre -- y si se resuelve más adelante, hay que seguir sumándolo,
+    aunque haya quedado cargado en el libro viejo. Sin esto, apenas se
+    crea un libro nuevo, esos movimientos "graduados" del libro anterior
+    desaparecían del cálculo por completo: dejaban de listarse como
+    pendientes (porque ya se resolvieron) pero tampoco se sumaban como
+    firmes, porque `_movimientos_firmes_de_libro` sólo mira el libro más
+    nuevo.
+
+    `corte` = fecha de creación de `libro_actual`. Si viniera en None
+    (libro viejo sin backfill de `fecha_creacion`) no hay forma de saber
+    dónde cortar, así que se incluye todo lo que ya está resuelto --
+    mismo criterio conservador que ya usa el resto del sistema para
+    libros sin esa fecha."""
+    corte = libro_actual.fecha_creacion
+
+    diferidos_vencidos = MovimientoCaja.objects.filter(
+        caja=caja, movimientocajadiferido__diferido__lte=fecha,
+    ).exclude(asiento_libro__libro=libro_actual)
+    if corte is not None:
+        diferidos_vencidos = diferidos_vencidos.filter(movimientocajadiferido__diferido__gte=corte)
+    total = diferidos_vencidos.aggregate(total=Sum('monto'))['total'] or Decimal('0')
+
+    cartera_ya_cobrada = (
+        MovimientoCaja.objects.filter(
+            caja=caja,
+            tipo__nombre__iexact=NOMBRE_TIPO_CHEQUE,
+            rel_concepto__concepto_tipo__nombre__iexact=NOMBRE_CONCEPTO_CARTERA,
+            efectivizacion__isnull=False,
+        )
+        .filter(Q(movimientocajadiferido__isnull=True) | Q(movimientocajadiferido__diferido__isnull=True))
+        .exclude(asiento_libro__libro=libro_actual)
+    )
+    if corte is not None:
+        cartera_ya_cobrada = cartera_ya_cobrada.filter(efectivizacion__gte=corte)
+    total += cartera_ya_cobrada.aggregate(total=Sum('monto'))['total'] or Decimal('0')
+
+    return total
+
+
 def _saldo_base_defecto(caja, fecha):
-    """Primeros dos renglones del cálculo 'por defecto' para una caja:
-    saldo inicial del último libro + TODOS los movimientos ya firmes de
-    ese libro a la fecha elegida (igual que "Calcular" genérico), en un
-    renglón aparte de los cheques en cartera de esa caja (ver
-    _cheques_en_cartera), sin sumar dos veces los que caen en los dos
-    grupos (ver _movimientos_firmes_excluyendo_cartera). Antes estos dos
-    montos se sumaban y se mostraban en un único renglón; separados a
-    pedido de Gastón el 2026-09-16 para poder ver cada fuente por
-    separado (los dos se siguen sumando al saldo corrido, uno atrás del
-    otro)."""
+    """Primeros renglones del cálculo 'por defecto' para una caja: saldo
+    inicial del último libro + TODOS los movimientos ya firmes de ese
+    libro a la fecha elegida (igual que "Calcular" genérico), en un
+    renglón aparte de los movimientos "graduados" de libros anteriores
+    de esa misma caja (ver _movimientos_graduados_libros_anteriores,
+    agregado 25/09/2026 -- ver ese docstring para el bug que corrige) y
+    de los cheques en cartera de esa caja (ver _cheques_en_cartera), sin
+    sumar dos veces los que caen en más de un grupo (ver
+    _movimientos_firmes_excluyendo_cartera y el exclude por libro de
+    _movimientos_graduados_libros_anteriores). Antes 'Movimientos del
+    libro' y 'Cheques en cartera' se sumaban y se mostraban en un único
+    renglón; separados a pedido de Gastón el 2026-09-16 para poder ver
+    cada fuente por separado (los tres renglones se siguen sumando al
+    saldo corrido, uno atrás del otro)."""
     libro = _ultimo_libro_de_caja(caja)
     if libro is None:
         return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}
 
     saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
     movimientos_firmes = _movimientos_firmes_excluyendo_cartera(libro, caja, fecha)
+    graduados = _movimientos_graduados_libros_anteriores(caja, libro, fecha)
     cartera = _cheques_en_cartera(caja)
 
     saldo_tras_libro = saldo_inicial + movimientos_firmes
-    saldo_tras_cartera = saldo_tras_libro + cartera
+    saldo_tras_graduados = saldo_tras_libro + graduados
+    saldo_tras_cartera = saldo_tras_graduados + cartera
 
     return {
         'caja': caja,
@@ -1485,6 +1559,12 @@ def _saldo_base_defecto(caja, fecha):
                 'concepto': 'Movimientos del libro',
                 'monto': movimientos_firmes,
                 'saldo': saldo_tras_libro,
+            },
+            {
+                'fecha': fecha,
+                'concepto': 'Movimientos de libros anteriores',
+                'monto': graduados,
+                'saldo': saldo_tras_graduados,
             },
             {
                 'fecha': fecha,
