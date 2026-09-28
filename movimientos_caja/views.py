@@ -1017,11 +1017,19 @@ def _calcular_estado_caja(caja, fecha):
 
     'saldo_a_fecha' (y 'saldo' en la proyección) es el saldo que le
     debemos al banco: negativo = a favor nuestro, positivo = le debemos al
-    banco. Sale directo de saldo_inicial (de origen) + la suma de los
-    montos de TODOS los movimientos firmes de la caja, cada uno con su
-    propio signo (positivo suma, negativo resta) -- los montos ya están
-    cargados en el sistema con esa convención, no hace falta invertir
-    nada más."""
+    banco. Sale de saldo_inicial (de origen) + la suma de los montos de
+    TODOS los movimientos firmes de la caja, cada uno con su propio signo
+    (positivo suma, negativo resta) -- los montos ya están cargados en el
+    sistema con esa convención, no hace falta invertir nada más... salvo
+    una excepción: los cheques en cartera TODAVÍA sin entregar (ver
+    `_cheques_en_cartera`, rediseño 28/09/2026) -- mientras están en ese
+    estado, esa plata sigue siendo nuestra, así que se cuentan a favor
+    (con el signo invertido respecto de cómo está guardado el monto) en
+    vez de sumarse tal cual. Por eso acá se arma el total con los mismos
+    dos bloques que usa "Calcular por defecto"
+    (`_movimientos_firmes_excluyendo_cartera` + `_cheques_en_cartera`) en
+    vez de sumar directo `_movimientos_firmes_de_caja` -- las dos
+    pantallas dan siempre el mismo total para la misma caja."""
     libro = _ultimo_libro_de_caja(caja)
     movimientos_sin_libro = MovimientoCaja.objects.filter(caja=caja, asiento_libro__isnull=True).count()
 
@@ -1037,7 +1045,7 @@ def _calcular_estado_caja(caja, fecha):
 
     primer_libro = _primer_libro_de_caja(caja)
     saldo_inicial = primer_libro.saldo_inicial if primer_libro.saldo_inicial is not None else Decimal('0')
-    total_firme = _movimientos_firmes_de_caja(caja, fecha).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+    total_firme = _movimientos_firmes_excluyendo_cartera(caja, fecha) + _cheques_en_cartera(caja)
     saldo_a_fecha = saldo_inicial + total_firme
 
     # Caja-wide (no restringido al libro vigente): un diferido futuro puede
@@ -1292,16 +1300,35 @@ def _cheques_en_cartera_qs(caja):
 
 
 def _cheques_en_cartera(caja):
-    """Suma de los movimientos de ESA caja puntual (`caja=caja`, nunca de
-    otra) que son tipo 'Cheque', concepto 'Cartera', sin diferido y
-    todavía sin efectivizar -- el estado actual del cheque (no depende de
-    la fecha elegida, que sólo se usa como rótulo de la fila donde se suma
-    este monto). El filtro `caja=caja` es el mismo, sea cual sea la caja
+    """Suma, ya con el signo que corresponde para el saldo, de los
+    movimientos de ESA caja puntual (`caja=caja`, nunca de otra) que son
+    tipo 'Cheque', concepto 'Cartera', sin diferido y todavía sin
+    efectivizar. El filtro `caja=caja` es el mismo, sea cual sea la caja
     que se pase (Macro o Nación): cada una ve sólo sus propios cheques --
     verificado con un test dedicado el 2026-09-15 a raíz de una duda de
     Gastón sobre si la caja de Nación podía estar mostrando cheques de la
-    de Macro (no era el caso: la consulta ya estaba bien filtrada)."""
-    return _cheques_en_cartera_qs(caja).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+    de Macro (no era el caso: la consulta ya estaba bien filtrada).
+
+    Rediseño 28/09/2026, aclarado por Gastón: estos son cheques que
+    Fontana todavía tiene para ENTREGARLE a un productor (no cheques
+    recibidos) -- por eso su `monto` se carga en positivo, igual que
+    cualquier pago que sale ("es dinero que le debemos al banco"). Pero
+    mientras el cheque sigue "en cartera" -- sin diferido y sin
+    efectivizar, es decir, TODAVÍA no se le entregó a nadie -- esa plata
+    en los hechos sigue en la empresa: "es como que aún no se entregaron
+    a productores, así que debería ser a favor nuestro hasta que se
+    entreguen" (Gastón, 28/09/2026). Por eso acá se invierte el signo
+    del monto guardado (se resta en vez de sumar) mientras está pendiente
+    de entrega. Apenas se le carga una fecha de diferido (se programa la
+    entrega) o se efectiviza (se entrega/cobra), el cheque deja de
+    aparecer en `_cheques_en_cartera_qs` y pasa a contarlo
+    `_movimientos_firmes_de_caja` con su monto guardado SIN invertir --
+    ahí sí "van a ser a favor del banco" (Gastón), es decir, ya cuenta
+    como la deuda real que es. El dato guardado en la base (`monto`,
+    positivo) no cambia en ningún momento -- sólo cambia, según el
+    estado del cheque, si se lo suma o se lo resta al armar el saldo."""
+    total = _cheques_en_cartera_qs(caja).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+    return -total
 
 
 # --- Cheques recibidos sin asignar a un pago ---------------------------------
@@ -1522,7 +1549,11 @@ def _saldo_base_defecto(caja, fecha):
     entre el 25/09 y el 28/09 (ver `_movimientos_graduados_libros_
     anteriores`, ya eliminada): ya no hace falta un renglón aparte para
     "rescatar" movimientos de libros viejos, porque el renglón único de
-    "Movimientos" ahora ya los incluye a todos."""
+    "Movimientos" ahora ya los incluye a todos.
+
+    El renglón "Cheques en cartera" suma `_cheques_en_cartera(caja)`, que
+    desde el 28/09/2026 devuelve el monto ya con el signo a favor nuestro
+    mientras el cheque sigue sin entregar -- ver ese docstring."""
     libro = _ultimo_libro_de_caja(caja)
     if libro is None:
         return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}

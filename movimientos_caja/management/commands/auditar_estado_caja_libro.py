@@ -9,8 +9,10 @@ Bajo el diseño final, "Estado de caja" para una caja puntual es:
 
     saldo_inicial del PRIMER libro que tuvo la caja
     + TODOS los movimientos FIRMES de esa caja (cualquier libro, sin
-      diferido o con diferido ya llegado)
-    (+ cheques en cartera, sumados aparte, para "por defecto")
+      diferido o con diferido ya llegado), SIN contar los cheques en
+      cartera todavía pendientes de entregar
+    - los cheques en cartera todavía pendientes de entregar (se restan,
+      no se suman: ver más abajo)
 
 Ya no hay "libro vigente" vs. "libros anteriores" para el cálculo -- un
 libro es sólo una seguidilla de movimientos, nunca se cierra. Este
@@ -18,6 +20,19 @@ comando lista, para una caja puntual, exactamente qué está sumando cada
 parte del cálculo, y hace un chequeo cruzado: si algún movimiento
 aparece tanto en "movimientos firmes" como en "cheques en cartera" (lo
 que significaría que se cuenta dos veces), lo avisa explícitamente.
+
+Signo de los cheques en cartera (rediseño 28/09/2026, aclarado por
+Gastón): son cheques que Fontana todavía tiene para ENTREGARLE a un
+productor, por eso su `monto` se CARGA en positivo (como cualquier pago
+que sale). Pero mientras siguen "en cartera" -- sin diferido y sin
+efectivizar, es decir, todavía no se le entregaron a nadie -- esa plata
+sigue siendo de la empresa, así que hay que contarla A FAVOR (restarla
+del saldo que le debemos al banco), no sumarla. Por eso este comando
+muestra, para el renglón 2, el monto tal cual está cargado en la base
+(columna "monto guardado") junto con lo que efectivamente se resta al
+saldo (columna "cuenta como"). Apenas el cheque tiene diferido o se
+efectiviza, deja de estar "en cartera" y pasa a contarse en el renglón 1
+con su monto guardado SIN invertir -- ahí sí es una deuda real.
 
 No modifica nada. Pensado para correrlo y pegar la salida en el chat.
 
@@ -122,15 +137,29 @@ class Command(BaseCommand):
         ]
         self._listar('1) Movimientos firmes de la caja (cualquier libro, sin contar cartera pendiente)', firmes_ids_montos)
 
+        # Los cheques en cartera se CARGAN en positivo (como cualquier pago
+        # que sale -- son cheques para entregarle a un productor), pero
+        # mientras siguen sin entregar cuentan A FAVOR nuestro: se restan
+        # del saldo, no se suman (ver el docstring de _cheques_en_cartera
+        # en views.py). Por eso se muestran las dos columnas: el monto tal
+        # cual está guardado, y lo que efectivamente se resta al saldo.
         cartera_pendiente_ids_montos = list(_cheques_en_cartera_qs(caja).values_list('id', 'monto'))
-        self._listar('2) Cheques en cartera (todavía sin cobrar)', cartera_pendiente_ids_montos)
+        self.stdout.write('2) Cheques en cartera (todavía sin entregar -- se restan del saldo, ver arriba):')
+        total_cartera_guardado = 0
+        for i, monto in cartera_pendiente_ids_montos:
+            self.stdout.write(f'   id={i} monto guardado={monto}  -->  cuenta como={-monto}')
+            total_cartera_guardado += monto
+        total_cartera = -total_cartera_guardado
+        self.stdout.write(
+            f'   TOTAL guardado: {total_cartera_guardado} -- TOTAL que se resta al saldo: {total_cartera} '
+            f'({len(cartera_pendiente_ids_montos)} movimientos)\n'
+        )
 
         saldo_inicial = primer_libro.saldo_inicial or 0
         total_firmes = sum((m for _, m in firmes_ids_montos), 0)
-        total_cartera = sum((m for _, m in cartera_pendiente_ids_montos), 0)
         self.stdout.write(
             f'Saldo de origen ({saldo_inicial}) + movimientos firmes ({total_firmes}) '
-            f'+ cheques en cartera ({total_cartera}) = {saldo_inicial + total_firmes + total_cartera}\n'
+            f'+ cheques en cartera, ya invertidos ({total_cartera}) = {saldo_inicial + total_firmes + total_cartera}\n'
         )
 
         self.stdout.write('3) Proyección futura (diferidos con fecha posterior a la elegida, cualquier libro):')
