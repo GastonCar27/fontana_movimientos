@@ -55,6 +55,7 @@
                     <thead class="table-light">
                         <tr>
                             <th>Producto</th><th>Detalle</th><th class="text-end">Cantidad</th>
+                            <th>Unidad</th>
                             <th class="text-end">Kg. enviados</th><th class="text-end">Kg. confirmados</th><th></th>
                         </tr>
                     </thead>
@@ -64,6 +65,7 @@
                             <td>{{ r.producto }}</td>
                             <td>{{ r.detalle_adicional|default:"-" }}</td>
                             <td class="text-end">{{ r.cantidad|default:"-" }}</td>
+                            <td>{{ r.unidad_de_medida.nombre|default:"-" }}</td>
                             <td class="text-end">{{ r.kilogramos_enviados|separador_miles }}</td>
                             <td class="text-end">{{ r.kilogramos_confirmados|default:"-" }}</td>
                             <td class="text-center">
