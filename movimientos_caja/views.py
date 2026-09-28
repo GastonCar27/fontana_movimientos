@@ -1020,16 +1020,21 @@ def _calcular_estado_caja(caja, fecha):
     banco. Sale de saldo_inicial (de origen) + la suma de los montos de
     TODOS los movimientos firmes de la caja, cada uno con su propio signo
     (positivo suma, negativo resta) -- los montos ya están cargados en el
-    sistema con esa convención, no hace falta invertir nada más... salvo
-    una excepción: los cheques en cartera TODAVÍA sin entregar (ver
-    `_cheques_en_cartera`, rediseño 28/09/2026) -- mientras están en ese
-    estado, esa plata sigue siendo nuestra, así que se cuentan a favor
-    (con el signo invertido respecto de cómo está guardado el monto) en
-    vez de sumarse tal cual. Por eso acá se arma el total con los mismos
-    dos bloques que usa "Calcular por defecto"
-    (`_movimientos_firmes_excluyendo_cartera` + `_cheques_en_cartera`) en
-    vez de sumar directo `_movimientos_firmes_de_caja` -- las dos
-    pantallas dan siempre el mismo total para la misma caja."""
+    sistema con esa convención, no hace falta invertir nada más.
+
+    Los cheques en cartera TODAVÍA sin entregar se cuentan acá como
+    cualquier otro movimiento firme (en positivo, `_total_movimientos_
+    firmes` no los excluye) y ADEMÁS se les resta esa misma cantidad
+    aparte (`_cheques_en_cartera`) mientras siguen pendientes -- el efecto
+    neto de un cheque en cartera pendiente es CERO hasta que se entrega o
+    efectiviza (rediseño 29/09/2026: la versión anterior, del 28/09, los
+    excluía del total Y los restaba aparte, lo que los beneficiaba dos
+    veces -- ver el docstring de `_total_movimientos_firmes` para el
+    detalle y el ejemplo numérico). Por eso acá se arma el total con los
+    mismos dos bloques que usa "Calcular por defecto"
+    (`_total_movimientos_firmes` + `_cheques_en_cartera`) en vez de sumar
+    sólo `_movimientos_firmes_de_caja` -- las dos pantallas dan siempre el
+    mismo total para la misma caja."""
     libro = _ultimo_libro_de_caja(caja)
     movimientos_sin_libro = MovimientoCaja.objects.filter(caja=caja, asiento_libro__isnull=True).count()
 
@@ -1045,7 +1050,7 @@ def _calcular_estado_caja(caja, fecha):
 
     primer_libro = _primer_libro_de_caja(caja)
     saldo_inicial = primer_libro.saldo_inicial if primer_libro.saldo_inicial is not None else Decimal('0')
-    total_firme = _movimientos_firmes_excluyendo_cartera(caja, fecha) + _cheques_en_cartera(caja)
+    total_firme = _total_movimientos_firmes(caja, fecha) + _cheques_en_cartera(caja)
     saldo_a_fecha = saldo_inicial + total_firme
 
     # Caja-wide (no restringido al libro vigente): un diferido futuro puede
@@ -1214,11 +1219,15 @@ def movimiento_caja_estado_pdf(request):
 #     TODOS los movimientos ya firmes de ESA CAJA a la fecha elegida, de
 #     CUALQUIER libro (mismo criterio que "Calcular" genérico,
 #     _movimientos_firmes_de_caja: sin diferido, o con diferido ya
-#     llegado) + los movimientos de ESA MISMA caja que sean tipo Cheque,
-#     concepto Cartera, SIN diferido y todavía sin efectivizar ("Cheques
-#     en cartera", que también se calculan por CAJA). Los cheques en
-#     cartera NO se cuentan dos veces (ver
-#     _movimientos_firmes_excluyendo_cartera).
+#     llegado), cheques en cartera incluidos con su monto guardado (ver
+#     _total_movimientos_firmes) + un renglón de corrección "Cheques en
+#     cartera" que resta esa misma cantidad mientras esos cheques (tipo
+#     Cheque, concepto Cartera, de ESA MISMA caja, SIN diferido y todavía
+#     sin efectivizar) siguen sin entregarse -- el efecto neto de un
+#     cheque en cartera pendiente es CERO hasta que se entrega o
+#     efectiviza (rediseño 29/09/2026, ver el docstring de
+#     _total_movimientos_firmes: la versión anterior los excluía del
+#     primer renglón Y los restaba aparte, beneficiándolos dos veces).
 #     Corregido a pedido de Gastón (2026-09-15, segunda vuelta del mismo
 #     día): antes acá sólo se sumaba la cartera, y todos los demás
 #     movimientos ya firmes del libro (depósitos, cheques ya cobrados,
@@ -1284,16 +1293,27 @@ def _cheques_en_cartera_qs(caja):
     """Queryset (sin agregar) de los movimientos de ESA caja puntual
     (`caja=caja`, nunca de otra) que son tipo 'Cheque', concepto
     'Cartera', sin diferido y todavía sin efectivizar -- se expone aparte
-    de `_cheques_en_cartera` para poder reusar los ids exactos (ver
-    `_movimientos_firmes_excluyendo_cartera`, que necesita saber cuáles
-    de los movimientos firmes de la caja ya están contados acá, para no
-    sumarlos dos veces)."""
+    de `_cheques_en_cartera` para poder reusar los ids exactos (usado
+    también por el comando `auditar_estado_caja_libro` para mostrar cuáles
+    de los movimientos firmes de la caja están siendo neutralizados por la
+    corrección de cartera, ver `_total_movimientos_firmes`).
+
+    Exige `asiento_libro` no nulo (mismo requisito que
+    `_movimientos_firmes_de_caja`) a propósito, agregado el 29/09/2026: la
+    corrección de `_cheques_en_cartera` sólo debe restar un cheque que
+    YA fue sumado en el renglón de "movimientos firmes" -- si un cheque en
+    cartera todavía no tiene libro asignado (caso ya contemplado aparte
+    como "movimientos sin libro", que no se suman en ningún lado), sin
+    este filtro se lo restaría sin haberlo sumado antes, volviendo a
+    beneficiarlo de más (el mismo tipo de error que motivó todo este
+    rediseño, aplicado a un caso borde distinto)."""
     return (
         MovimientoCaja.objects.filter(
             caja=caja,
             tipo__nombre__iexact=NOMBRE_TIPO_CHEQUE,
             rel_concepto__concepto_tipo__nombre__iexact=NOMBRE_CONCEPTO_CARTERA,
             efectivizacion__isnull=True,
+            asiento_libro__isnull=False,
         )
         .filter(Q(movimientocajadiferido__isnull=True) | Q(movimientocajadiferido__diferido__isnull=True))
     )
@@ -1317,16 +1337,28 @@ def _cheques_en_cartera(caja):
     efectivizar, es decir, TODAVÍA no se le entregó a nadie -- esa plata
     en los hechos sigue en la empresa: "es como que aún no se entregaron
     a productores, así que debería ser a favor nuestro hasta que se
-    entreguen" (Gastón, 28/09/2026). Por eso acá se invierte el signo
-    del monto guardado (se resta en vez de sumar) mientras está pendiente
-    de entrega. Apenas se le carga una fecha de diferido (se programa la
-    entrega) o se efectiviza (se entrega/cobra), el cheque deja de
-    aparecer en `_cheques_en_cartera_qs` y pasa a contarlo
-    `_movimientos_firmes_de_caja` con su monto guardado SIN invertir --
-    ahí sí "van a ser a favor del banco" (Gastón), es decir, ya cuenta
-    como la deuda real que es. El dato guardado en la base (`monto`,
-    positivo) no cambia en ningún momento -- sólo cambia, según el
-    estado del cheque, si se lo suma o se lo resta al armar el saldo."""
+    entreguen" (Gastón, 28/09/2026).
+
+    Segundo rediseño 29/09/2026 (corrección sobre el anterior, también
+    detectada por Gastón): esta función YA NO es "el monto de la cartera
+    con el signo que va al saldo" -- ahora es sólo la CORRECCIÓN que
+    neutraliza, mientras el cheque sigue pendiente, el monto que
+    `_total_movimientos_firmes` ya lo contó (en positivo, como cualquier
+    firme). Antes, estos cheques se sacaban de `_movimientos_firmes_
+    excluyendo_cartera` (ya eliminada) Y ADEMÁS se restaban acá -- eso
+    los beneficiaba dos veces (ver el docstring de
+    `_total_movimientos_firmes` para el ejemplo numérico). Ahora se
+    cuentan siempre en el total de movimientos, con su monto guardado, y
+    acá sólo se resta esa misma cantidad para neutralizarla -- el efecto
+    neto mientras el cheque sigue "en cartera" es CERO. Apenas se le
+    carga una fecha de diferido (se programa la entrega) o se efectiviza
+    (se entrega/cobra), el cheque deja de aparecer en
+    `_cheques_en_cartera_qs`, así que esta función deja de neutralizarlo
+    -- queda contando, sin ningún ajuste, como la deuda real que
+    `_total_movimientos_firmes` ya lo había sumado desde el principio
+    ("van a ser a favor del banco", Gastón). El dato guardado en la base
+    (`monto`, positivo) no cambia en ningún momento -- sólo cambia, según
+    el estado del cheque, si esta función lo neutraliza o no."""
     total = _cheques_en_cartera_qs(caja).aggregate(total=Sum('monto'))['total'] or Decimal('0')
     return -total
 
@@ -1506,25 +1538,46 @@ def movimiento_caja_cheques_recibidos_sin_pago_pdf(request):
     return _pdf_response('cheques_recibidos_sin_pago', 'Cheques recibidos sin asignar a un pago', resultado)
 
 
-def _movimientos_firmes_excluyendo_cartera(caja, fecha):
-    """Suma de todos los movimientos FIRMES de esta caja (cualquier libro
-    -- ver `_movimientos_firmes_de_caja`) que NO sean además uno de los
-    'cheques en cartera' de esa caja (ver `_cheques_en_cartera_qs`) --
-    para poder sumar los dos por separado sin duplicar el monto de los
-    que caen en ambos grupos (todo cheque en cartera no tiene diferido,
-    así que ya cuenta como firme).
+def _total_movimientos_firmes(caja, fecha):
+    """Suma de TODOS los movimientos FIRMES de esta caja (cualquier libro
+    -- ver `_movimientos_firmes_de_caja`), con su monto guardado TAL CUAL
+    está cargado -- incluye también los cheques en cartera todavía
+    pendientes de entregar, en positivo (no se excluyen de acá: ver
+    `_cheques_en_cartera`, que ahora es una CORRECCIÓN aparte, no una
+    exclusión de este total).
 
-    Rediseño 28/09/2026: antes esto miraba sólo el libro vigente
-    (`_movimientos_firmes_de_libro`, ya eliminada); ahora, con el mismo
-    criterio que `_calcular_estado_caja`, mira TODOS los movimientos de
-    la caja sin importar en qué libro quedaron cargados -- ver el
-    docstring de `_primer_libro_de_caja` para el porqué."""
-    ids_cartera = set(_cheques_en_cartera_qs(caja).values_list('id', flat=True))
-    total = Decimal('0')
-    for monto, movimiento_id in _movimientos_firmes_de_caja(caja, fecha).values_list('monto', 'id'):
-        if movimiento_id not in ids_cartera:
-            total += monto
-    return total
+    Rediseño 29/09/2026 (bug real detectado por Gastón): la versión
+    anterior de esta función (`_movimientos_firmes_excluyendo_cartera`, se
+    llamaba así) SACABA de esta suma los cheques en cartera todavía
+    pendientes, y por separado `_cheques_en_cartera` los volvía a restar
+    -- eso los beneficiaba DOS VECES: una vez por no contarlos acá como el
+    débito que en los hechos representan, y otra vez por restarlos aparte
+    como si fueran un crédito real. Con un cheque de $999 pendiente, por
+    ejemplo, el saldo bajaba de 4.800 (si el cheque no existiera) a 3.801
+    -- un beneficio de $999 a favor nuestro sin ninguna transacción real
+    detrás (ni entró ni salió un peso: el cheque sigue sin entregarse).
+    Gastón lo planteó así: "si no contás los en cartera en los
+    movimientos para descontar el saldo inicial y luego lo volvés a poner
+    a favor nuestro [...] es como que está dos veces beneficiándonos ese
+    valor [...] ideal creo sería contar todo en movimientos y sólo
+    beneficiarlos sumando eso en cartera después a favor nuestro."
+
+    La corrección: acá se cuentan TODOS los movimientos firmes con su
+    signo guardado, cheques en cartera incluidos (en positivo, como
+    cualquier otro movimiento firme sin diferido). `_cheques_en_cartera`
+    pasa a ser una resta compensatoria que neutraliza exactamente ese
+    mismo monto mientras el cheque sigue sin entregar -- el efecto NETO de
+    un cheque en cartera pendiente es CERO (se suma acá, se resta allá)
+    hasta que se entrega (diferido) o se efectiviza, momento en el que
+    deja de neutralizarse en `_cheques_en_cartera` y queda contando, sin
+    ningún ajuste, como la deuda real que ya estaba sumada acá desde el
+    principio.
+
+    Antes de este rediseño (28/09/2026) esto miraba sólo el libro vigente
+    (`_movimientos_firmes_de_libro`, ya eliminada); mira TODOS los
+    movimientos de la caja sin importar en qué libro quedaron cargados --
+    ver el docstring de `_primer_libro_de_caja` para el porqué."""
+    return _movimientos_firmes_de_caja(caja, fecha).aggregate(total=Sum('monto'))['total'] or Decimal('0')
 
 
 def _saldo_base_defecto(caja, fecha):
@@ -1532,10 +1585,14 @@ def _saldo_base_defecto(caja, fecha):
     inicial de ORIGEN (el del PRIMER libro que tuvo la caja -- ver
     `_primer_libro_de_caja`) + TODOS los movimientos ya firmes de esa
     caja a la fecha elegida, de cualquier libro (ver
-    `_movimientos_firmes_de_caja`), en un renglón aparte de los cheques
-    en cartera de esa caja (ver `_cheques_en_cartera`), sin sumar dos
-    veces los que caen en los dos grupos (ver
-    `_movimientos_firmes_excluyendo_cartera`).
+    `_total_movimientos_firmes`, que incluye los cheques en cartera con
+    su monto guardado), en un renglón aparte para la corrección de los
+    cheques en cartera todavía pendientes de esa caja (ver
+    `_cheques_en_cartera`), que neutraliza -- no excluye -- el monto que
+    el renglón de "Movimientos" ya les contó (ver el docstring de
+    `_total_movimientos_firmes` para el porqué del rediseño del
+    29/09/2026: la versión anterior los excluía Y los restaba, lo que los
+    beneficiaba dos veces).
 
     Rediseño 28/09/2026 (mismo bug real reportado por Gastón al crear el
     libro 3 del Macro, y misma corrección que en `_calcular_estado_caja`
@@ -1552,15 +1609,15 @@ def _saldo_base_defecto(caja, fecha):
     "Movimientos" ahora ya los incluye a todos.
 
     El renglón "Cheques en cartera" suma `_cheques_en_cartera(caja)`, que
-    desde el 28/09/2026 devuelve el monto ya con el signo a favor nuestro
-    mientras el cheque sigue sin entregar -- ver ese docstring."""
+    desde el 29/09/2026 es una corrección que neutraliza (no un total
+    independiente) -- ver ese docstring."""
     libro = _ultimo_libro_de_caja(caja)
     if libro is None:
         return {'caja': caja, 'libro': None, 'saldo_inicial': None, 'filas': [], 'saldo_final': None}
 
     primer_libro = _primer_libro_de_caja(caja)
     saldo_inicial = primer_libro.saldo_inicial if primer_libro.saldo_inicial is not None else Decimal('0')
-    movimientos_firmes = _movimientos_firmes_excluyendo_cartera(caja, fecha)
+    movimientos_firmes = _total_movimientos_firmes(caja, fecha)
     cartera = _cheques_en_cartera(caja)
 
     saldo_tras_movimientos = saldo_inicial + movimientos_firmes
