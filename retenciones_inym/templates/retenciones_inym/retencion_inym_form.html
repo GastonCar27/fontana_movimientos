@@ -12,6 +12,10 @@
     {% if modo == 'modificar' %}
     <p class="text-muted small">
         Agregado desde: <strong>{{ registro.agregado_desde|default:"(sin dato -- carga vieja)" }}</strong>
+        &nbsp;·&nbsp;
+        Agregado el: <strong>{{ registro.fecha_agregado|date:"d/m/Y H:i"|default:"(sin dato -- carga vieja)" }}</strong>
+        &nbsp;·&nbsp;
+        Última modificación: <strong>{{ registro.fecha_modificado|date:"d/m/Y H:i"|default:"(sin dato -- carga vieja)" }}</strong>
     </p>
     {% endif %}
 

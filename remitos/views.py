@@ -19,6 +19,13 @@ from .models import Acoplado, CondicionVenta, ObservacionEstandar, Remito, Remit
 
 ENTIDAD_PROPIA_ID = getattr(settings, 'ENTIDAD_PROPIA_ID', 100)
 
+# Id real (padrón AFIP) de la unidad "Kilogramos" en ComprobanteUnidadDeMedida
+# -- mismo código que ya usa cuenta_corriente_productos.views.UNIDAD_MEDIDA_KILOGRAMOS_ID
+# como default de "Vincular por bloques". El Movimiento que arma un remito
+# SIEMPRE es Kg (ver _sincronizar_movimiento_renglon), así que se guarda fijo
+# acá, sin depender de la unidad de embalaje elegida en el renglón.
+UNIDAD_MEDIDA_KILOGRAMOS_ID = '01'
+
 
 # ---------------------------------------------------------------------------
 # Helpers comunes
@@ -55,7 +62,21 @@ def _sincronizar_movimiento_renglon(renglon):
     'kilogramos_confirmados' (el peso que se pesó/facturó en destino, que
     puede diferir del enviado) o se cambia el producto del renglón, se
     actualiza el MISMO movimiento en vez de crear uno nuevo, para no
-    duplicar el saldo del producto."""
+    duplicar el saldo del producto.
+
+    El Movimiento resultante SIEMPRE se guarda en Kg (total=kilogramos_definitivos,
+    unidad_de_medida=Kilogramos), sin importar la unidad de embalaje elegida en el
+    renglón (Bolsón/Bolsa/Otras Unidades) -- 'cantidad' y 'unidad_de_medida' del
+    RemitoRenglon son sólo para documentar cómo se armó físicamente el envío, nunca
+    se propagan al Movimiento (a pedido explícito de Gastón, 28-29/09/2026, tras
+    reportar que en "Pendientes por producto" un remito en bolsones/bolsas aparecía
+    con el número de Kg mostrado como si fuera cantidad de bolsas -- ej. remito 9588:
+    865 bolsas reales, pero figuraban 31.680 "bolsas" porque ese es el total en Kg).
+    Antes de este fix, `movimiento.unidad_de_medida` copiaba la del renglón, lo que
+    fragmentaba "Pendientes por producto" (que agrupa por producto+unidad) en filas
+    separadas de Bolsón/Bolsa/Otras Unidades para una cantidad que siempre fue Kg.
+    Los movimientos ya creados ANTES de este fix quedan con la unidad vieja hasta que
+    se corran contra ellos `corregir_unidad_medida_movimientos_remito --aplicar`."""
     remito = renglon.remito
     total = renglon.kilogramos_definitivos
 
@@ -77,7 +98,7 @@ def _sincronizar_movimiento_renglon(renglon):
     movimiento.producto = renglon.producto
     movimiento.fecha = remito.fecha
     movimiento.total = total
-    movimiento.unidad_de_medida = renglon.unidad_de_medida
+    movimiento.unidad_de_medida_id = UNIDAD_MEDIDA_KILOGRAMOS_ID
     if remito.es_salida:
         movimiento.entidad_emisor_id = ENTIDAD_PROPIA_ID
         movimiento.entidad_receptor = remito.contraparte

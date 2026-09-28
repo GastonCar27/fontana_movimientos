@@ -74,6 +74,8 @@
                     <th>Eliminación (INYM)</th>
                     <th>N° cert. INYM</th>
                     <th>Agregado desde</th>
+                    <th>Agregado el</th>
+                    <th>Modificado el</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
@@ -92,6 +94,8 @@
                     <td>{{ r.eliminacion|default:"-" }}</td>
                     <td>{{ r.id_certificado_inym|default:"-" }}</td>
                     <td>{{ r.agregado_desde|default:"-" }}</td>
+                    <td>{{ r.fecha_agregado|date:"d/m/Y H:i"|default:"-" }}</td>
+                    <td>{{ r.fecha_modificado|date:"d/m/Y H:i"|default:"-" }}</td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'retenciones_inym:modificar' pk=r.id %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones_inym:eliminar' pk=r.id %}">Eliminar</a>
@@ -99,7 +103,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="13" class="text-center text-muted">No se encontraron retenciones INYM.</td>
+                    <td colspan="15" class="text-center text-muted">No se encontraron retenciones INYM.</td>
                 </tr>
                 {% endfor %}
             </tbody>

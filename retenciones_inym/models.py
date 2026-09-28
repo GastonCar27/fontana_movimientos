@@ -57,6 +57,29 @@ class RetencionInym(models.Model):
     # producción).
     id_certificado_inym = models.IntegerField(blank=True, null=True)
     #id_asiento_contable = models.ForeignKey('AsientoContable', models.DO_NOTHING, db_column='id_asiento_contable', blank=True, null=True)
+    # Pedido de Gastón (28/09/2026): fecha en que se cargó cada retención al
+    # sistema y fecha del último cambio -- para poder ver de un vistazo hace
+    # cuánto se agregó/tocó una fila, cosa que hoy no se podía saber (sólo
+    # existía `agregado_desde`, que dice DESDE DÓNDE se cargó, no CUÁNDO).
+    # auto_now_add/auto_now los completa Django solo, en cualquier .save()
+    # hecho por el ORM (alta manual, importador de Excel, el histórico, y
+    # también los comandos de corrección de este app) -- no hace falta
+    # tocarlos a mano en ningún lado. Igual que id_certificado_inym, esta
+    # tabla es managed=False: la migración de Django sólo actualiza el
+    # estado del ORM, la columna real hay que agregarla a mano con
+    # sql/2026-09-28_agregar_fechas_retencion_inym.sql (primero en la base
+    # de pruebas si la hubiera, después en producción). Las filas ya
+    # existentes van a quedar con estos dos campos en NULL (no hay forma de
+    # reconstruir esa fecha para datos viejos) -- sólo las filas nuevas y
+    # las que se vuelvan a guardar de acá en más van a tener el dato.
+    #
+    # OJO -- auto_now sólo actualiza el campo cuando el `save()` que hace
+    # Django lo incluye: si algún código llama `.save(update_fields=[...])`
+    # sin incluir 'fecha_modificado' en esa lista, el campo NO se actualiza
+    # esa vez (es el caso, hoy, de los comandos de corrección de este app,
+    # que usan update_fields para tocar un solo campo puntual a propósito).
+    fecha_agregado = models.DateTimeField(auto_now_add=True, blank=True, null=True)
+    fecha_modificado = models.DateTimeField(auto_now=True, blank=True, null=True)
 
     class Meta:
         managed = False
