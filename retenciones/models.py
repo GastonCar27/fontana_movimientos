@@ -141,11 +141,22 @@ class RetencionRenglon(models.Model):
     comprobante = models.ForeignKey(Comprobante, on_delete=models.CASCADE, related_name='retencion_renglones')
     # Copia de retencion.id_impuesto/id_regimen al momento de guardar (ver
     # save() más abajo) -- se duplican acá (aunque ya están en la Retencion
-    # header) para poder poner una restricción real de "no repetir la misma
-    # retención (mismo impuesto+régimen) para el mismo comprobante", sin
-    # depender de un JOIN. Gastón confirmó (22/09/2026) que un mismo
-    # comprobante NUNCA debería recibir el mismo impuesto+régimen dos veces,
-    # ni dentro del mismo certificado ni en certificados distintos.
+    # header) para poder detectar rápido, sin depender de un JOIN, cuándo un
+    # mismo comprobante repite impuesto+régimen en más de una retención (ver
+    # views._retenciones_con_mismo_impuesto_regimen).
+    #
+    # Gastón había confirmado (22/09/2026) que un mismo comprobante NUNCA
+    # debería recibir el mismo impuesto+régimen dos veces, así que esto tuvo
+    # una restricción real a nivel de base (UniqueConstraint
+    # 'unico_comprobante_impuesto_regimen', migración 0005). Se sacó el
+    # 29/09/2026: apareció un caso real y válido (proveedor Purralef) donde
+    # el propio proveedor practicó la retención de un mismo comprobante
+    # dividida en dos certificados distintos, repitiendo impuesto y régimen
+    # en ambos. Gastón confirmó que de acá en adelante hay que PERMITIRLO
+    # pero avisando, porque sigue siendo, salvo excepciones como ésta, la
+    # señal más común de una carga duplicada por error -- el aviso lo arma
+    # _retenciones_con_mismo_impuesto_regimen en views.py, ya no un bloqueo
+    # duro de la base.
     id_impuesto = models.ForeignKey(
         RetencionTipoImpuesto, on_delete=models.PROTECT, db_column='id_impuesto', related_name='+',
     )
@@ -164,10 +175,6 @@ class RetencionRenglon(models.Model):
         db_table = 'retencion_renglon'
         constraints = [
             models.UniqueConstraint(fields=['retencion', 'comprobante'], name='unico_retencion_comprobante'),
-            models.UniqueConstraint(
-                fields=['comprobante', 'id_impuesto', 'id_regimen'],
-                name='unico_comprobante_impuesto_regimen',
-            ),
         ]
 
     def save(self, *args, **kwargs):

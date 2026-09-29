@@ -162,6 +162,53 @@ def _chequear_suma_renglones(retencion_obj):
     return suma, total_retencion
 
 
+def _retenciones_con_mismo_impuesto_regimen(comprobante, id_impuesto_id, id_regimen_id, excluir_retencion_id=None):
+    """Devuelve las Retencion (excluyendo excluir_retencion_id) que ya tienen
+    este mismo comprobante vinculado con el mismo impuesto+régimen.
+
+    Hasta el 29/09/2026 esto estaba prohibido a nivel de base (constraint
+    'unico_comprobante_impuesto_regimen', ver migración 0005): Gastón había
+    confirmado el 22/09 que un mismo comprobante nunca debería repetir
+    impuesto+régimen. Apareció un caso real y válido (proveedor Purralef)
+    donde el propio proveedor practicó la retención de un comprobante
+    dividida en dos certificados distintos, repitiendo impuesto y régimen en
+    ambos -- Gastón confirmó que de acá en adelante hay que PERMITIRLO, pero
+    avisando: sigue siendo, salvo excepciones como ésta, la señal más común
+    de una carga duplicada por error. Se usa tanto al vincular un renglón
+    suelto (_retencion_vincular_renglones) como al cargar una retención
+    nueva con varios renglones (_guardar_grupo)."""
+    if id_impuesto_id is None or id_regimen_id is None:
+        return []
+    qs = RetencionRenglon.objects.filter(
+        comprobante=comprobante, id_impuesto_id=id_impuesto_id, id_regimen_id=id_regimen_id,
+    ).select_related('retencion')
+    if excluir_retencion_id is not None:
+        qs = qs.exclude(retencion_id=excluir_retencion_id)
+    # set() por las dudas de que el mismo comprobante tenga más de un
+    # renglón ya cargado contra la misma otra retención (no debería, pero no
+    # cuesta nada cubrirlo) -- no se quiere avisar la misma retención dos veces.
+    vistas = {}
+    for renglon in qs:
+        vistas[renglon.retencion_id] = renglon.retencion
+    return list(vistas.values())
+
+
+def _texto_advertencia_impuesto_regimen(comprobante, otras_retenciones):
+    """Arma el texto de aviso (no bloqueante) para
+    _retenciones_con_mismo_impuesto_regimen: lista las otras retenciones que
+    ya tienen este comprobante con el mismo impuesto+régimen, para que
+    Gastón revise si es una carga duplicada por error o una división válida
+    (caso Purralef, 29/09/2026)."""
+    ids_texto = ', '.join(
+        f'{r.comprobante_string or r.id}' for r in sorted(otras_retenciones, key=lambda r: r.id)
+    )
+    return (
+        f'Atención: el comprobante {comprobante.comprobante_string or comprobante.id} ya tiene el mismo '
+        f'impuesto y régimen cargado en otra retención ({ids_texto}). Puede ser una carga duplicada por '
+        'error, o una división válida de la retención en varios certificados -- revisá antes de continuar.'
+    )
+
+
 def _tiene_liquidacion(retencion_id):
     """True si esta retención ya está incluida en una liquidación
     (liquidacion_retencion tiene ON DELETE RESTRICT hacia retencion: borrarla
@@ -392,11 +439,13 @@ def _guardar_grupo(header_form, formset):
     el total, y el vínculo nomás debería ser con dos renglones distintos" --
     antes cada renglón del formset generaba su propia Retencion suelta).
 
-    Devuelve (retencion, cantidad_de_renglones_creados). Las filas marcadas
-    "Quitar" (DELETE) se ignoran -- antes del rediseño esa marca sólo
-    afectaba la suma que se mostraba en pantalla (JS), pero el guardado
-    igual las creaba; se corrige acá de paso, ya que se estaba reescribiendo
-    este mismo loop."""
+    Devuelve (retencion, cantidad_de_renglones_creados, advertencias). Las
+    filas marcadas "Quitar" (DELETE) se ignoran -- antes del rediseño esa
+    marca sólo afectaba la suma que se mostraba en pantalla (JS), pero el
+    guardado igual las creaba; se corrige acá de paso, ya que se estaba
+    reescribiendo este mismo loop. 'advertencias' son textos (no bloqueantes,
+    ver _retenciones_con_mismo_impuesto_regimen) para avisar de comprobantes
+    que ya tenían el mismo impuesto+régimen en otra retención."""
     entidad = header_form.cleaned_data.get('entidad')
     entidad_nombre = header_form.cleaned_data.get('entidad_nombre') or (entidad.nombre if entidad else '')
     id_impuesto = header_form.cleaned_data.get('id_impuesto')
@@ -426,7 +475,11 @@ def _guardar_grupo(header_form, formset):
         agregado_desde='retenciones_app',
     )
 
+    id_impuesto_id = id_impuesto.id if id_impuesto else None
+    id_regimen_id = id_regimen.id if id_regimen else None
+
     cantidad = 0
+    advertencias = []
     for form in formset:
         datos = form.cleaned_data
         if not datos or datos.get('_vacio') or datos.get('DELETE'):
@@ -443,6 +496,14 @@ def _guardar_grupo(header_form, formset):
         if total_renglon is None:
             total_renglon = _calcular_total(neto_gravado, porcentaje)
 
+        # No bloqueante (ver _retenciones_con_mismo_impuesto_regimen): se
+        # calcula ANTES de crear el renglón nuevo, así que cualquier
+        # coincidencia encontrada acá es, por definición, de otra retención
+        # ya existente.
+        otras = _retenciones_con_mismo_impuesto_regimen(comprobante, id_impuesto_id, id_regimen_id)
+        if otras:
+            advertencias.append(_texto_advertencia_impuesto_regimen(comprobante, otras))
+
         RetencionRenglon.objects.create(
             retencion=retencion,
             comprobante=comprobante,
@@ -452,7 +513,7 @@ def _guardar_grupo(header_form, formset):
         )
         cantidad += 1
 
-    return retencion, cantidad
+    return retencion, cantidad, advertencias
 
 
 def retencion_alta(request):
@@ -470,14 +531,13 @@ def retencion_alta(request):
             else:
                 try:
                     with transaction.atomic():
-                        retencion, cantidad = _guardar_grupo(header_form, formset)
+                        retencion, cantidad, advertencias = _guardar_grupo(header_form, formset)
                         suma, total_retencion = _chequear_suma_renglones(retencion)
                 except IntegrityError:
                     messages.error(
                         request,
-                        'Una de las facturas elegidas ya tiene esta misma retención (mismo impuesto y '
-                        'régimen) vinculada en otra retención -- no se puede repetir. Revisá los '
-                        'renglones cargados.'
+                        'Un mismo comprobante no se puede vincular dos veces dentro de la misma '
+                        'retención -- revisá los renglones cargados.'
                     )
                 except _SumaRenglonesExcedeTotal as exc:
                     messages.error(
@@ -502,6 +562,8 @@ def retencion_alta(request):
                             f'(${total_retencion}). Podés agregar los renglones que falten después, '
                             'volviendo a Modificar esta retención.'
                         )
+                    for advertencia in advertencias:
+                        messages.warning(request, advertencia)
                     if accion == 'pdf':
                         return retencion_pdf(request, retencion.id)
                     if accion == 'excel':
@@ -586,6 +648,14 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                     total = _parse_decimal_post(request.POST.get('total'))
                     if total is None:
                         total = _calcular_total(neto_gravado, porcentaje)
+                    # No bloqueante (ver _retenciones_con_mismo_impuesto_regimen):
+                    # se calcula ANTES de crear el renglón nuevo, así que
+                    # cualquier coincidencia encontrada acá es de otra
+                    # retención ya existente.
+                    otras = _retenciones_con_mismo_impuesto_regimen(
+                        comprobante, retencion_obj.id_impuesto_id, retencion_obj.id_regimen_id,
+                        excluir_retencion_id=retencion_obj.id,
+                    )
                     try:
                         with transaction.atomic():
                             RetencionRenglon.objects.create(
@@ -599,8 +669,8 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                     except IntegrityError:
                         messages.error(
                             request,
-                            'Ese comprobante ya tiene esta misma retención (mismo impuesto y régimen) '
-                            'vinculada -- no se puede repetir.'
+                            'Ese comprobante ya está vinculado a esta misma retención -- no se puede '
+                            'repetir.'
                         )
                     except _SumaRenglonesExcedeTotal as exc:
                         messages.error(
@@ -620,6 +690,8 @@ def _retencion_vincular_renglones(request, id, lineas, renglones_nuevos):
                                 f'La suma de los renglones vinculados (${suma}) todavía no llega al total '
                                 f'de la retención (${total_retencion}). Podés seguir agregando renglones.'
                             )
+                        if otras:
+                            messages.warning(request, _texto_advertencia_impuesto_regimen(comprobante, otras))
         elif accion == 'editar_renglon':
             # Corrige el neto/porcentaje/total de un renglón YA vinculado
             # (pedido de Gastón, 23/09/2026) -- sigue sin tocar nada de la
@@ -739,14 +811,13 @@ def retencion_modificar(request, id):
                         # sus RetencionRenglon (on_delete=CASCADE), así que se
                         # recrean todos de cero con los datos del form.
                         Retencion.objects.filter(pk=id).delete()
-                        retencion, cantidad = _guardar_grupo(header_form, formset)
+                        retencion, cantidad, advertencias = _guardar_grupo(header_form, formset)
                         suma, total_retencion = _chequear_suma_renglones(retencion)
                 except IntegrityError:
                     messages.error(
                         request,
-                        'Una de las facturas elegidas ya tiene esta misma retención (mismo impuesto y '
-                        'régimen) vinculada en otra retención -- no se puede repetir. Revisá los '
-                        'renglones cargados.'
+                        'Un mismo comprobante no se puede vincular dos veces dentro de la misma '
+                        'retención -- revisá los renglones cargados.'
                     )
                 except _SumaRenglonesExcedeTotal as exc:
                     messages.error(
@@ -770,6 +841,8 @@ def retencion_modificar(request, id):
                             f'La suma de los renglones (${suma}) todavía no llega al Total cargado '
                             f'(${total_retencion}).'
                         )
+                    for advertencia in advertencias:
+                        messages.warning(request, advertencia)
                     if accion == 'pdf':
                         return retencion_pdf(request, retencion.id)
                     if accion == 'excel':
