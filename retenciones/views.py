@@ -209,6 +209,36 @@ def _texto_advertencia_impuesto_regimen(comprobante, otras_retenciones):
     )
 
 
+def _retencion_encabezado_duplicado(entidad, entidad_nombre, anio, numero, id_impuesto, id_regimen, excluir_id=None):
+    """Busca otra Retencion (el ENCABEZADO completo, no un renglón) con la
+    misma entidad, año, número, régimen e impuesto -- pedido de Gastón
+    (29/09/2026) para evitar cargar el mismo certificado dos veces por
+    error. A diferencia de _retenciones_con_mismo_impuesto_regimen (que
+    compara comprobantes/renglones y sólo avisa, por el caso Purralef, donde
+    dos retenciones distintas y válidas pueden compartir comprobante+
+    impuesto+régimen), acá se compara el encabezado entero: no hay ningún
+    caso conocido en el que dos encabezados con los cinco datos iguales sean
+    legítimos, así que esto BLOQUEA el guardado en vez de sólo avisar.
+
+    El total NO entra en la comparación (a pedido explícito de Gastón):
+    entidad+año+número+régimen+impuesto iguales ya alcanza para
+    considerarla duplicada, sin importar qué total tenga cada una.
+
+    excluir_id se usa desde Modificar, para no comparar la retención contra
+    sí misma (ver retencion_modificar: borra y vuelve a crear la fila con un
+    id nuevo, así que hay que excluir la fila vieja explícitamente por id)."""
+    if anio is None or numero is None or id_impuesto is None or id_regimen is None:
+        return None
+    qs = Retencion.objects.filter(año=anio, numero=numero, id_impuesto=id_impuesto, id_regimen=id_regimen)
+    if entidad is not None:
+        qs = qs.filter(entidad=entidad)
+    else:
+        qs = qs.filter(entidad__isnull=True, entidad_nombre=entidad_nombre or '')
+    if excluir_id is not None:
+        qs = qs.exclude(pk=excluir_id)
+    return qs.first()
+
+
 def _tiene_liquidacion(retencion_id):
     """True si esta retención ya está incluida en una liquidación
     (liquidacion_retencion tiene ON DELETE RESTRICT hacia retencion: borrarla
@@ -526,7 +556,22 @@ def retencion_alta(request):
                 f for f in formset
                 if f.cleaned_data and not f.cleaned_data.get('_vacio') and not f.cleaned_data.get('DELETE')
             ]
-            if not lineas_validas:
+            duplicada = _retencion_encabezado_duplicado(
+                header_form.cleaned_data.get('entidad'),
+                header_form.cleaned_data.get('entidad_nombre'),
+                header_form.cleaned_data.get('año'),
+                header_form.cleaned_data.get('numero'),
+                header_form.cleaned_data.get('id_impuesto'),
+                header_form.cleaned_data.get('id_regimen'),
+            )
+            if duplicada is not None:
+                messages.error(
+                    request,
+                    f'Ya existe la retención {duplicada.año}-{duplicada.numero:04d} (id {duplicada.id}) '
+                    'con la misma entidad, régimen e impuesto -- no se puede repetir. Si es un caso '
+                    'distinto, revisá el Número.'
+                )
+            elif not lineas_validas:
                 messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
                 try:
@@ -799,7 +844,23 @@ def retencion_modificar(request, id):
                 f for f in formset
                 if f.cleaned_data and not f.cleaned_data.get('_vacio') and not f.cleaned_data.get('DELETE')
             ]
-            if not lineas_validas:
+            duplicada = _retencion_encabezado_duplicado(
+                header_form.cleaned_data.get('entidad'),
+                header_form.cleaned_data.get('entidad_nombre'),
+                header_form.cleaned_data.get('año'),
+                header_form.cleaned_data.get('numero'),
+                header_form.cleaned_data.get('id_impuesto'),
+                header_form.cleaned_data.get('id_regimen'),
+                excluir_id=id,
+            )
+            if duplicada is not None:
+                messages.error(
+                    request,
+                    f'Ya existe la retención {duplicada.año}-{duplicada.numero:04d} (id {duplicada.id}) '
+                    'con la misma entidad, régimen e impuesto -- no se puede repetir. Si es un caso '
+                    'distinto, revisá el Número.'
+                )
+            elif not lineas_validas:
                 messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
                 try:
