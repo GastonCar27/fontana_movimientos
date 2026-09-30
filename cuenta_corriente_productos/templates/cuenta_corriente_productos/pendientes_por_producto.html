@@ -23,10 +23,20 @@
     <p class="text-muted">
         Al lado de cada producto podés exportar el detalle por entidad de estos dos totales, en Excel o PDF.
     </p>
+    <p class="text-muted">
+        <strong>Equivalencias de unidades:</strong> si un producto tiene cargada una equivalencia a Kg (ver
+        "Equivalencias de unidades") para otra unidad -- Bolsa, Unidad, etc., sea del lado de los movimientos
+        o de los renglones de comprobante --, esas cantidades se convierten a Kg y se suman en la fila de
+        Kilogramos del producto (debajo de la unidad se indica qué unidades se incluyeron y con qué factor).
+        Si un producto aparece en una fila aparte con otra unidad es porque <em>no</em> tiene equivalencia
+        cargada para esa unidad: esos movimientos/renglones no se pueden cruzar contra los de Kg en
+        "Vincular por bloques" hasta que se cargue una (botón "Cargar equivalencia" de esa fila).
+    </p>
 
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form method="get" class="row gx-3 gy-3 align-items-end">
+                <input type="hidden" name="filtrado" value="1">
                 <div class="col-6 col-md-3">
                     <label for="id_fecha_desde" class="mb-1 small text-muted">Fecha desde (opcional)</label>
                     <input type="date" id="id_fecha_desde" name="fecha_desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
@@ -35,16 +45,26 @@
                     <label for="id_fecha_hasta" class="mb-1 small text-muted">Fecha hasta (opcional)</label>
                     <input type="date" id="id_fecha_hasta" name="fecha_hasta" class="form-control form-control-sm" value="{{ fecha_hasta }}">
                 </div>
+                <div class="col-12 col-md-6">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="id_excluir_internos" name="excluir_internos" value="1" {% if excluir_internos %}checked{% endif %}>
+                        <label class="form-check-label small" for="id_excluir_internos">
+                            Excluir movimientos de Fontana S.A. a Fontana S.A. (traslados internos, no son deuda)
+                        </label>
+                    </div>
+                </div>
                 <div class="col-12 col-md-4 d-flex gap-2">
                     <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
-                    {% if fecha_desde or fecha_hasta %}
+                    {% if filtro_no_default %}
                     <a href="{% url 'cuenta_corriente_productos:pendientes_por_producto' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
                     {% endif %}
                 </div>
             </form>
             <p class="text-muted small mb-0 mt-2">
                 El filtro de fechas se aplica a la fecha del movimiento (lado pendiente) y a la fecha del
-                comprobante (lado vinculado de más). Sin fechas, se calcula sobre todo lo cargado.
+                comprobante (lado vinculado de más). Sin fechas, se calcula sobre todo lo cargado. El filtro de
+                Fontana S.A. a Fontana S.A. (tildado por defecto) deja afuera los movimientos en los que emisor y
+                receptor son los dos Fontana S.A.; destildado, se incluyen (aparecen bajo la entidad Fontana S.A.).
             </p>
         </div>
     </div>
@@ -64,7 +84,17 @@
                 {% for fila in filas %}
                 <tr>
                     <td>{{ fila.producto.nombre|default:"Sin nombre" }}</td>
-                    <td>{{ fila.unidad.nombre|default:"(sin unidad)" }}</td>
+                    <td>
+                        {{ fila.unidad.nombre|default:"(sin unidad)" }}
+                        {% if fila.unidades_convertidas %}
+                        <br><span class="text-muted small">incluye convertido a Kg:
+                            {% for unidad, factor in fila.unidades_convertidas %}{{ unidad.nombre }} (1 = {{ factor|separador_miles }} Kg){% if not forloop.last %}, {% endif %}{% endfor %}
+                        </span>
+                        {% endif %}
+                        {% if fila.sin_equivalencia %}
+                        <br><span class="badge bg-warning text-dark">sin equivalencia a Kg</span>
+                        {% endif %}
+                    </td>
                     <td class="text-end">
                         {% if fila.saldo_total > 0 %}
                         <strong class="text-success">+{{ fila.saldo_total|separador_miles }}</strong>
@@ -81,13 +111,19 @@
                     </td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-danger"
-                           href="{% url 'cuenta_corriente_productos:pendientes_por_producto_pdf' %}?producto={{ fila.producto.id }}{% if fila.unidad %}&unidad={{ fila.unidad.id }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}">
+                           href="{% url 'cuenta_corriente_productos:pendientes_por_producto_pdf' %}?producto={{ fila.producto.id }}{% if fila.unidad %}&unidad={{ fila.unidad.id }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}&excluir_internos={{ excluir_internos|yesno:"1,0" }}">
                             PDF
                         </a>
                         <a class="btn btn-sm btn-outline-success"
-                           href="{% url 'cuenta_corriente_productos:pendientes_por_producto_excel' %}?producto={{ fila.producto.id }}{% if fila.unidad %}&unidad={{ fila.unidad.id }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}">
+                           href="{% url 'cuenta_corriente_productos:pendientes_por_producto_excel' %}?producto={{ fila.producto.id }}{% if fila.unidad %}&unidad={{ fila.unidad.id }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}&excluir_internos={{ excluir_internos|yesno:"1,0" }}">
                             Excel
                         </a>
+                        {% if fila.sin_equivalencia %}
+                        <a class="btn btn-sm btn-outline-primary"
+                           href="{% url 'cuenta_corriente_productos:equivalencia_kg_alta' %}?producto={{ fila.producto.id }}&unidad={{ fila.unidad.id }}&next={{ url_actual|urlencode }}">
+                            Cargar equivalencia
+                        </a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}

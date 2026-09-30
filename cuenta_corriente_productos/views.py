@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
@@ -77,8 +78,29 @@ def _total_movimiento_en_kg(movimiento, equivalencias=None):
         equivalencias = _cargar_equivalencias_kg()
     factor = equivalencias.get((movimiento.producto_id, movimiento.unidad_de_medida_id))
     if factor is not None:
+        if _movimiento_viene_de_remito(movimiento):
+            # Resguardo: un Movimiento generado por un renglón de remito
+            # SIEMPRE tiene el total en Kg (total=kilogramos_definitivos,
+            # ver remitos.views._sincronizar_movimiento_renglon), aunque
+            # los creados antes del fix del 28/09 todavía tengan la unidad
+            # de embalaje (Bolsa/Bolsón) como etiqueta, hasta que se corra
+            # corregir_unidad_medida_movimientos_remito --aplicar. Si se lo
+            # multiplicara por el factor, un remito de 31.680 Kg en "Bolsa"
+            # con equivalencia 8 pasaría a contar 253.440 Kg.
+            return total
         return total * factor
     return total
+
+
+def _movimiento_viene_de_remito(movimiento):
+    """True si el Movimiento lo generó un renglón de remito (tiene
+    RemitoRenglon.movimiento apuntándole, related_name 'renglon_remito').
+    Solo se consulta cuando hay una equivalencia a aplicar (unidad no Kg con
+    factor cargado), así que no agrega una consulta por cada movimiento."""
+    try:
+        return movimiento.renglon_remito is not None
+    except ObjectDoesNotExist:
+        return False
 
 
 def _total_renglon_en_kg(renglon, equivalencias=None):
@@ -1409,7 +1431,8 @@ def _diferencia_kg_renglon(renglon, equivalencias=None):
     return suma - capacidad
 
 
-def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, producto_id=None, unidad_id=None):
+def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, producto_id=None, unidad_id=None,
+                                      excluir_fontana_a_fontana=False):
     """
     Arma, para cada (producto, unidad de medida), dos totales agregados
     por entidad -- deliberadamente SEPARADOS, sin restar uno del otro (esa
@@ -1431,6 +1454,12 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     acotan el cálculo a un solo producto (y, si se indica, una sola
     unidad) -- se usa para las exportaciones Excel/PDF de un producto
     puntual, sin tener que recalcular todos los demás.
+
+    excluir_fontana_a_fontana: deja afuera los movimientos cuyo emisor Y
+    receptor son los dos Fontana S.A. (ENTIDAD_PROPIA_ID) -- traslados
+    internos, no son deuda con nadie (pedido de Gastón, 30/09). Sin tildar,
+    se incluyen como siempre (agrupados bajo la entidad Fontana S.A.).
+    Solo afecta el lado movimientos, no el de renglones de comprobante.
     """
     # Se carga acá arriba (antes de filtrar por unidad_id) porque hace
     # falta para "abrir" ese filtro cuando corresponde -- ver más abajo.
@@ -1459,6 +1488,12 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         movimientos_qs = movimientos_qs.filter(fecha__gte=fecha_desde)
     if fecha_hasta:
         movimientos_qs = movimientos_qs.filter(fecha__lte=fecha_hasta)
+    if excluir_fontana_a_fontana:
+        # Solo los que tienen LOS DOS lados en Fontana; uno con cualquiera
+        # de los dos lados vacío (NULL) o en otra entidad no se excluye.
+        movimientos_qs = movimientos_qs.exclude(
+            Q(entidad_emisor_id=ENTIDAD_PROPIA_ID) & Q(entidad_receptor_id=ENTIDAD_PROPIA_ID)
+        )
 
     movimientos = list(movimientos_qs)
 
@@ -1486,7 +1521,15 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
 
     def _bucket(producto, unidad):
         clave = (producto.id, unidad.id if unidad else None)
-        return datos.setdefault(clave, {'producto': producto, 'unidad': unidad, 'entidades': {}})
+        return datos.setdefault(
+            clave, {'producto': producto, 'unidad': unidad, 'entidades': {}, 'convertidas': {}},
+        )
+
+    def _anotar_convertida(bucket, producto_id, unidad):
+        # Para mostrar en pantalla qué otras unidades quedaron sumadas
+        # (ya convertidas) dentro de la fila de Kg, y con qué factor.
+        if unidad is not None:
+            bucket['convertidas'][unidad.id] = (unidad, equivalencias[(producto_id, unidad.id)])
 
     def _fila_entidad(bucket, entidad):
         return bucket['entidades'].setdefault(
@@ -1502,12 +1545,15 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         if not pendiente:
             continue
         unidad_bucket = mov.unidad_de_medida
-        if (
+        convertida = (
             (mov.producto_id, mov.unidad_de_medida_id) in equivalencias
             and unidad_kg is not None
-        ):
+        )
+        if convertida:
             unidad_bucket = unidad_kg
         bucket = _bucket(mov.producto, unidad_bucket)
+        if convertida:
+            _anotar_convertida(bucket, mov.producto_id, mov.unidad_de_medida)
         _fila_entidad(bucket, entidad)['pendiente'] += pendiente
 
     # Lado renglones: capacidad facturada de más (ver _diferencia_kg_renglon).
@@ -1553,13 +1599,16 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         # unidad con equivalencia cargada se fusiona en la fila de
         # Kilogramos en vez de mostrarse aparte con un número que en
         # realidad ya está convertido.
-        if (
+        convertida_ren = bool(
             detalle
             and (renglon.producto_id, detalle.unidad_de_medida_id) in equivalencias
             and unidad_kg is not None
-        ):
+        )
+        if convertida_ren:
             unidad_bucket_ren = unidad_kg
         bucket = _bucket(renglon.producto, unidad_bucket_ren)
+        if convertida_ren:
+            _anotar_convertida(bucket, renglon.producto_id, detalle.unidad_de_medida)
         _fila_entidad(bucket, entidad)['capacidad_sin_usar'] += -diferencia
 
     filas_producto = []
@@ -1575,9 +1624,20 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         entidades.sort(key=lambda f: (f['entidad'].nombre or '').upper())
         saldo_total = sum((f['saldo'] for f in entidades), Decimal('0'))
         capacidad_sin_usar_total = sum((f['capacidad_sin_usar'] for f in entidades), Decimal('0'))
+        unidad = bucket['unidad']
         filas_producto.append({
             'producto': bucket['producto'],
-            'unidad': bucket['unidad'],
+            'unidad': unidad,
+            # Otras unidades sumadas (ya convertidas) dentro de esta fila de
+            # Kg, como lista de (unidad, factor_kg) -- solo informativo.
+            'unidades_convertidas': sorted(
+                bucket['convertidas'].values(), key=lambda par: (par[0].nombre or ''),
+            ),
+            # Fila en una unidad distinta de Kg: si quedó separada es porque
+            # NO hay equivalencia cargada para (producto, unidad) -- esos
+            # movimientos/renglones no se pueden cruzar con los de Kg en
+            # "Vincular por bloques" hasta que se cargue una.
+            'sin_equivalencia': bool(unidad and unidad.id != UNIDAD_MEDIDA_KILOGRAMOS_ID),
             'entidades': entidades,
             'saldo_total': saldo_total,
             'favor_total': saldo_total,
@@ -1598,14 +1658,35 @@ def pendientes_por_producto(request):
     """
     fecha_desde = request.GET.get('fecha_desde', '').strip()
     fecha_hasta = request.GET.get('fecha_hasta', '').strip()
+    excluir_internos = _excluir_internos_desde_get(request)
 
-    filas = _calcular_pendientes_por_producto(fecha_desde or None, fecha_hasta or None)
+    filas = _calcular_pendientes_por_producto(
+        fecha_desde or None, fecha_hasta or None, excluir_fontana_a_fontana=excluir_internos,
+    )
 
     return render(request, 'cuenta_corriente_productos/pendientes_por_producto.html', {
         'filas': filas,
         'fecha_desde': fecha_desde,
         'fecha_hasta': fecha_hasta,
+        # Para volver a esta misma pantalla (con el mismo filtro) después
+        # de "Cargar equivalencia".
+        'url_actual': request.get_full_path(),
+        'excluir_internos': excluir_internos,
+        'filtro_no_default': bool(fecha_desde or fecha_hasta or not excluir_internos),
     })
+
+
+def _excluir_internos_desde_get(request):
+    """Checkbox "Excluir movimientos de Fontana S.A. a Fontana S.A.":
+    tildado por defecto. Un checkbox destildado no viaja en el GET, así que
+    para distinguir "recién entro a la pantalla" (-> tildado) de "lo
+    destildé y filtré" (-> destildado) el form manda siempre 'filtrado=1'.
+    Las exportaciones Excel/PDF reciben el valor explícito
+    ('excluir_internos=1' o '0')."""
+    valor = request.GET.get('excluir_internos')
+    if valor is not None:
+        return valor not in ('0', '')
+    return not request.GET.get('filtrado')
 
 
 def _fila_pendientes_producto_puntual(request):
@@ -1626,6 +1707,7 @@ def _fila_pendientes_producto_puntual(request):
 
     filas = _calcular_pendientes_por_producto(
         fecha_desde, fecha_hasta, producto_id=int(producto_id), unidad_id=unidad_id,
+        excluir_fontana_a_fontana=_excluir_internos_desde_get(request),
     )
     fila = filas[0] if filas else None
     return fila, fecha_desde, fecha_hasta
@@ -1676,6 +1758,11 @@ def pendientes_por_producto_pdf(request):
         return redirect('cuenta_corriente_productos:pendientes_por_producto')
     unidad_nombre = fila['unidad'].nombre if fila['unidad'] else 'sin unidad'
     titulo = f"Pendientes de vincular - {fila['producto'].nombre} ({unidad_nombre})"
+    if fila.get('unidades_convertidas'):
+        detalle_conv = ', '.join(
+            f"{u.nombre} x{factor.normalize():f} Kg" for u, factor in fila['unidades_convertidas']
+        )
+        titulo += f" - incluye convertido a Kg: {detalle_conv}"
     nombre = f"pendientes_{fila['producto'].nombre or fila['producto'].id}".replace(' ', '_')
     return pdf_response(nombre, titulo, _resultado_reporte_pendientes_producto(fila))
 
@@ -1700,15 +1787,38 @@ def equivalencia_kg_listado(request):
 
 
 def equivalencia_kg_alta(request):
+    # 'next': a dónde volver después de guardar/cancelar (ej. el link
+    # "Cargar equivalencia" de "Pendientes por producto"); solo se acepta
+    # una URL interna del mismo sitio.
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        next_url = ''
     if request.method == 'POST':
         form = ProductoEquivalenciaKgForm(request.POST)
         if form.is_valid():
             form.save()
             messages.success(request, 'Equivalencia creada correctamente.')
+            if next_url:
+                return redirect(next_url)
             return redirect('cuenta_corriente_productos:equivalencia_kg_listado')
     else:
-        form = ProductoEquivalenciaKgForm()
-    return render(request, 'cuenta_corriente_productos/equivalencia_kg_form.html', {'form': form, 'modo': 'alta'})
+        # Precarga opcional de producto/unidad por GET (link "Cargar
+        # equivalencia" de "Pendientes por producto"), editable igual.
+        initial = {}
+        producto_get = request.GET.get('producto', '').strip()
+        if producto_get.isdigit():
+            initial['producto'] = int(producto_get)
+        unidad_get = request.GET.get('unidad', '').strip()
+        if unidad_get:
+            initial['unidad'] = unidad_get
+        form = ProductoEquivalenciaKgForm(initial=initial)
+    producto_inicial = None
+    producto_valor = form['producto'].value()
+    if producto_valor and str(producto_valor).isdigit():
+        producto_inicial = ProductoDetalle.objects.filter(pk=producto_valor).first()
+    return render(request, 'cuenta_corriente_productos/equivalencia_kg_form.html', {
+        'form': form, 'modo': 'alta', 'producto_inicial': producto_inicial, 'next_url': next_url,
+    })
 
 
 def equivalencia_kg_editar(request, pk):
