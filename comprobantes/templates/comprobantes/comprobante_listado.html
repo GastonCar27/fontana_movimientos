@@ -9,7 +9,7 @@
     <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
         <div class="col-auto">
             <label for="id_entidad" class="mb-1 small text-muted">
-                Entidad <span id="entidad-exacta-badge" class="badge text-bg-primary {% if not q_entidad_id %}d-none{% endif %}" title="Se filtra por esta entidad exacta">exacta</span>
+                Entidad <span id="entidad-exacta-badge" class="badge bg-primary {% if not q_entidad_id %}d-none{% endif %}" title="Se filtra por esta entidad exacta">exacta</span>
             </label>
             <div class="buscador-wrapper" style="min-width: 280px;">
                 <input type="text" id="id_entidad" name="entidad" autocomplete="off" class="form-control form-control-sm"
@@ -58,7 +58,7 @@
                     <th>Moneda</th>
                     <th class="text-center">{% sort_th 'renglones' 'Renglones' %}</th>
                     <th>Liquidación</th>
-                    <th class="text-center">Acciones</th>
+                    <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -83,38 +83,41 @@
                         {% if c.cantidad_renglones %}
                         {{ c.cantidad_renglones }}
                         {% else %}
-                        <span class="badge text-bg-warning">Sin renglones</span>
+                        <span class="badge bg-warning text-dark">Sin renglones</span>
                         {% endif %}
                     </td>
                     <td class="small">
                         {% for l in c.liquidaciones_validas %}
-                        <a href="{% url 'liquidaciones:editar' l.pk %}" class="badge {% if l.tipo == 'pago' %}text-bg-success{% else %}text-bg-info{% endif %} text-decoration-none"
+                        <a href="{% url 'liquidaciones:editar' l.pk %}" class="badge {% if l.tipo == 'pago' %}bg-success{% else %}bg-info text-dark{% endif %} text-decoration-none"
                            title="Liquidación de {{ l.get_tipo_display }} del {{ l.fecha|default_if_none:'' }}">{{ l.tipo|capfirst }} {{ l.numero|default:l.pk }}</a>
                         {% endfor %}
                         {% if c.puede_liquidar_pago %}
-                        <span class="badge text-bg-warning">Sin liquidar (pago)</span>
+                        <span class="badge bg-warning text-dark">Sin liquidar (pago)</span>
                         {% elif not c.liquidaciones_validas and not c.fontana_receptora %}
                         <span class="text-muted">Sin liquidar</span>
                         {% endif %}
                     </td>
-                    <td class="text-center text-nowrap">
-                        <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
-                        <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
-                        <a class="btn btn-sm btn-outline-success" title="Exportar a Excel"
-                           href="{% url 'comprobantes:comprobante_exportar_excel' c.pk %}">Excel</a>
-                        <a class="btn btn-sm btn-outline-secondary" title="Exportar a PDF"
-                           href="{% url 'comprobantes:comprobante_exportar_pdf' c.pk %}">PDF</a>
-                        {% if not c.cantidad_renglones %}
-                        <a class="btn btn-sm btn-warning" title="Este comprobante todavía no tiene ningún renglón cargado"
-                           href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
-                        {% elif c.renglones_no_coinciden %}
-                        <a class="btn btn-sm btn-warning" title="La suma de los renglones no coincide con el total del comprobante (diferencia {{ c.diferencia_renglones|separador_miles }})"
-                           href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
-                        {% endif %}
-                        {% if c.puede_liquidar_pago %}
-                        <a class="btn btn-sm btn-success" title="Ir a una liquidación de pago nueva para esta entidad, con este comprobante ya tildado"
-                           href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=pago&comprobante={{ c.pk }}">Liquidar</a>
-                        {% endif %}
+                    <td style="min-width: 240px;">
+                        {# Botones con flex-wrap: si no entran en una línea bajan a la siguiente en vez de quedar tapados a la derecha. Las acciones "pendientes" (agregar renglón / liquidar) van primero para que siempre se vean. #}
+                        <div class="d-flex flex-wrap gap-1 justify-content-end">
+                            {% if not c.cantidad_renglones %}
+                            <a class="btn btn-sm btn-warning" title="Este comprobante todavía no tiene ningún renglón cargado"
+                               href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
+                            {% elif c.renglones_no_coinciden %}
+                            <a class="btn btn-sm btn-warning" title="La suma de los renglones no coincide con el total del comprobante (diferencia {{ c.diferencia_renglones|separador_miles }})"
+                               href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
+                            {% endif %}
+                            {% if c.puede_liquidar_pago %}
+                            <a class="btn btn-sm btn-success" title="Ir a una liquidación de pago nueva para esta entidad, con este comprobante ya tildado"
+                               href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=pago&comprobante={{ c.pk }}">Liquidar</a>
+                            {% endif %}
+                            <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
+                            <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
+                            <a class="btn btn-sm btn-outline-success" title="Exportar a Excel"
+                               href="{% url 'comprobantes:comprobante_exportar_excel' c.pk %}">Excel</a>
+                            <a class="btn btn-sm btn-outline-secondary" title="Exportar a PDF"
+                               href="{% url 'comprobantes:comprobante_exportar_pdf' c.pk %}">PDF</a>
+                        </div>
                     </td>
                 </tr>
                 {% empty %}
