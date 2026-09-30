@@ -1446,7 +1446,9 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     - "capacidad_sin_usar": para los renglones de ese producto/unidad que
       facturaron MÁS cantidad de la que en realidad respaldan sus
       movimientos vinculados (_diferencia_kg_renglon negativa) -- el caso
-      opuesto a Bukay. Se atribuye a la entidad emisora del comprobante.
+      opuesto a Bukay -- incluidos los que todavía no tienen NINGÚN
+      vínculo (toda su cantidad sin usar; ver renglones_qs más abajo). Se
+      atribuye a la entidad emisora del comprobante.
 
     fecha_desde/fecha_hasta se aplican a Movimiento.fecha del lado
     pendiente y a Comprobante.fecha del lado capacidad_sin_usar (mismo
@@ -1560,9 +1562,29 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     # El filtro de fechas acá se aplica a Comprobante.fecha (no
     # Movimiento.fecha), igual que hacía el filtro "renglones" de "Vincular
     # por bloques".
+    # Renglones que cuentan acá:
+    #  - los que tienen algún vínculo (como siempre), y
+    #  - los que NO tienen ningún vínculo todavía (toda su cantidad está sin
+    #    usar) -- agregado 30/09 a pedido de Gastón: antes quedaban afuera
+    #    por completo (renglones de Yerba Mate Canchada sin usar que no
+    #    aparecían), aunque "Vincular por bloques" sí los mostraba con todo
+    #    su disponible. Para estos se aplica el mismo criterio que en
+    #    "Vincular por bloques": se excluyen los ya incluidos en una
+    #    liquidación, y además solo se toman productos que tienen al menos
+    #    un Movimiento cargado (los que se manejan por esta cuenta
+    #    corriente) -- si no, aparecerían todos los renglones de insumos,
+    #    servicios, fletes, etc. que nunca tienen movimiento de producto.
+    productos_con_movimientos = Movimiento.objects.values('producto_id')
     renglones_qs = (
         ComprobanteRenglon.objects
-        .filter(vinculos_movimiento__isnull=False)
+        .filter(
+            Q(vinculos_movimiento__isnull=False)
+            | Q(
+                vinculos_movimiento__isnull=True,
+                liquidacion_producto__isnull=True,
+                producto_id__in=productos_con_movimientos,
+            )
+        )
         .select_related(
             'producto', 'comprobante__entidad_emisor', 'renglon_detalle_comprobante__unidad_de_medida',
         )

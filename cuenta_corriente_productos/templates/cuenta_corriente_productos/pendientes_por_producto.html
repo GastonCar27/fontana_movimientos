@@ -18,7 +18,11 @@
         <li><strong>Capacidad de renglón sin usar</strong>: el caso opuesto -- renglones de comprobante
             facturados por MÁS cantidad de la que en realidad respaldan sus movimientos vinculados (misma
             columna "Diferencia (renglón)" que ya se ve en "Vincular por bloques", pero solo la parte
-            negativa, y sumada acá por producto).</li>
+            negativa, y sumada acá por producto), incluidos los renglones que todavía no tienen ningún
+            movimiento vinculado (cuenta toda su cantidad). No se cuentan los renglones sin vincular que ya
+            están en una liquidación, ni los de productos que no tienen ningún movimiento cargado
+            (insumos, servicios, etc.). Un renglón sin la cantidad cargada no se puede contar (no hay con qué
+            comparar).</li>
     </ul>
     <p class="text-muted">
         Al lado de cada producto podés exportar el detalle por entidad de estos dos totales, en Excel o PDF.
