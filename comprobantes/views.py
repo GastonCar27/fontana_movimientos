@@ -15,7 +15,7 @@ from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_queryset, aplicar_orden_lista
 from services.reportes import excel_response, pdf_response
 from services.permisos import requiere_grupo
-from django.db.models import Sum, Count, Max, Q, F, Case, When, DecimalField, CharField, Value
+from django.db.models import Sum, Count, Max, Q, F, Case, When, DecimalField, CharField, Value, Exists, OuterRef
 from django.db.models.functions import Coalesce, Cast
 
 
@@ -464,6 +464,11 @@ def comprobante_listado(request):
     # Agregado 2026-09-30 (pedido de Gastón): sólo los comprobantes cuyo
     # total NO coincide con la suma de sus renglones.
     q_no_coincide = request.GET.get('no_coincide', '').strip()
+    # Agregado 2026-09-30 (pedido de Gastón): sólo los que todavía no están
+    # en una liquidación de pago (compras: Fontana receptora) y/o de cobro
+    # (ventas: Fontana emisora). Si se tildan los dos, trae ambos.
+    q_sin_liq_pago = request.GET.get('sin_liq_pago', '').strip()
+    q_sin_liq_cobro = request.GET.get('sin_liq_cobro', '').strip()
 
     # Entidad: texto libre (nombre o CUIT que contenga lo tipeado, como
     # siempre) o, si se eligió una de la lista del buscador, esa entidad
@@ -516,6 +521,25 @@ def comprobante_listado(request):
         comprobantes = comprobantes.exclude(suma_renglones=Coalesce(
             F('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=18, decimal_places=2),
         ))
+    if q_sin_liq_pago or q_sin_liq_cobro:
+        # Import local: liquidaciones.models ya importa comprobantes.models.
+        from liquidaciones.models import LiquidacionComprobante
+        # El JOIN con liquidacion (liquidacion__tipo) deja afuera solo los
+        # vínculos a liquidaciones que ya no existen -- esos se toman como
+        # "sin liquidar", igual que en la columna Liquidación de abajo.
+        comprobantes = comprobantes.annotate(
+            tiene_liq_pago=Exists(LiquidacionComprobante.objects.filter(
+                comprobante=OuterRef('pk'), liquidacion__tipo='pago')),
+            tiene_liq_cobro=Exists(LiquidacionComprobante.objects.filter(
+                comprobante=OuterRef('pk'), liquidacion__tipo='cobro')),
+        )
+        condicion = Q(pk__in=[])
+        if q_sin_liq_pago:
+            # Fontana receptora = es_emisor 1 o vacío (criterio de liquidaciones).
+            condicion |= (Q(es_emisor=1) | Q(es_emisor__isnull=True)) & Q(tiene_liq_pago=False)
+        if q_sin_liq_cobro:
+            condicion |= Q(es_emisor=0) & Q(tiene_liq_cobro=False)
+        comprobantes = comprobantes.filter(condicion)
 
     comprobantes = aplicar_orden_queryset(request, comprobantes, {
         'id': 'id',
@@ -549,7 +573,10 @@ def comprobante_listado(request):
         # importa es si ya está en una liquidación de PAGO.
         c.fontana_receptora = c.es_emisor != 0
         c.liquidado_en_pago = any(l.tipo == 'pago' for l in c.liquidaciones_validas)
+        c.liquidado_en_cobro = any(l.tipo == 'cobro' for l in c.liquidaciones_validas)
         c.puede_liquidar_pago = c.fontana_receptora and not c.liquidado_en_pago
+        # Ventas (Fontana emisora): lo que importa es la liquidación de cobro.
+        c.puede_liquidar_cobro = not c.fontana_receptora and not c.liquidado_en_cobro
 
     return render(request, 'comprobantes/comprobante_listado.html', {
         'comprobantes': comprobantes,
@@ -561,6 +588,8 @@ def comprobante_listado(request):
         'q_fecha_hasta': q_fecha_hasta,
         'q_sin_renglones': q_sin_renglones,
         'q_no_coincide': q_no_coincide,
+        'q_sin_liq_pago': q_sin_liq_pago,
+        'q_sin_liq_cobro': q_sin_liq_cobro,
     })
 
 

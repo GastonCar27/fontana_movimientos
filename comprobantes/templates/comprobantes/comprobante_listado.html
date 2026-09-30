@@ -38,6 +38,14 @@
             <input type="checkbox" class="form-check-input" id="id_no_coincide" name="no_coincide" value="1" {% if q_no_coincide %}checked{% endif %}>
             <label class="form-check-label" for="id_no_coincide">Solo donde la suma de renglones no coincide con el total</label>
         </div>
+        <div class="col-auto form-check mb-1">
+            <input type="checkbox" class="form-check-input" id="id_sin_liq_pago" name="sin_liq_pago" value="1" {% if q_sin_liq_pago %}checked{% endif %}>
+            <label class="form-check-label" for="id_sin_liq_pago" title="Compras (Fontana receptora) que todavía no están en ninguna liquidación de pago">Solo sin liquidación de pago</label>
+        </div>
+        <div class="col-auto form-check mb-1">
+            <input type="checkbox" class="form-check-input" id="id_sin_liq_cobro" name="sin_liq_cobro" value="1" {% if q_sin_liq_cobro %}checked{% endif %}>
+            <label class="form-check-label" for="id_sin_liq_cobro" title="Ventas (Fontana emisora) que todavía no están en ninguna liquidación de cobro">Solo sin liquidación de cobro</label>
+        </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'comprobantes:comprobante_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
@@ -93,8 +101,8 @@
                         {% endfor %}
                         {% if c.puede_liquidar_pago %}
                         <span class="badge bg-warning text-dark">Sin liquidar (pago)</span>
-                        {% elif not c.liquidaciones_validas and not c.fontana_receptora %}
-                        <span class="text-muted">Sin liquidar</span>
+                        {% elif c.puede_liquidar_cobro %}
+                        <span class="badge bg-warning text-dark">Sin liquidar (cobro)</span>
                         {% endif %}
                     </td>
                     <td style="min-width: 240px;">
@@ -110,6 +118,9 @@
                             {% if c.puede_liquidar_pago %}
                             <a class="btn btn-sm btn-success" title="Ir a una liquidación de pago nueva para esta entidad, con este comprobante ya tildado"
                                href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=pago&comprobante={{ c.pk }}">Liquidar</a>
+                            {% elif c.puede_liquidar_cobro %}
+                            <a class="btn btn-sm btn-success" title="Ir a una liquidación de cobro nueva para esta entidad, con este comprobante ya tildado"
+                               href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=cobro&comprobante={{ c.pk }}">Liquidar</a>
                             {% endif %}
                             <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
                             <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
