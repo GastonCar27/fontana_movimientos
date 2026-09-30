@@ -249,22 +249,31 @@ class ProductoEquivalenciaKg(models.Model):
     Pack, etc.) para un producto puntual -- ej.: 1 Bolsa de YERBA MATE 'LA
     HUELLA' 4X2Kg = 8kg.
 
-    Sirve para "Vincular por bloques": un Movimiento se puede cargar en
-    cualquier unidad (Movimiento.unidad_de_medida no tiene restricción de
-    catálogo, a diferencia de un renglón de comprobante fiscal, que SIEMPRE
-    factura en Kg -- ver comprobantes.models.IDS_UNIDADES_SOLO_REMITOS), así
-    que sin una equivalencia cargada acá, un movimiento en, por ejemplo,
-    Bolsa nunca puede vincularse contra un renglón en Kg (quedan en
-    unidades no comparables). Con una fila acá para (producto, unidad), esa
-    conversión se hace sola en "Vincular por bloques" y "Pendientes por
-    producto" (ver cuenta_corriente_productos.views._total_movimiento_en_kg).
+    Sirve para "Vincular por bloques": tanto un Movimiento como un
+    ComprobanteRenglon pueden estar cargados en cualquier unidad -- un
+    Movimiento no tiene restricción de catálogo, y un renglón de
+    comprobante fiscal TAMPOCO factura siempre en Kg (puede estar en
+    cualquier unidad válida para AFIP, ej. "Unidad", salvo Bolsa/Bolsón,
+    exclusivas de movimientos y remitos -- ver
+    comprobantes.models.IDS_UNIDADES_SOLO_REMITOS). Sin una equivalencia
+    cargada acá, dos cosas en unidades distintas no se pueden vincular
+    entre sí (quedan en unidades no comparables). Con una fila acá para
+    (producto, unidad), esa conversión a Kg se hace sola de los dos lados
+    en "Vincular por bloques" y "Pendientes por producto" (ver
+    cuenta_corriente_productos.views._total_movimiento_en_kg /
+    _total_renglon_en_kg).
 
     Pantalla de alta/listado/editar en "Cuenta corriente de productos" >
     "Equivalencias de unidades" (agregada 30/09/2026 a pedido de Gastón,
     para que él mismo pueda cargar/editar estos casos sin tener que pedir
     un cambio de código cada vez que aparece un producto nuevo con este
     problema). Caso real que motivó esto: producto YERBA MATE 'LA HUELLA'
-    4X2Kg (id 1088), entidad Don Basilio.
+    4X2Kg (id 1088), entidad Don Basilio (movimiento en Bolsa). Ampliado el
+    mismo día tras otro caso real con el mismo producto, entidad Purralef
+    Alonso Enrique: acá era el RENGLÓN el que estaba en una unidad
+    distinta de Kg ("Unidad"), no el movimiento -- el primer diseño sólo
+    convertía el lado del movimiento, asumiendo (incorrectamente) que el
+    renglón siempre factura en Kg.
     """
     producto = models.ForeignKey(
         ProductoDetalle,

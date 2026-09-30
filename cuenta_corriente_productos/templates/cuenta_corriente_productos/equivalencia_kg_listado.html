@@ -8,11 +8,14 @@
         <a href="{% url 'cuenta_corriente_productos:equivalencia_kg_alta' %}" class="btn btn-sm btn-primary">+ Nueva equivalencia</a>
     </div>
     <p class="text-muted">
-        Productos que a veces se cargan en una unidad distinta de Kg (Bolsa, Bolsón, Pack, etc.) --
-        acá se indica cuántos Kg equivale 1 unidad de esa unidad para ese producto puntual, así "Vincular
-        por bloques" y "Pendientes por producto" pueden convertir esos movimientos a Kg y compararlos/vincularlos
-        contra un renglón de comprobante, que siempre factura en Kg. Sin una fila acá para un producto+unidad,
-        ese caso sigue funcionando como siempre (no se puede vincular contra una unidad distinta).
+        Productos que a veces se cargan (en movimientos O en renglones de comprobante) en una unidad
+        distinta de Kg (Bolsa, Bolsón, Unidad, Pack, etc.) -- acá se indica cuántos Kg equivale 1 unidad de
+        esa unidad para ese producto puntual, así "Vincular por bloques" y "Pendientes por producto" pueden
+        convertir a Kg tanto los movimientos como los renglones de comprobante que estén en esa unidad, para
+        poder compararlos/vincularlos entre sí sin importar en qué unidad esté cargado cada lado (un renglón
+        de comprobante fiscal puede estar en cualquier unidad válida para AFIP, no siempre en Kg). Sin una
+        fila acá para un producto+unidad, ese caso sigue funcionando como siempre (no se puede vincular
+        contra una unidad distinta).
     </p>
 
     <div class="table-responsive">

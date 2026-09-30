@@ -59,8 +59,10 @@ def _total_movimiento_en_kg(movimiento, equivalencias=None):
     Movimiento.total tal cual está cargado, convertido a Kg si su unidad
     no es Kg y hay una equivalencia cargada para (producto, unidad) -- ver
     ProductoEquivalenciaKg / pantalla "Equivalencias de unidades". Así se
-    puede comparar/cubrir contra la capacidad de un renglón de comprobante,
-    que siempre está en Kg. Sin equivalencia cargada para esa combinación,
+    puede comparar/cubrir en Kg contra la capacidad de un renglón de
+    comprobante (que a su vez también se convierte a Kg del mismo modo
+    cuando hace falta, ver _total_renglon_en_kg -- un renglón fiscal NO
+    siempre factura en Kg). Sin equivalencia cargada para esa combinación,
     se devuelve tal cual (comportamiento de siempre: solo se puede
     vincular/sumar contra la misma unidad).
 
@@ -77,6 +79,44 @@ def _total_movimiento_en_kg(movimiento, equivalencias=None):
     if factor is not None:
         return total * factor
     return total
+
+
+def _total_renglon_en_kg(renglon, equivalencias=None):
+    """
+    ComprobanteRenglonDetalle.cantidad (la cantidad facturada en el
+    renglón), convertida a Kg si el renglón está en una unidad distinta de
+    Kg y hay una equivalencia cargada para (producto, unidad).
+
+    OJO -- un renglón de comprobante fiscal NO siempre factura en Kg: puede
+    estar en cualquier unidad válida para AFIP (ej. "Unidad", para
+    productos que se facturan por bulto/pack en vez de por peso), salvo
+    Bolsa/Bolsón, exclusivas de movimientos y remitos (ver
+    IDS_UNIDADES_SOLO_REMITOS, nunca ofrecidas en el desplegable de
+    ComprobanteRenglonDetalleForm). Detectado 2026-09-30: el primer diseño
+    de "Equivalencias de unidades" asumía lo contrario (que el renglón
+    siempre está en Kg) y sólo convertía el lado del movimiento -- caso
+    real que lo mostró: entidad Purralef Alonso Enrique, producto 1088,
+    Factura A 730, facturada en "Unidad" en vez de Kg.
+
+    Misma idea que _total_movimiento_en_kg, pero para el lado del renglón:
+    sin equivalencia cargada para esa combinación producto+unidad, se
+    devuelve tal cual (comportamiento de siempre). Devuelve None si el
+    renglón no tiene ComprobanteRenglonDetalle o no tiene cantidad cargada
+    (no hay con qué comparar).
+    """
+    detalle = getattr(renglon, 'renglon_detalle_comprobante', None)
+    if detalle is None or detalle.cantidad is None:
+        return None
+    cantidad = detalle.cantidad
+    unidad_id = detalle.unidad_de_medida_id
+    if not unidad_id or unidad_id == UNIDAD_MEDIDA_KILOGRAMOS_ID:
+        return cantidad
+    if equivalencias is None:
+        equivalencias = _cargar_equivalencias_kg()
+    factor = equivalencias.get((renglon.producto_id, unidad_id))
+    if factor is not None:
+        return cantidad * factor
+    return cantidad
 
 # Id de la entidad "Fontana S.A." (la empresa propia) -- mismo criterio que
 # comprobantes.views.ENTIDAD_PROPIA_ID / remitos.models.ENTIDAD_PROPIA_ID.
@@ -120,16 +160,16 @@ def _kg_pendiente_movimiento(movimiento, vinculos=None, equivalencias=None):
     return pendiente if pendiente > 0 else Decimal('0')
 
 
-def _kg_disponible_renglon(renglon, vinculos=None):
+def _kg_disponible_renglon(renglon, vinculos=None, equivalencias=None):
     """
-    Cuánto de ComprobanteRenglonDetalle.cantidad (la cantidad facturada en
-    el renglón) todavía no se usó para cubrir movimientos. Si el renglón no
-    tiene esa fila/cantidad cargada, no hay con qué comparar y se devuelve
-    None (se interpreta como "disponible" solo si todavía no tiene ningún
-    vínculo, igual que el comportamiento previo a este cambio).
+    Cuánto de la cantidad facturada en el renglón (convertida a Kg si hace
+    falta, ver _total_renglon_en_kg) todavía no se usó para cubrir
+    movimientos. Si el renglón no tiene esa fila/cantidad cargada, no hay
+    con qué comparar y se devuelve None (se interpreta como "disponible"
+    solo si todavía no tiene ningún vínculo, igual que el comportamiento
+    previo a este cambio).
     """
-    detalle = getattr(renglon, 'renglon_detalle_comprobante', None)
-    capacidad = detalle.cantidad if detalle and detalle.cantidad is not None else None
+    capacidad = _total_renglon_en_kg(renglon, equivalencias)
     if capacidad is None:
         return None
     if vinculos is None:
@@ -425,7 +465,12 @@ def vincular_por_bloques(request):
                     'vincular nada más.',
                 )
                 return redirect(redirect_url)
-            disponible = _kg_disponible_renglon(renglon)
+            # Equivalencias a Kg (ver ProductoEquivalenciaKg / "Equivalencias
+            # de unidades"): hacen falta tanto para el renglón (puede estar
+            # facturado en una unidad distinta de Kg, ver _total_renglon_en_kg)
+            # como para los movimientos tildados.
+            equivalencias = _cargar_equivalencias_kg()
+            disponible = _kg_disponible_renglon(renglon, equivalencias=equivalencias)
             sin_limite = disponible is None  # no hay ComprobanteRenglonDetalle.cantidad cargada
 
             movimientos_sel = list(Movimiento.objects.filter(pk__in=movimiento_ids))
@@ -439,7 +484,7 @@ def vincular_por_bloques(request):
             kg_cubiertos = Decimal('0')
             kg_sin_cubrir = Decimal('0')
             for movimiento in movimientos_sel:
-                pendiente_mov = _kg_pendiente_movimiento(movimiento)
+                pendiente_mov = _kg_pendiente_movimiento(movimiento, equivalencias=equivalencias)
                 if pendiente_mov <= 0:
                     continue  # ya estaba totalmente cubierto (por otro vínculo)
                 asignar = pendiente_mov if sin_limite else min(pendiente_mov, disponible)
@@ -518,6 +563,17 @@ def vincular_por_bloques(request):
         unidad_id for (prod_id, unidad_id) in equivalencias
         if producto_mov and prod_id == producto_mov.pk
     ]
+    # Mismo criterio para el lado del renglón: un renglón de comprobante
+    # fiscal NO siempre factura en Kg (puede estar en cualquier unidad
+    # válida para AFIP, ej. "Unidad" -- ver _total_renglon_en_kg), así que
+    # si el producto tiene alguna equivalencia cargada también hay que
+    # traer sus renglones en esa(s) otra(s) unidad(es), sin importar cuál
+    # se haya elegido en el filtro (caso real: entidad Purralef Alonso
+    # Enrique, producto 1088, Factura A 730 en "Unidad").
+    unidades_extra_ren = [
+        unidad_id for (prod_id, unidad_id) in equivalencias
+        if producto_ren and prod_id == producto_ren.pk
+    ]
 
     movimientos = []
     if filtro_movimientos_completo:
@@ -526,8 +582,8 @@ def vincular_por_bloques(request):
             # Producto con alguna equivalencia a Kg cargada: se traen sus
             # movimientos en Kg Y en esa(s) otra(s) unidad(es), sin
             # importar cuál se haya elegido en el filtro, así se pueden
-            # vincular juntos contra un renglón (siempre en Kg) -- ver
-            # _total_movimiento_en_kg.
+            # vincular en Kg contra un renglón esté o no en Kg (ver
+            # _total_movimiento_en_kg / _total_renglon_en_kg).
             movimientos_qs = movimientos_qs.filter(
                 unidad_de_medida_id__in=[UNIDAD_MEDIDA_KILOGRAMOS_ID] + unidades_extra_mov,
             )
@@ -563,7 +619,6 @@ def vincular_por_bloques(request):
             .filter(
                 producto_id=producto_ren.pk,
                 comprobante__entidad_emisor_id=entidad.pk,
-                renglon_detalle_comprobante__unidad_de_medida_id=unidad_ren.pk,
             )
             # Un renglón incluido en una liquidación ya está "cerrado":
             # igual que no se lo puede desvincular sin revertir esa
@@ -573,18 +628,35 @@ def vincular_por_bloques(request):
             # otro número, sin que quede registrado en ningún lado (mismo
             # espíritu que el bug de Bukay, del otro lado).
             .filter(liquidacion_producto__isnull=True)
-            .select_related('comprobante', 'comprobante__tipo_comprobante', 'renglon_detalle_comprobante')
+            .select_related(
+                'comprobante', 'comprobante__tipo_comprobante',
+                'renglon_detalle_comprobante', 'renglon_detalle_comprobante__unidad_de_medida',
+            )
             .prefetch_related('vinculos_movimiento')
         )
+        if unidades_extra_ren:
+            # Producto con alguna equivalencia a Kg cargada: se traen sus
+            # renglones en Kg Y en esa(s) otra(s) unidad(es), sin importar
+            # cuál se haya elegido en el filtro -- ver _total_renglon_en_kg.
+            renglones_qs = renglones_qs.filter(
+                renglon_detalle_comprobante__unidad_de_medida_id__in=[UNIDAD_MEDIDA_KILOGRAMOS_ID] + unidades_extra_ren,
+            )
+        else:
+            renglones_qs = renglones_qs.filter(renglon_detalle_comprobante__unidad_de_medida_id=unidad_ren.pk)
         if fecha_desde_ren:
             renglones_qs = renglones_qs.filter(comprobante__fecha__gte=fecha_desde_ren)
         if fecha_hasta_ren:
             renglones_qs = renglones_qs.filter(comprobante__fecha__lte=fecha_hasta_ren)
         for ren in renglones_qs.order_by('-comprobante__fecha')[:2000]:
             vinculos = list(ren.vinculos_movimiento.all())
-            disponible = _kg_disponible_renglon(ren, vinculos=vinculos)
+            disponible = _kg_disponible_renglon(ren, vinculos=vinculos, equivalencias=equivalencias)
             if not vinculos or disponible is None or disponible > 0:
                 ren.kg_disponible = disponible
+                # Cantidad facturada ya convertida a Kg (igual a la cantidad
+                # cargada salvo que tenga una equivalencia, ver
+                # ProductoEquivalenciaKg) -- el template la muestra al lado
+                # de la cantidad real cuando difieren.
+                ren.cantidad_kg = _total_renglon_en_kg(ren, equivalencias)
                 renglones.append(ren)
                 if len(renglones) >= 300:
                     break
@@ -744,10 +816,7 @@ def vincular_por_bloques(request):
             renglon_id = vinculo.renglon_id
             if renglon_id in suma_por_renglon:
                 continue
-            detalle = getattr(vinculo.renglon, 'renglon_detalle_comprobante', None)
-            capacidad_por_renglon[renglon_id] = (
-                detalle.cantidad if detalle and detalle.cantidad is not None else None
-            )
+            capacidad_por_renglon[renglon_id] = _total_renglon_en_kg(vinculo.renglon, equivalencias)
             suma_por_renglon[renglon_id] = sum(
                 (v.cantidad_kg if v.cantidad_kg is not None else _total_movimiento_en_kg(v.movimiento, equivalencias))
                 for v in vinculo.renglon.vinculos_movimiento.all()
@@ -1243,8 +1312,10 @@ def _asignado_por_vinculo_null(renglon_ids, equivalencias=None):
 
     for vinculos in vinculos_por_renglon.values():
         renglon = vinculos[0].renglon
-        detalle = getattr(renglon, 'renglon_detalle_comprobante', None)
-        capacidad = detalle.cantidad if detalle and detalle.cantidad is not None else None
+        # Convertido a Kg si el renglón está en una unidad distinta (ver
+        # _total_renglon_en_kg) -- un renglón fiscal no siempre factura en
+        # Kg, puede estar en cualquier unidad válida para AFIP.
+        capacidad = _total_renglon_en_kg(renglon, equivalencias)
 
         if capacidad is None:
             # Sin cantidad facturada cargada: no hay con qué comparar, se
@@ -1321,9 +1392,14 @@ def _diferencia_kg_renglon(renglon, equivalencias=None):
     capacidad sin usar de verdad. Un vínculo viejo con cantidad_kg=null se
     sigue tratando como si cubriera el movimiento completo (mismo criterio
     que el resto del archivo).
+
+    Bug corregido el 2026-09-30 (caso real: entidad Purralef Alonso
+    Enrique, producto 1088, Factura A 730 facturada en "Unidad"): acá se
+    usaba `detalle.cantidad` tal cual, asumiendo que ya estaba en Kg -- ver
+    _total_renglon_en_kg para el mismo tipo de corrección que ya tenía el
+    lado del movimiento.
     """
-    detalle = getattr(renglon, 'renglon_detalle_comprobante', None)
-    capacidad = detalle.cantidad if detalle and detalle.cantidad is not None else None
+    capacidad = _total_renglon_en_kg(renglon, equivalencias)
     if capacidad is None:
         return None
     suma = sum(
@@ -1356,6 +1432,10 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     unidad) -- se usa para las exportaciones Excel/PDF de un producto
     puntual, sin tener que recalcular todos los demás.
     """
+    # Se carga acá arriba (antes de filtrar por unidad_id) porque hace
+    # falta para "abrir" ese filtro cuando corresponde -- ver más abajo.
+    equivalencias = _cargar_equivalencias_kg()
+
     movimientos_qs = (
         Movimiento.objects
         .select_related('producto', 'unidad_de_medida', 'entidad_emisor', 'entidad_receptor')
@@ -1364,7 +1444,17 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     if producto_id:
         movimientos_qs = movimientos_qs.filter(producto_id=producto_id)
     if unidad_id:
-        movimientos_qs = movimientos_qs.filter(unidad_de_medida_id=unidad_id)
+        # unidad_id acá es la unidad ya "fusionada" de la fila que se está
+        # exportando (ver más abajo, re-bucketing a Kg) -- si es Kilogramos
+        # y el producto tiene alguna equivalencia cargada, hay que incluir
+        # también sus movimientos en esa(s) otra(s) unidad(es); si no, un
+        # producto con equivalencia perdería esos movimientos en su propio
+        # export por producto puntual (Excel/PDF), aunque la pantalla
+        # principal sí los muestre fusionados en la fila de Kg.
+        unidades_mov_filtro = {unidad_id}
+        if unidad_id == UNIDAD_MEDIDA_KILOGRAMOS_ID and producto_id:
+            unidades_mov_filtro |= {u for (p, u) in equivalencias if p == producto_id}
+        movimientos_qs = movimientos_qs.filter(unidad_de_medida_id__in=unidades_mov_filtro)
     if fecha_desde:
         movimientos_qs = movimientos_qs.filter(fecha__gte=fecha_desde)
     if fecha_hasta:
@@ -1381,7 +1471,6 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         .values_list('renglon_id', flat=True)
         .distinct()
     )
-    equivalencias = _cargar_equivalencias_kg()
     asignado_null = _asignado_por_vinculo_null(renglon_ids_con_null, equivalencias)
 
     # Para los productos con alguna equivalencia a Kg cargada (ver
@@ -1437,7 +1526,15 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     if producto_id:
         renglones_qs = renglones_qs.filter(producto_id=producto_id)
     if unidad_id:
-        renglones_qs = renglones_qs.filter(renglon_detalle_comprobante__unidad_de_medida_id=unidad_id)
+        # Mismo criterio que del lado movimientos más arriba: si la fila
+        # que se exporta es la de Kilogramos y el producto tiene alguna
+        # equivalencia cargada, también hay que traer sus renglones en
+        # esa(s) otra(s) unidad(es) (ej. "Unidad") -- un renglón fiscal no
+        # siempre factura en Kg, ver _total_renglon_en_kg.
+        unidades_ren_filtro = {unidad_id}
+        if unidad_id == UNIDAD_MEDIDA_KILOGRAMOS_ID and producto_id:
+            unidades_ren_filtro |= {u for (p, u) in equivalencias if p == producto_id}
+        renglones_qs = renglones_qs.filter(renglon_detalle_comprobante__unidad_de_medida_id__in=unidades_ren_filtro)
     if fecha_desde:
         renglones_qs = renglones_qs.filter(comprobante__fecha__gte=fecha_desde)
     if fecha_hasta:
@@ -1451,8 +1548,18 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         if entidad is None:
             continue
         detalle = renglon.renglon_detalle_comprobante
-        unidad = detalle.unidad_de_medida if detalle else None
-        bucket = _bucket(renglon.producto, unidad)
+        unidad_bucket_ren = detalle.unidad_de_medida if detalle else None
+        # Igual que del lado movimientos: un renglón facturado en una
+        # unidad con equivalencia cargada se fusiona en la fila de
+        # Kilogramos en vez de mostrarse aparte con un número que en
+        # realidad ya está convertido.
+        if (
+            detalle
+            and (renglon.producto_id, detalle.unidad_de_medida_id) in equivalencias
+            and unidad_kg is not None
+        ):
+            unidad_bucket_ren = unidad_kg
+        bucket = _bucket(renglon.producto, unidad_bucket_ren)
         _fila_entidad(bucket, entidad)['capacidad_sin_usar'] += -diferencia
 
     filas_producto = []

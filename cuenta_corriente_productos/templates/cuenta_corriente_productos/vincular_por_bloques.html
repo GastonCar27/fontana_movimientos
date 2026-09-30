@@ -195,8 +195,9 @@
                                 <th></th>
                                 <th>Comprobante</th>
                                 <th>Fecha</th>
+                                <th>Unidad</th>
                                 <th class="text-end">Cantidad</th>
-                                <th class="text-end">Disponible</th>
+                                <th class="text-end">Disponible (Kg)</th>
                                 <th class="text-end">Total $</th>
                                 <th>Candidato automático</th>
                             </tr>
@@ -207,7 +208,11 @@
                                 <td><input type="radio" name="renglon_sel" value="{{ ren.id }}" required></td>
                                 <td>{{ ren.comprobante.tipo_comprobante }} {{ ren.comprobante.numero }}</td>
                                 <td>{{ ren.comprobante.fecha }}</td>
-                                <td class="text-end">{{ ren.renglon_detalle_comprobante.cantidad|default_if_none:'' }}</td>
+                                <td>{{ ren.renglon_detalle_comprobante.unidad_de_medida|default_if_none:'' }}</td>
+                                <td class="text-end">
+                                    {{ ren.renglon_detalle_comprobante.cantidad|separador_miles }}
+                                    {% if ren.cantidad_kg is not None and ren.cantidad_kg != ren.renglon_detalle_comprobante.cantidad %}<br><span class="text-muted small">(= {{ ren.cantidad_kg|separador_miles }} Kg)</span>{% endif %}
+                                </td>
                                 <td class="text-end">{% if ren.kg_disponible is None %}<span class="text-muted small">?</span>{% else %}{{ ren.kg_disponible|separador_miles }}{% endif %}</td>
                                 <td class="text-end">{{ ren.total|separador_miles }}</td>
                                 <td>
@@ -223,14 +228,18 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="7" class="text-center text-muted py-4">No hay renglones con capacidad libre con este filtro.</td>
+                                <td colspan="8" class="text-center text-muted py-4">No hay renglones con capacidad libre con este filtro.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
                 <p class="text-muted small">
-                    "?" en Disponible: el renglón no tiene cargada la cantidad facturada, no hay con qué comparar
+                    Un renglón de comprobante puede estar facturado en cualquier unidad (Kg, Unidad, etc.), no
+                    siempre en Kg -- si el producto tiene una equivalencia cargada (ver "Equivalencias de
+                    unidades") para esa unidad, la cantidad facturada se convierte a Kg (se muestra "= X Kg" al
+                    lado) para poder compararla y vincularla contra movimientos en cualquier otra unidad
+                    convertible. "?" en Disponible: el renglón no tiene cargada la cantidad facturada, no hay con qué comparar
                     (solo aparece acá si todavía no tiene ningún vínculo). "Candidato automático": se
                     encontró una combinación de movimientos (de los que están en la tabla de la izquierda)
                     cuyos Kg pendientes suman exactamente lo disponible de ese renglón -- al hacer click se
