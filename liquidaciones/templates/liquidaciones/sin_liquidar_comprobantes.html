@@ -4,12 +4,6 @@
 
 <h1>Comprobantes sin liquidar</h1>
 
-{% if messages %}
-<ul>
-  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
-</ul>
-{% endif %}
-
 <div style="margin-bottom:15px;">
   <button type="button" class="btn btn-sm btn-outline-secondary" data-toggle="modal" data-target="#modalFiltro">Filtrar</button>
   <a class="btn btn-sm btn-outline-success" href="{% url 'liquidaciones:sin_liquidar_excel' tipo='comprobantes' %}?{{ request.GET.urlencode }}">Exportar a Excel</a>

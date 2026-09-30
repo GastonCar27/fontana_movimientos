@@ -4,12 +4,6 @@
 
 <h1>{% if comprobante %}Editar comprobante {{ comprobante.id }}{% else %}Nuevo comprobante{% endif %}</h1>
 
-{% if messages %}
-<ul>
-  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
-</ul>
-{% endif %}
-
 <form method="post">
     {% csrf_token %}
 

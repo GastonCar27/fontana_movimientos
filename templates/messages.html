@@ -1,8 +1,25 @@
+{% comment %}
+Único lugar (junto con base.html) donde se muestran los django.contrib.messages
+de TODA pantalla que extienda base.html -- antes del 29/09/2026 varias
+pantallas (retencion_form.html y otras, ver grep de "for message in messages"
+en el proyecto) volvían a recorrer "messages" ellas mismas dentro de su propio
+bloque de contenido, así que cada mensaje aparecía DOS veces (uno acá arriba,
+uno repetido más abajo) -- se sacaron esos bloques duplicados, éste es ahora
+el único.
+
+El color también estaba mal: antes cualquier tag que no fuera "success" se
+pintaba como alert-danger (rojo), así que una advertencia (messages.warning,
+tag "warning") se veía como si fuera un error. Django no tiene MESSAGE_TAGS
+propio en settings.py, así que usa los tags por default
+(success/info/warning/error/debug) -- todos matchean 1 a 1 con una clase de
+Bootstrap (alert-success/alert-info/alert-warning) salvo "error", que
+Bootstrap no tiene como color propio y hay que mapear a "danger" a mano.
+{% endcomment %}
 {% if messages %}
     {% for message in messages %}
-        <div class="alert {% if message.tags == 'success'%}alert-success{%else%}alert-danger{%endif%}">
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %}">
             <button type="button" class="close" data-dismiss="alert">x</button>
-            {{message}}
+            {{ message }}
         </div>
     {% endfor %}
 {% endif %}

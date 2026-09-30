@@ -6,12 +6,6 @@
 
     <h4 class="mb-3">Modificar en libro — Movimiento {{ movimiento.id }}</h4>
 
-    {% if messages %}
-    <ul class="list-unstyled">
-      {% for message in messages %}<li class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</li>{% endfor %}
-    </ul>
-    {% endif %}
-
     <div class="card mb-3">
         <div class="card-body">
             <dl class="row mb-0">

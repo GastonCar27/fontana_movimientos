@@ -6,12 +6,6 @@
 
     <h4 class="mb-3">{% if movimiento %}Editar movimiento de caja {{ movimiento.id }}{% else %}Nuevo movimiento de caja{% endif %}</h4>
 
-    {% if messages %}
-    <ul class="list-unstyled">
-      {% for message in messages %}<li class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</li>{% endfor %}
-    </ul>
-    {% endif %}
-
     <form method="post" class="row gy-3">
         {% csrf_token %}
 

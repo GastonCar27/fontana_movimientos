@@ -9,12 +9,6 @@
 
     {% if entidad %}<p class="text-muted">ID: {{ entidad.id }}</p>{% endif %}
 
-    {% if messages %}
-    <ul class="list-unstyled">
-        {% for message in messages %}<li class="text-success">{{ message }}</li>{% endfor %}
-    </ul>
-    {% endif %}
-
     {% if duplicados %}
     <div class="alert alert-warning">
         <strong>¡Atención! Ya existe otra entidad cargada con el mismo dato:</strong>

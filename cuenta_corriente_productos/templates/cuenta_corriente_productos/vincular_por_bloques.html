@@ -151,8 +151,9 @@
                                 <th>Número</th>
                                 <th>Emisor</th>
                                 <th>Receptor</th>
+                                <th>Unidad</th>
                                 <th class="text-end">Total</th>
-                                <th class="text-end">Pendiente</th>
+                                <th class="text-end">Pendiente (Kg)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -164,15 +165,19 @@
                                 <td>{{ mov.numero }}</td>
                                 <td>{{ mov.entidad_emisor }}</td>
                                 <td>{{ mov.entidad_receptor }}</td>
-                                <td class="text-end">{{ mov.total|separador_miles }}</td>
+                                <td>{{ mov.unidad_de_medida }}</td>
+                                <td class="text-end">
+                                    {{ mov.total|separador_miles }}
+                                    {% if mov.total_kg != mov.total %}<br><span class="text-muted small">(= {{ mov.total_kg|separador_miles }} Kg)</span>{% endif %}
+                                </td>
                                 <td class="text-end">
                                     {{ mov.kg_pendiente|separador_miles }}
-                                    {% if mov.kg_pendiente < mov.total %}<span class="text-muted small">(parcial)</span>{% endif %}
+                                    {% if mov.kg_pendiente < mov.total_kg %}<span class="text-muted small">(parcial)</span>{% endif %}
                                 </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">No hay movimientos con Kg pendientes con este filtro.</td>
+                                <td colspan="9" class="text-center text-muted py-4">No hay movimientos con Kg pendientes con este filtro.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -283,7 +288,10 @@
                                 <input type="checkbox" name="vinculo_sel" value="{{ vinculo.id }}" class="vinculo-check">
                             {% endif %}
                         </td>
-                        <td>{{ vinculo.movimiento.id_movimiento }} ({{ vinculo.movimiento.entidad_emisor }} &rarr; {{ vinculo.movimiento.entidad_receptor }})</td>
+                        <td>
+                            {{ vinculo.movimiento.id_movimiento }} ({{ vinculo.movimiento.entidad_emisor }} &rarr; {{ vinculo.movimiento.entidad_receptor }})
+                            {% if vinculo.movimiento.unidad_de_medida_id != '01' %}<span class="text-muted small">[{{ vinculo.movimiento.unidad_de_medida }}]</span>{% endif %}
+                        </td>
                         <td>{{ vinculo.movimiento.fecha }}</td>
                         <td>{{ vinculo.renglon.comprobante.tipo_comprobante }} {{ vinculo.renglon.comprobante.numero }}</td>
                         <td>{{ vinculo.renglon.comprobante.fecha }}</td>

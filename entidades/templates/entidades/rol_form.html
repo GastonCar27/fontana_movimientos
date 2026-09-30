@@ -9,12 +9,6 @@
 
     {% if rol %}<p class="text-muted">ID: {{ rol.id }}</p>{% endif %}
 
-    {% if messages %}
-    <ul class="list-unstyled">
-        {% for message in messages %}<li class="text-success">{{ message }}</li>{% endfor %}
-    </ul>
-    {% endif %}
-
     <form method="post">
         {% csrf_token %}
         {% for field in form %}

@@ -8,12 +8,6 @@
     {% if entidad %}({% if tipo_liquidacion == 'cobro' %}Cobro{% else %}Pago{% endif %}){% endif %}
 </h1>
 
-{% if messages %}
-<ul>
-  {% for message in messages %}<li>{{ message }}</li>{% endfor %}
-</ul>
-{% endif %}
-
 <!-- Paso 1: tipo + entidad. Al elegir un resultado del buscador (o cambiar
      el tipo), se recarga la página (GET) con los ítems que correspondan. -->
 <form method="get" id="form-seleccion">
