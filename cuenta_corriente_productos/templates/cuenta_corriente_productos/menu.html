@@ -23,4 +23,8 @@
         <a class="nav-link {% if request.resolver_match.url_name == 'pendientes_por_producto' %}active{% endif %}"
            href="{% url 'cuenta_corriente_productos:pendientes_por_producto' %}">Pendientes por producto</a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'equivalencia_kg_listado' %}active{% endif %}"
+           href="{% url 'cuenta_corriente_productos:equivalencia_kg_listado' %}">Equivalencias de unidades</a>
+    </li>
 </ul>

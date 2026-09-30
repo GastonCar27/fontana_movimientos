@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    {% include "cuenta_corriente_productos/menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Equivalencias de unidades</h4>
+        <a href="{% url 'cuenta_corriente_productos:equivalencia_kg_alta' %}" class="btn btn-sm btn-primary">+ Nueva equivalencia</a>
+    </div>
+    <p class="text-muted">
+        Productos que a veces se cargan en una unidad distinta de Kg (Bolsa, Bolsón, Pack, etc.) --
+        acá se indica cuántos Kg equivale 1 unidad de esa unidad para ese producto puntual, así "Vincular
+        por bloques" y "Pendientes por producto" pueden convertir esos movimientos a Kg y compararlos/vincularlos
+        contra un renglón de comprobante, que siempre factura en Kg. Sin una fila acá para un producto+unidad,
+        ese caso sigue funcionando como siempre (no se puede vincular contra una unidad distinta).
+    </p>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Producto</th>
+                    <th>Unidad</th>
+                    <th class="text-end">Kg por unidad</th>
+                    <th class="text-center">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for eq in equivalencias %}
+                <tr>
+                    <td>{{ eq.producto }}</td>
+                    <td>{{ eq.unidad }}</td>
+                    <td class="text-end">{{ eq.factor_kg }}</td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'cuenta_corriente_productos:equivalencia_kg_editar' eq.pk %}">Editar</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{% url 'cuenta_corriente_productos:equivalencia_kg_eliminar' eq.pk %}">Eliminar</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-4">No hay equivalencias cargadas todavía.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

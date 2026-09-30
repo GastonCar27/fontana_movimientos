@@ -19,4 +19,8 @@ urlpatterns = [
     path('pendientes-por-producto/', views.pendientes_por_producto, name='pendientes_por_producto'),
     path('pendientes-por-producto/excel/', views.pendientes_por_producto_excel, name='pendientes_por_producto_excel'),
     path('pendientes-por-producto/pdf/', views.pendientes_por_producto_pdf, name='pendientes_por_producto_pdf'),
+    path('equivalencias/', views.equivalencia_kg_listado, name='equivalencia_kg_listado'),
+    path('equivalencias/alta/', views.equivalencia_kg_alta, name='equivalencia_kg_alta'),
+    path('equivalencias/<int:pk>/editar/', views.equivalencia_kg_editar, name='equivalencia_kg_editar'),
+    path('equivalencias/<int:pk>/eliminar/', views.equivalencia_kg_eliminar, name='equivalencia_kg_eliminar'),
 ]

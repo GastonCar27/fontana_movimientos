@@ -22,11 +22,13 @@ from productos.models import ProductoDetalle
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.reportes import excel_response, pdf_response
 
+from .forms import ProductoEquivalenciaKgForm
 from .models import (
     ComprobanteRenglonMovimiento,
     EstadoCuentaMovimiento,
     LiquidacionProducto,
     LiquidacionProductoComprobanteRenglon,
+    ProductoEquivalenciaKg,
 )
 
 
@@ -35,45 +37,45 @@ from .models import (
 # el mismo id/criterio en fontana_escritorio/movimientos/repository.py).
 UNIDAD_MEDIDA_KILOGRAMOS_ID = '01'
 
-# Id de "Bolsa" en comprobante_unidad_de_medida (ver
-# comprobantes/migrations/0003_seed_unidades_remitos.py) -- una de las dos
-# unidades agregadas a mano solo para Movimiento/Remito; un renglón de
-# comprobante fiscal real NUNCA la usa (excluida a propósito de ese
-# desplegable, ver IDS_UNIDADES_SOLO_REMITOS), así que la mezcla de
-# unidades que resuelve EQUIVALENCIA_KG_POR_BOLSA solo puede pasar del
-# lado de los movimientos.
-UNIDAD_MEDIDA_BOLSA_ID = 'BS'
 
-# Equivalencia en Kg de una Bolsa, para productos puntuales cuyos
-# movimientos a veces se cargan en Bolsa en vez de Kg mientras que el
-# renglón de comprobante que los factura siempre queda en Kg -- sin esto,
-# esos movimientos nunca podían vincularse contra ningún renglón (caso
-# real detectado con la entidad Don Basilio, producto 1088). Sin una
-# entrada acá para un producto, sus movimientos en Bolsa siguen sin poder
-# vincularse contra un renglón en Kg (comportamiento de siempre). Agregado
-# 30/09/2026 para YERBA MATE 'LA HUELLA' 4X2Kg (id 1088): la bolsa son 4
-# paquetes x 2kg = 8kg. Agregar acá cualquier otro producto puntual que
-# tenga el mismo problema.
-EQUIVALENCIA_KG_POR_BOLSA = {
-    1088: Decimal('8'),
-}
-
-
-def _total_movimiento_en_kg(movimiento):
+def _cargar_equivalencias_kg():
     """
-    Movimiento.total tal cual está cargado, convertido a Kg si está en
-    Bolsa y el producto tiene una equivalencia registrada (ver
-    EQUIVALENCIA_KG_POR_BOLSA) -- así se puede comparar/cubrir contra la
-    capacidad de un renglón de comprobante, que siempre está en Kg. Si no
-    hay equivalencia registrada para ese producto, se devuelve tal cual
-    (comportamiento de siempre: solo se puede vincular/sumar contra la
-    misma unidad).
+    Todas las equivalencias a Kg cargadas en la pantalla "Equivalencias de
+    unidades" (ver ProductoEquivalenciaKg), como {(producto_id, unidad_id):
+    factor_kg}. Se carga una sola vez por vista (no una consulta por
+    movimiento) y se pasa como parámetro a las funciones de este archivo
+    que la necesitan -- la tabla es chica (una fila por cada combinación
+    producto+unidad puntual que Gastón haya cargado), así que esto es
+    barato incluso llamado en cada request.
+    """
+    return {
+        (eq.producto_id, eq.unidad_id): eq.factor_kg
+        for eq in ProductoEquivalenciaKg.objects.all()
+    }
+
+
+def _total_movimiento_en_kg(movimiento, equivalencias=None):
+    """
+    Movimiento.total tal cual está cargado, convertido a Kg si su unidad
+    no es Kg y hay una equivalencia cargada para (producto, unidad) -- ver
+    ProductoEquivalenciaKg / pantalla "Equivalencias de unidades". Así se
+    puede comparar/cubrir contra la capacidad de un renglón de comprobante,
+    que siempre está en Kg. Sin equivalencia cargada para esa combinación,
+    se devuelve tal cual (comportamiento de siempre: solo se puede
+    vincular/sumar contra la misma unidad).
+
+    `equivalencias` es el dict que arma _cargar_equivalencias_kg(); si no
+    se pasa (por ejemplo, para resolver un solo movimiento suelto, como en
+    "Vincular renglón") se lo consulta acá mismo.
     """
     total = movimiento.total or Decimal('0')
-    if movimiento.unidad_de_medida_id == UNIDAD_MEDIDA_BOLSA_ID:
-        factor = EQUIVALENCIA_KG_POR_BOLSA.get(movimiento.producto_id)
-        if factor is not None:
-            return total * factor
+    if movimiento.unidad_de_medida_id == UNIDAD_MEDIDA_KILOGRAMOS_ID:
+        return total
+    if equivalencias is None:
+        equivalencias = _cargar_equivalencias_kg()
+    factor = equivalencias.get((movimiento.producto_id, movimiento.unidad_de_medida_id))
+    if factor is not None:
+        return total * factor
     return total
 
 # Id de la entidad "Fontana S.A." (la empresa propia) -- mismo criterio que
@@ -98,7 +100,7 @@ ENTIDAD_PROPIA_ID = getattr(settings, 'ENTIDAD_PROPIA_ID', 100)
 # pendiente en cualquier pantalla (caso real: entidad Bukay Olivia Eugenia).
 # ---------------------------------------------------------------------------
 
-def _kg_pendiente_movimiento(movimiento, vinculos=None):
+def _kg_pendiente_movimiento(movimiento, vinculos=None, equivalencias=None):
     """
     Kg de Movimiento.total que ningún vínculo cubrió todavía. Un vínculo
     viejo con cantidad_kg=null (de antes de agregar ese campo) se
@@ -108,7 +110,7 @@ def _kg_pendiente_movimiento(movimiento, vinculos=None):
     """
     if vinculos is None:
         vinculos = list(movimiento.vinculos_comprobante.all())
-    total = _total_movimiento_en_kg(movimiento)
+    total = _total_movimiento_en_kg(movimiento, equivalencias)
     if not vinculos:
         return total
     if any(v.cantidad_kg is None for v in vinculos):
@@ -508,17 +510,26 @@ def vincular_por_bloques(request):
     # Python fila por fila -- no se puede expresar como un solo filter() de
     # SQL porque depende de sumar cantidad_kg entre varios vínculos y
     # compararlo contra otro campo del mismo movimiento/renglón.
+    # Equivalencias a Kg cargadas para este producto (ver "Equivalencias de
+    # unidades" / ProductoEquivalenciaKg) -- se arma una sola vez acá, no
+    # una consulta por movimiento.
+    equivalencias = _cargar_equivalencias_kg()
+    unidades_extra_mov = [
+        unidad_id for (prod_id, unidad_id) in equivalencias
+        if producto_mov and prod_id == producto_mov.pk
+    ]
+
     movimientos = []
     if filtro_movimientos_completo:
         movimientos_qs = Movimiento.objects.filter(producto_id=producto_mov.pk)
-        if producto_mov.pk in EQUIVALENCIA_KG_POR_BOLSA:
-            # Producto con equivalencia Bolsa->Kg cargada (ver
-            # EQUIVALENCIA_KG_POR_BOLSA): se traen sus movimientos en Kg Y
-            # en Bolsa sin importar cuál se haya elegido en el filtro, así
-            # se pueden vincular juntos contra un renglón (siempre en Kg)
-            # -- ver _total_movimiento_en_kg.
+        if unidades_extra_mov:
+            # Producto con alguna equivalencia a Kg cargada: se traen sus
+            # movimientos en Kg Y en esa(s) otra(s) unidad(es), sin
+            # importar cuál se haya elegido en el filtro, así se pueden
+            # vincular juntos contra un renglón (siempre en Kg) -- ver
+            # _total_movimiento_en_kg.
             movimientos_qs = movimientos_qs.filter(
-                unidad_de_medida_id__in=[UNIDAD_MEDIDA_KILOGRAMOS_ID, UNIDAD_MEDIDA_BOLSA_ID],
+                unidad_de_medida_id__in=[UNIDAD_MEDIDA_KILOGRAMOS_ID] + unidades_extra_mov,
             )
         else:
             movimientos_qs = movimientos_qs.filter(unidad_de_medida_id=unidad_mov.pk)
@@ -533,14 +544,14 @@ def vincular_por_bloques(request):
         if fecha_hasta_mov:
             movimientos_qs = movimientos_qs.filter(fecha__lte=fecha_hasta_mov)
         for mov in movimientos_qs.order_by('-fecha', '-id_movimiento')[:2000]:
-            pendiente = _kg_pendiente_movimiento(mov, vinculos=list(mov.vinculos_comprobante.all()))
+            pendiente = _kg_pendiente_movimiento(mov, vinculos=list(mov.vinculos_comprobante.all()), equivalencias=equivalencias)
             if pendiente > 0:
                 mov.kg_pendiente = pendiente
-                # Total ya convertido a Kg (igual a mov.total salvo que esté
-                # en Bolsa y el producto tenga equivalencia cargada, ver
-                # EQUIVALENCIA_KG_POR_BOLSA) -- lo usa el template para
-                # mostrar/comparar contra kg_pendiente en la misma unidad.
-                mov.total_kg = _total_movimiento_en_kg(mov)
+                # Total ya convertido a Kg (igual a mov.total salvo que
+                # tenga una equivalencia cargada, ver ProductoEquivalenciaKg)
+                # -- lo usa el template para mostrar/comparar contra
+                # kg_pendiente en la misma unidad.
+                mov.total_kg = _total_movimiento_en_kg(mov, equivalencias)
                 movimientos.append(mov)
                 if len(movimientos) >= 300:
                     break
@@ -677,8 +688,8 @@ def vincular_por_bloques(request):
     # listado de arriba.
     vinculos_existentes = []
     if filtro_movimientos_completo:
-        if producto_mov.pk in EQUIVALENCIA_KG_POR_BOLSA:
-            unidades_mov_vinculos = [UNIDAD_MEDIDA_KILOGRAMOS_ID, UNIDAD_MEDIDA_BOLSA_ID]
+        if unidades_extra_mov:
+            unidades_mov_vinculos = [UNIDAD_MEDIDA_KILOGRAMOS_ID] + unidades_extra_mov
         else:
             unidades_mov_vinculos = [unidad_mov.pk]
         vinculos_qs = (
@@ -738,7 +749,7 @@ def vincular_por_bloques(request):
                 detalle.cantidad if detalle and detalle.cantidad is not None else None
             )
             suma_por_renglon[renglon_id] = sum(
-                (v.cantidad_kg if v.cantidad_kg is not None else _total_movimiento_en_kg(v.movimiento))
+                (v.cantidad_kg if v.cantidad_kg is not None else _total_movimiento_en_kg(v.movimiento, equivalencias))
                 for v in vinculo.renglon.vinculos_movimiento.all()
             )
 
@@ -1201,7 +1212,7 @@ def _entidad_contraparte_movimiento(movimiento):
     return movimiento.entidad_emisor
 
 
-def _asignado_por_vinculo_null(renglon_ids):
+def _asignado_por_vinculo_null(renglon_ids, equivalencias=None):
     """
     Para los ComprobanteRenglonMovimiento con cantidad_kg=null que cuelgan
     de estos renglones, calcula cuánto de cada uno se considera realmente
@@ -1214,6 +1225,8 @@ def _asignado_por_vinculo_null(renglon_ids):
     vinculados) sin depender de que alguien haya corrido ese comando
     todavía. Devuelve {vinculo_id: Decimal}.
     """
+    if equivalencias is None:
+        equivalencias = _cargar_equivalencias_kg()
     resultado = {}
     if not renglon_ids:
         return resultado
@@ -1239,7 +1252,7 @@ def _asignado_por_vinculo_null(renglon_ids):
             # completo) -- mismo criterio que corregir_vinculos_kg.
             for vinculo in vinculos:
                 if vinculo.cantidad_kg is None:
-                    resultado[vinculo.id] = _total_movimiento_en_kg(vinculo.movimiento)
+                    resultado[vinculo.id] = _total_movimiento_en_kg(vinculo.movimiento, equivalencias)
             continue
 
         restante = capacidad
@@ -1249,7 +1262,7 @@ def _asignado_por_vinculo_null(renglon_ids):
         for vinculo in vinculos:
             if vinculo.cantidad_kg is not None:
                 continue
-            total_mov = _total_movimiento_en_kg(vinculo.movimiento)
+            total_mov = _total_movimiento_en_kg(vinculo.movimiento, equivalencias)
             asignado = min(restante, total_mov) if restante > 0 else Decimal('0')
             restante -= asignado
             resultado[vinculo.id] = asignado
@@ -1257,14 +1270,14 @@ def _asignado_por_vinculo_null(renglon_ids):
     return resultado
 
 
-def _kg_pendiente_movimiento_corregido(movimiento, asignado_null):
+def _kg_pendiente_movimiento_corregido(movimiento, asignado_null, equivalencias=None):
     """
     Como _kg_pendiente_movimiento, pero para los vínculos con
     cantidad_kg=null usa lo que dio _asignado_por_vinculo_null en vez de
     asumir "cubre completo" -- ver el docstring de esa función. Usada solo
     en "Pendientes por producto".
     """
-    total = _total_movimiento_en_kg(movimiento)
+    total = _total_movimiento_en_kg(movimiento, equivalencias)
     cubierto = Decimal('0')
     for vinculo in movimiento.vinculos_comprobante.all():
         if vinculo.cantidad_kg is not None:
@@ -1275,7 +1288,7 @@ def _kg_pendiente_movimiento_corregido(movimiento, asignado_null):
     return pendiente if pendiente > 0 else Decimal('0')
 
 
-def _diferencia_kg_renglon(renglon):
+def _diferencia_kg_renglon(renglon, equivalencias=None):
     """
     Suma de Kg que los vínculos de este renglón realmente le cubren (ver
     ComprobanteRenglonMovimiento.cantidad_kg -- no el total completo de
@@ -1314,7 +1327,7 @@ def _diferencia_kg_renglon(renglon):
     if capacidad is None:
         return None
     suma = sum(
-        (v.cantidad_kg if v.cantidad_kg is not None else _total_movimiento_en_kg(v.movimiento))
+        (v.cantidad_kg if v.cantidad_kg is not None else _total_movimiento_en_kg(v.movimiento, equivalencias))
         for v in renglon.vinculos_movimiento.all()
     )
     return suma - capacidad
@@ -1368,14 +1381,16 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         .values_list('renglon_id', flat=True)
         .distinct()
     )
-    asignado_null = _asignado_por_vinculo_null(renglon_ids_con_null)
+    equivalencias = _cargar_equivalencias_kg()
+    asignado_null = _asignado_por_vinculo_null(renglon_ids_con_null, equivalencias)
 
-    # Para los productos con equivalencia Bolsa->Kg cargada (ver
-    # EQUIVALENCIA_KG_POR_BOLSA), sus movimientos en Bolsa se agrupan acá
-    # junto con los de Kg (ya convertidos por _kg_pendiente_movimiento_
-    # corregido/_total_movimiento_en_kg) en vez de en una fila "Bolsa"
-    # aparte -- mostrar esa fila por separado, ahora con un número que en
-    # realidad ya está en Kg, sería confuso/incorrecto.
+    # Para los productos con alguna equivalencia a Kg cargada (ver
+    # ProductoEquivalenciaKg / "Equivalencias de unidades"), sus
+    # movimientos en esa otra unidad se agrupan acá junto con los de Kg
+    # (ya convertidos por _kg_pendiente_movimiento_corregido/
+    # _total_movimiento_en_kg) en vez de en una fila aparte -- mostrar esa
+    # fila por separado, ahora con un número que en realidad ya está en
+    # Kg, sería confuso/incorrecto.
     unidad_kg = ComprobanteUnidadDeMedida.objects.filter(pk=UNIDAD_MEDIDA_KILOGRAMOS_ID).first()
 
     datos = {}  # (producto_id, unidad_id o None) -> {'producto', 'unidad', 'entidades': {id: {...}}}
@@ -1394,13 +1409,12 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         entidad = _entidad_contraparte_movimiento(mov)
         if entidad is None:
             continue
-        pendiente = _kg_pendiente_movimiento_corregido(mov, asignado_null)
+        pendiente = _kg_pendiente_movimiento_corregido(mov, asignado_null, equivalencias)
         if not pendiente:
             continue
         unidad_bucket = mov.unidad_de_medida
         if (
-            mov.unidad_de_medida_id == UNIDAD_MEDIDA_BOLSA_ID
-            and mov.producto_id in EQUIVALENCIA_KG_POR_BOLSA
+            (mov.producto_id, mov.unidad_de_medida_id) in equivalencias
             and unidad_kg is not None
         ):
             unidad_bucket = unidad_kg
@@ -1430,7 +1444,7 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         renglones_qs = renglones_qs.filter(comprobante__fecha__lte=fecha_hasta)
 
     for renglon in renglones_qs:
-        diferencia = _diferencia_kg_renglon(renglon)
+        diferencia = _diferencia_kg_renglon(renglon, equivalencias)
         if diferencia is None or diferencia >= 0:
             continue  # sin capacidad cargada, exacto, o vinculado de más (ya es "pendiente")
         entidad = renglon.comprobante.entidad_emisor if renglon.comprobante else None
@@ -1557,3 +1571,60 @@ def pendientes_por_producto_pdf(request):
     titulo = f"Pendientes de vincular - {fila['producto'].nombre} ({unidad_nombre})"
     nombre = f"pendientes_{fila['producto'].nombre or fila['producto'].id}".replace(' ', '_')
     return pdf_response(nombre, titulo, _resultado_reporte_pendientes_producto(fila))
+
+
+# ---------------------------------------------------------------------------
+# Catálogo: Equivalencias de unidades (ProductoEquivalenciaKg) -- agregado
+# 30/09/2026 a pedido de Gastón, para que él mismo pueda cargar/editar los
+# casos de productos cuyos movimientos a veces se cargan en una unidad
+# distinta de Kg (Bolsa, Bolsón, Pack, etc.) sin tener que pedir un cambio
+# de código cada vez (ver _total_movimiento_en_kg más arriba).
+# ---------------------------------------------------------------------------
+
+def equivalencia_kg_listado(request):
+    equivalencias = (
+        ProductoEquivalenciaKg.objects
+        .select_related('producto', 'unidad')
+        .order_by('producto__nombre', 'unidad__nombre')
+    )
+    return render(request, 'cuenta_corriente_productos/equivalencia_kg_listado.html', {
+        'equivalencias': equivalencias,
+    })
+
+
+def equivalencia_kg_alta(request):
+    if request.method == 'POST':
+        form = ProductoEquivalenciaKgForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Equivalencia creada correctamente.')
+            return redirect('cuenta_corriente_productos:equivalencia_kg_listado')
+    else:
+        form = ProductoEquivalenciaKgForm()
+    return render(request, 'cuenta_corriente_productos/equivalencia_kg_form.html', {'form': form, 'modo': 'alta'})
+
+
+def equivalencia_kg_editar(request, pk):
+    equivalencia = get_object_or_404(ProductoEquivalenciaKg, pk=pk)
+    if request.method == 'POST':
+        form = ProductoEquivalenciaKgForm(request.POST, instance=equivalencia)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Equivalencia modificada correctamente.')
+            return redirect('cuenta_corriente_productos:equivalencia_kg_listado')
+    else:
+        form = ProductoEquivalenciaKgForm(instance=equivalencia)
+    return render(request, 'cuenta_corriente_productos/equivalencia_kg_form.html', {
+        'form': form, 'modo': 'modificar', 'equivalencia': equivalencia,
+    })
+
+
+def equivalencia_kg_eliminar(request, pk):
+    equivalencia = get_object_or_404(ProductoEquivalenciaKg, pk=pk)
+    if request.method == 'POST':
+        equivalencia.delete()
+        messages.success(request, 'Equivalencia eliminada correctamente.')
+        return redirect('cuenta_corriente_productos:equivalencia_kg_listado')
+    return render(request, 'cuenta_corriente_productos/equivalencia_kg_eliminar_confirm.html', {
+        'equivalencia': equivalencia,
+    })

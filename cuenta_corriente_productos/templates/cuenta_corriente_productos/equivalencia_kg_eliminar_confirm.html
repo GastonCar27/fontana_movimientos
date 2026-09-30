@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col">
+    <h4 class="mt-3 mb-3">Eliminar equivalencia de unidad</h4>
+
+    <div class="alert alert-danger">
+        ¿Confirmás que querés eliminar la equivalencia de <strong>{{ equivalencia.producto }}</strong>
+        en <strong>{{ equivalencia.unidad }}</strong> (1 {{ equivalencia.unidad }} = {{ equivalencia.factor_kg }} Kg)?
+        <br>
+        Los vínculos ya creados con movimientos en esta unidad NO se modifican (la conversión ya quedó
+        guardada en cada uno); esto sólo afecta a los movimientos que todavía no se vincularon.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+        <a href="{% url 'cuenta_corriente_productos:equivalencia_kg_listado' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

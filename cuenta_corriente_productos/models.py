@@ -7,7 +7,7 @@ from django.utils import timezone
 from entidades.models import Entidad
 from productos.models import ProductoDetalle
 from movimientos.models import Movimiento
-from comprobantes.models import ComprobanteRenglon
+from comprobantes.models import ComprobanteRenglon, ComprobanteUnidadDeMedida
 
 
 class EstadoCuentaMovimiento(models.Model):
@@ -241,3 +241,58 @@ class LiquidacionProductoComprobanteRenglon(models.Model):
 
     def __str__(self):
         return f'Liquidación {self.liquidacion_id} - Renglón {self.renglon_id} ({self.tipo})'
+
+
+class ProductoEquivalenciaKg(models.Model):
+    """
+    Cuántos Kg equivale 1 unidad de una unidad de medida (Bolsa, Bolsón,
+    Pack, etc.) para un producto puntual -- ej.: 1 Bolsa de YERBA MATE 'LA
+    HUELLA' 4X2Kg = 8kg.
+
+    Sirve para "Vincular por bloques": un Movimiento se puede cargar en
+    cualquier unidad (Movimiento.unidad_de_medida no tiene restricción de
+    catálogo, a diferencia de un renglón de comprobante fiscal, que SIEMPRE
+    factura en Kg -- ver comprobantes.models.IDS_UNIDADES_SOLO_REMITOS), así
+    que sin una equivalencia cargada acá, un movimiento en, por ejemplo,
+    Bolsa nunca puede vincularse contra un renglón en Kg (quedan en
+    unidades no comparables). Con una fila acá para (producto, unidad), esa
+    conversión se hace sola en "Vincular por bloques" y "Pendientes por
+    producto" (ver cuenta_corriente_productos.views._total_movimiento_en_kg).
+
+    Pantalla de alta/listado/editar en "Cuenta corriente de productos" >
+    "Equivalencias de unidades" (agregada 30/09/2026 a pedido de Gastón,
+    para que él mismo pueda cargar/editar estos casos sin tener que pedir
+    un cambio de código cada vez que aparece un producto nuevo con este
+    problema). Caso real que motivó esto: producto YERBA MATE 'LA HUELLA'
+    4X2Kg (id 1088), entidad Don Basilio.
+    """
+    producto = models.ForeignKey(
+        ProductoDetalle,
+        on_delete=models.CASCADE,
+        related_name='equivalencias_kg',
+    )
+    unidad = models.ForeignKey(
+        ComprobanteUnidadDeMedida,
+        on_delete=models.CASCADE,
+        related_name='equivalencias_kg',
+        verbose_name='Unidad (no Kg)',
+    )
+    factor_kg = models.DecimalField(
+        max_digits=12, decimal_places=4,
+        verbose_name='Kg por unidad',
+        help_text='Cuántos Kg equivale 1 unidad de esta unidad de medida para este producto (ej.: 8 si 1 Bolsa son 8kg).',
+    )
+    guardado_el = models.DateTimeField(auto_now_add=True)
+    modificado_el = models.DateTimeField(auto_now=True, verbose_name='fecha de edición')
+
+    class Meta:
+        verbose_name = 'equivalencia de unidad a Kg'
+        verbose_name_plural = 'equivalencias de unidades a Kg'
+        db_table = 'cta_cte_producto_equivalencia_kg'
+        constraints = [
+            models.UniqueConstraint(fields=['producto', 'unidad'], name='cta_cte_producto_unidad_equivalencia_unica'),
+        ]
+        ordering = ['producto__nombre', 'unidad__nombre']
+
+    def __str__(self):
+        return f'{self.producto} -- 1 {self.unidad} = {self.factor_kg} Kg'
