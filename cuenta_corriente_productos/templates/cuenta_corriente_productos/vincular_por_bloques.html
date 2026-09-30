@@ -10,10 +10,13 @@
         medida y rango de fechas para el lado de los renglones de comprobante (por defecto se precargan
         iguales a los del lado movimientos). Con eso se listan los movimientos que todavía tienen Kg
         pendientes de vincular y los renglones que todavía tienen capacidad libre. Después podés tildar
-        varios movimientos y elegir un solo renglón para vincularlos todos juntos a ese renglón: si el
-        renglón no alcanza para cubrir todo lo tildado, cubre lo que entra y el resto queda pendiente para
-        vincularlo después con otro comprobante (no se pierde ni se marca como cubierto de más); si el
-        renglón factura más de lo que necesitaban los movimientos tildados, la capacidad que sobra queda
+        uno o varios movimientos y uno o varios renglones (la relación es muchos a muchos: un movimiento
+        puede quedar repartido entre varios comprobantes y un comprobante puede cubrir varios movimientos) y
+        vincularlos juntos. Se reparte por fecha, lo más viejo primero de los dos lados. Arriba de las tablas
+        se ve en vivo cuántos Kg suman los movimientos tildados, cuántos los renglones elegidos y la
+        diferencia: si los renglones no alcanzan, se cubre lo que entra y el resto queda pendiente para
+        vincularlo después con otro comprobante (no se pierde ni se marca como cubierto de más); si los
+        renglones facturan más de lo que necesitaban los movimientos tildados, la capacidad que sobra queda
         libre para usarla con otro movimiento después. Si algún renglón tiene un "candidato automático"
         (uno o más movimientos cuyos Kg pendientes suman EXACTO su capacidad disponible), aparece un botón
         para tildarlos y elegir ese renglón de un solo click, sin perder la confirmación final. Más abajo,
@@ -140,8 +143,12 @@
         <input type="hidden" name="fecha_desde_renglones" value="{{ fecha_desde_ren }}">
         <input type="hidden" name="fecha_hasta_renglones" value="{{ fecha_hasta_ren }}">
 
-        <div class="d-flex justify-content-end mb-2">
-            <button type="submit" class="btn btn-primary btn-sm">Vincular movimientos tildados al renglón elegido</button>
+        <div id="resumen-seleccion" class="alert alert-secondary py-2 mb-2 d-flex flex-wrap align-items-center gap-3 sticky-top" style="top: 0; z-index: 5;">
+            <span>Movimientos tildados: <strong id="res-mov">0,00</strong> Kg <span class="text-muted">(<span id="res-mov-cant">0</span>)</span></span>
+            <span>Renglones elegidos: <strong id="res-ren">0,00</strong> Kg <span class="text-muted">(<span id="res-ren-cant">0</span>)</span></span>
+            <span>Diferencia: <strong id="res-dif">0,00</strong> Kg</span>
+            <span id="res-texto" class="text-muted"></span>
+            <button type="submit" class="btn btn-primary btn-sm ms-auto">Vincular movimientos tildados a los renglones elegidos</button>
         </div>
 
         <div class="row">
@@ -174,7 +181,7 @@
                                 <td>{{ mov.unidad_de_medida }}</td>
                                 <td class="text-end">
                                     {{ mov.total|separador_miles }}
-                                    {% if mov.kg_destino is not None %}<br><span class="text-muted small" title="Salida de Fontana: se usa el peso confirmado en destino del remito">(destino: {{ mov.kg_destino|separador_miles }} Kg)</span>
+                                    {% if mov.kg_destino is not None and mov.kg_destino != mov.total %}<br><span class="text-muted small" title="Salida de Fontana: se usa el peso confirmado en destino del remito">(destino: {{ mov.kg_destino|separador_miles }} Kg)</span>
                                     {% elif mov.total_kg != mov.total %}<br><span class="text-muted small">(= {{ mov.total_kg|separador_miles }} Kg)</span>{% endif %}
                                 </td>
                                 <td class="text-end">
@@ -194,12 +201,12 @@
             </div>
 
             <div class="col-md-5">
-                <h6 class="text-muted">Renglones de comprobante con capacidad libre (elegí uno solo; no incluye renglones ya liquidados)</h6>
+                <h6 class="text-muted">Renglones de comprobante con capacidad libre (elegí uno o varios; no incluye renglones ya liquidados)</h6>
                 <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
                     <table class="table table-striped table-sm table-hover align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th></th>
+                                <th><input type="checkbox" id="renglon-check-todos" title="Tildar/destildar todos"></th>
                                 <th>Comprobante</th>
                                 <th>Fecha</th>
                                 <th>Unidad</th>
@@ -212,7 +219,7 @@
                         <tbody>
                             {% for ren in renglones %}
                             <tr>
-                                <td><input type="radio" name="renglon_sel" value="{{ ren.id }}" required></td>
+                                <td><input type="checkbox" name="renglon_sel" value="{{ ren.id }}" class="renglon-check" data-disponible="{% if ren.kg_disponible is not None %}{{ ren.kg_disponible }}{% endif %}"></td>
                                 <td>{{ ren.comprobante.tipo_comprobante }} {{ ren.comprobante.numero }}</td>
                                 <td>{{ ren.comprobante.fecha }}</td>
                                 <td>{{ ren.renglon_detalle_comprobante.unidad_de_medida|default_if_none:'' }}</td>
@@ -259,7 +266,7 @@
             </div>
         </div>
 
-        <button type="submit" class="btn btn-primary mt-2">Vincular movimientos tildados al renglón elegido</button>
+        <button type="submit" class="btn btn-primary mt-2">Vincular movimientos tildados a los renglones elegidos</button>
     </form>
     {% endif %}
 
@@ -447,17 +454,80 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     var totalTildado = document.getElementById('total-tildado');
-    if (totalTildado) {
-        document.querySelectorAll('.movimiento-check').forEach(function (chk) {
-            chk.addEventListener('change', actualizarTotalTildado);
-        });
+    function formatoKg(n) {
+        return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
+    // Resumen en vivo: Kg pendientes de los movimientos tildados, Kg
+    // disponibles de los renglones elegidos y la diferencia entre los dos.
     function actualizarTotalTildado() {
-        var suma = 0;
+        var sumaMov = 0, cantMov = 0;
         document.querySelectorAll('.movimiento-check:checked').forEach(function (chk) {
-            suma += parseFloat(chk.dataset.total || '0');
+            sumaMov += parseFloat(chk.dataset.total || '0');
+            cantMov += 1;
         });
-        totalTildado.textContent = suma.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var sumaRen = 0, cantRen = 0, renSinCantidad = false;
+        document.querySelectorAll('.renglon-check:checked').forEach(function (chk) {
+            cantRen += 1;
+            if (chk.dataset.disponible === '') {
+                renSinCantidad = true;
+            } else {
+                sumaRen += parseFloat(chk.dataset.disponible);
+            }
+        });
+        if (totalTildado) totalTildado.textContent = formatoKg(sumaMov);
+        var resMov = document.getElementById('res-mov');
+        if (!resMov) return;
+        resMov.textContent = formatoKg(sumaMov);
+        document.getElementById('res-mov-cant').textContent = cantMov;
+        document.getElementById('res-ren').textContent = renSinCantidad ? '?' : formatoKg(sumaRen);
+        document.getElementById('res-ren-cant').textContent = cantRen;
+        var resDif = document.getElementById('res-dif');
+        var resTexto = document.getElementById('res-texto');
+        var caja = document.getElementById('resumen-seleccion');
+        caja.classList.remove('alert-secondary', 'alert-success', 'alert-warning', 'alert-info');
+        if (renSinCantidad) {
+            resDif.textContent = '?';
+            resTexto.textContent = cantRen > 1
+                ? 'Hay un renglón sin cantidad cargada: vinculalo solo, sin otros renglones.'
+                : 'El renglón elegido no tiene cantidad cargada: cubre todo lo tildado.';
+            caja.classList.add('alert-warning');
+            return;
+        }
+        var dif = Math.round((sumaRen - sumaMov) * 100) / 100;
+        resDif.textContent = (dif > 0 ? '+' : '') + formatoKg(dif);
+        if (cantMov === 0 || cantRen === 0) {
+            resTexto.textContent = 'Tildá movimientos y renglones para ver la diferencia.';
+            caja.classList.add('alert-secondary');
+        } else if (dif === 0) {
+            resTexto.textContent = 'Coinciden exacto.';
+            caja.classList.add('alert-success');
+        } else if (dif < 0) {
+            resTexto.textContent = 'Los renglones no alcanzan: quedarían ' + formatoKg(-dif) + ' Kg de movimientos pendientes.';
+            caja.classList.add('alert-warning');
+        } else {
+            resTexto.textContent = 'A los renglones les sobrarían ' + formatoKg(dif) + ' Kg de capacidad libre.';
+            caja.classList.add('alert-info');
+        }
+    }
+    document.querySelectorAll('.movimiento-check, .renglon-check').forEach(function (chk) {
+        chk.addEventListener('change', actualizarTotalTildado);
+    });
+    actualizarTotalTildado();
+
+    // Tildar/destildar todos los renglones de un solo click.
+    var renglonCheckTodos = document.getElementById('renglon-check-todos');
+    if (renglonCheckTodos) {
+        renglonCheckTodos.addEventListener('change', function () {
+            document.querySelectorAll('.renglon-check').forEach(function (chk) {
+                chk.checked = renglonCheckTodos.checked;
+            });
+            actualizarTotalTildado();
+        });
+        document.querySelectorAll('.renglon-check').forEach(function (chk) {
+            chk.addEventListener('change', function () {
+                if (!chk.checked) renglonCheckTodos.checked = false;
+            });
+        });
     }
 
     // Tildar/destildar todos los movimientos de un solo click.
@@ -497,10 +567,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 var chk = document.querySelector('.movimiento-check[value="' + id + '"]');
                 if (chk) chk.checked = true;
             });
-            var radio = document.querySelector('input[name="renglon_sel"][value="' + btn.dataset.renglon + '"]');
-            if (radio) radio.checked = true;
+            // Mismo criterio del lado de los renglones: queda elegido solo
+            // el renglón de este candidato.
+            document.querySelectorAll('.renglon-check').forEach(function (chk) {
+                chk.checked = false;
+            });
+            var renglonChk = document.querySelector('.renglon-check[value="' + btn.dataset.renglon + '"]');
+            if (renglonChk) renglonChk.checked = true;
             if (checkTodos) checkTodos.checked = false;
-            if (totalTildado) actualizarTotalTildado();
+            if (renglonCheckTodos) renglonCheckTodos.checked = false;
+            actualizarTotalTildado();
         });
     });
 

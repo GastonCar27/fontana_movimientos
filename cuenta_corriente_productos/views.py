@@ -425,6 +425,136 @@ def reabrir_movimiento(request, movimiento_id):
 # todos juntos a UN renglón de comprobante sin vincular, por vez.
 # ---------------------------------------------------------------------------
 
+def _vincular_movimientos_a_renglones(request, renglon_ids, movimiento_ids):
+    """
+    POST de "Vincular por bloques": vincula los movimientos tildados con los
+    renglones de comprobante elegidos -- uno O VARIOS (la relación es
+    muchos a muchos: un movimiento puede quedar repartido entre varios
+    renglones y un renglón puede cubrir varios movimientos; cada par es un
+    ComprobanteRenglonMovimiento con su cantidad_kg). Antes de 30/09 la
+    pantalla dejaba elegir un solo renglón por vez (pedido de Gastón).
+
+    Reparto: FIFO por fecha de los dos lados -- los renglones del
+    comprobante más viejo primero, y dentro de cada renglón los movimientos
+    más viejos primero; a cada par se le asigna lo que entra (lo que le
+    falta cubrir al movimiento, sin pasarse de lo que le queda libre al
+    renglón). Si al final sobran Kg de movimientos quedan pendientes; si
+    sobra capacidad de renglón queda libre -- ninguno de los dos se pierde
+    (ver caso Bukay Olivia Eugenia más arriba).
+
+    Un renglón sin cantidad cargada (capacidad desconocida, "?") no tiene
+    tope y absorbería todo, así que sólo se lo puede vincular solo (sin
+    otros renglones en el mismo POST), como hasta ahora.
+    """
+    renglones_sel = list(
+        ComprobanteRenglon.objects
+        .select_related('comprobante', 'renglon_detalle_comprobante')
+        .prefetch_related('vinculos_movimiento')
+        .filter(pk__in=renglon_ids)
+    )
+    if not renglones_sel:
+        messages.error(request, 'No se encontraron los renglones elegidos.')
+        return
+    # Resguardo (la lista ya excluye los liquidados, ver renglones_qs): un
+    # renglón incluido en una liquidación no recibe vínculos nuevos.
+    liquidados = [r for r in renglones_sel if hasattr(r, 'liquidacion_producto')]
+    if liquidados:
+        messages.error(
+            request,
+            'Ya están incluidos en una liquidación, no se les puede vincular nada más: renglón(es) '
+            + ', '.join(str(r.id) for r in liquidados) + '.',
+        )
+        return
+
+    equivalencias = _cargar_equivalencias_kg()
+    capacidad = {
+        r.id: _kg_disponible_renglon(r, vinculos=list(r.vinculos_movimiento.all()), equivalencias=equivalencias)
+        for r in renglones_sel
+    }
+    sin_cantidad = [r for r in renglones_sel if capacidad[r.id] is None]
+    if sin_cantidad and len(renglones_sel) > 1:
+        messages.error(
+            request,
+            'El/los renglón(es) ' + ', '.join(str(r.id) for r in sin_cantidad)
+            + ' no tienen la cantidad facturada cargada (disponible "?"), así que no se puede saber '
+            'cuánto cubren: vinculalos de a uno, sin elegir otros renglones a la vez.',
+        )
+        return
+    hoy = timezone.localdate()
+    renglones_sel.sort(key=lambda r: ((r.comprobante.fecha if r.comprobante else None) or hoy, r.id))
+
+    movimientos_sel = list(
+        Movimiento.objects.select_related('renglon_remito').filter(pk__in=movimiento_ids)
+    )
+    movimientos_sel.sort(key=lambda m: (m.fecha or hoy, m.id_movimiento))
+    pendiente = {
+        m.id_movimiento: _kg_pendiente_movimiento(m, equivalencias=equivalencias) for m in movimientos_sel
+    }
+    ya_existentes = set(
+        ComprobanteRenglonMovimiento.objects
+        .filter(renglon__in=renglones_sel, movimiento__in=movimientos_sel)
+        .values_list('renglon_id', 'movimiento_id')
+    )
+
+    creados = 0
+    kg_cubiertos = Decimal('0')
+    renglones_usados = []
+    with transaction.atomic():
+        for renglon in renglones_sel:
+            libre = capacidad[renglon.id]  # None = sin tope (renglón solo, ver arriba)
+            usado_aca = False
+            for movimiento in movimientos_sel:
+                if libre is not None and libre <= 0:
+                    break
+                falta = pendiente[movimiento.id_movimiento]
+                if falta <= 0:
+                    continue
+                if (renglon.id, movimiento.id_movimiento) in ya_existentes:
+                    # Ya estaba vinculado a este renglón: no se pisa (para
+                    # corregirlo hay que desvincular y volver a vincular).
+                    continue
+                asignar = falta if libre is None else min(falta, libre)
+                ComprobanteRenglonMovimiento.objects.create(
+                    renglon=renglon, movimiento=movimiento, cantidad_kg=asignar,
+                )
+                creados += 1
+                usado_aca = True
+                kg_cubiertos += asignar
+                pendiente[movimiento.id_movimiento] = falta - asignar
+                if libre is not None:
+                    libre -= asignar
+            capacidad[renglon.id] = libre
+            if usado_aca:
+                renglones_usados.append(renglon)
+
+    if creados == 0:
+        messages.error(
+            request,
+            'No se vinculó nada: los movimientos elegidos ya estaban vinculados a esos renglones, '
+            'o no quedaba capacidad disponible en los renglones.',
+        )
+        return
+    kg_sin_cubrir = sum((v for v in pendiente.values() if v > 0), Decimal('0'))
+    capacidad_sobrante = sum(
+        (c for c in capacidad.values() if c is not None and c > 0), Decimal('0'),
+    )
+    texto = (
+        f'{creados} vínculo(s) creado(s) con {len(renglones_usados)} renglón(es) '
+        f'({", ".join(str(r.id) for r in renglones_usados)}): cubre {kg_cubiertos:.2f} Kg.'
+    )
+    if kg_sin_cubrir > 0:
+        texto += (
+            f' Los renglones no alcanzaron para cubrir todo lo tildado: quedan {kg_sin_cubrir:.2f} '
+            'todavía pendientes de vincular.'
+        )
+    elif capacidad_sobrante > 0:
+        texto += (
+            f' A los renglones elegidos les quedan {capacidad_sobrante:.2f} de capacidad libre para '
+            'vincular a otro movimiento.'
+        )
+    messages.success(request, texto)
+
+
 def vincular_por_bloques(request):
     """
     Pantalla para vincular movimientos (kg) con renglones de comprobante
@@ -447,9 +577,10 @@ def vincular_por_bloques(request):
     simplemente "sin ningún vínculo": un movimiento puede seguir teniendo
     Kg pendientes aunque ya tenga algún vínculo, si el/los renglón(es)
     vinculados no llegaban a cubrirlo del todo. Desde ahí se pueden tildar
-    varios movimientos y elegir un solo renglón para vincularlos todos
-    juntos a ese renglón en un solo POST. Si la cantidad facturada en el
-    renglón no alcanza para cubrir todo lo tildado, se cubre lo que entra
+    varios movimientos y uno o varios renglones (desde 30/09, ver
+    _vincular_movimientos_a_renglones) para vincularlos juntos en un solo
+    POST. Si la cantidad facturada en los renglones no alcanza para cubrir
+    todo lo tildado, se cubre lo que entra
     (los movimientos más antiguos primero) y el resto queda pendiente para
     vincularlo después con otro comprobante -- no se pierde ni se marca
     como cubierto de más (bug real detectado con la entidad Bukay Olivia
@@ -495,94 +626,15 @@ def vincular_por_bloques(request):
     if request.method == 'POST':
         redirect_url = url_recarga
 
-        renglon_id = request.POST.get('renglon_sel')
+        renglon_ids = request.POST.getlist('renglon_sel')
         movimiento_ids = request.POST.getlist('movimiento_sel')
 
-        if not renglon_id:
-            messages.error(request, 'Debe elegir un renglón de comprobante para vincular.')
+        if not renglon_ids:
+            messages.error(request, 'Debe elegir al menos un renglón de comprobante para vincular.')
         elif not movimiento_ids:
             messages.error(request, 'Debe tildar al menos un movimiento para vincular.')
         else:
-            renglon = get_object_or_404(
-                ComprobanteRenglon.objects.select_related('renglon_detalle_comprobante'),
-                pk=renglon_id,
-            )
-            # Resguardo por las dudas (la lista de renglones ya excluye los
-            # liquidados, ver renglones_qs más abajo): un renglón incluido
-            # en una liquidación no debería recibir vínculos nuevos -- esos
-            # $ ya están cerrados, agregarle más Kg encima generaría el
-            # mismo tipo de descuadre que el caso Bukay, solo que del lado
-            # de una liquidación ya hecha en vez de un vínculo suelto.
-            if hasattr(renglon, 'liquidacion_producto'):
-                messages.error(
-                    request,
-                    f'El renglón {renglon.id} ya está incluido en una liquidación; no se le puede '
-                    'vincular nada más.',
-                )
-                return redirect(redirect_url)
-            # Equivalencias a Kg (ver ProductoEquivalenciaKg / "Equivalencias
-            # de unidades"): hacen falta tanto para el renglón (puede estar
-            # facturado en una unidad distinta de Kg, ver _total_renglon_en_kg)
-            # como para los movimientos tildados.
-            equivalencias = _cargar_equivalencias_kg()
-            disponible = _kg_disponible_renglon(renglon, equivalencias=equivalencias)
-            sin_limite = disponible is None  # no hay ComprobanteRenglonDetalle.cantidad cargada
-
-            movimientos_sel = list(Movimiento.objects.filter(pk__in=movimiento_ids))
-            # FIFO por fecha: si el renglón no alcanza para cubrir todo lo
-            # tildado, lo que queda sin cubrir es de los movimientos más
-            # nuevos, y ese resto sigue apareciendo como pendiente en la
-            # próxima búsqueda -- no se crea vínculo para lo que no entra.
-            movimientos_sel.sort(key=lambda m: (m.fecha or timezone.localdate(), m.id_movimiento))
-
-            creados = 0
-            kg_cubiertos = Decimal('0')
-            kg_sin_cubrir = Decimal('0')
-            for movimiento in movimientos_sel:
-                pendiente_mov = _kg_pendiente_movimiento(movimiento, equivalencias=equivalencias)
-                if pendiente_mov <= 0:
-                    continue  # ya estaba totalmente cubierto (por otro vínculo)
-                asignar = pendiente_mov if sin_limite else min(pendiente_mov, disponible)
-                if asignar <= 0:
-                    kg_sin_cubrir += pendiente_mov
-                    continue
-                _vinculo, creado = ComprobanteRenglonMovimiento.objects.get_or_create(
-                    renglon=renglon, movimiento=movimiento,
-                    defaults={'cantidad_kg': asignar},
-                )
-                if creado:
-                    creados += 1
-                    kg_cubiertos += asignar
-                    if asignar < pendiente_mov:
-                        kg_sin_cubrir += (pendiente_mov - asignar)
-                    if not sin_limite:
-                        disponible -= asignar
-                # si ya existía el vínculo, no se lo pisa -- para corregirlo
-                # hay que desvincular y volver a vincular.
-
-            if creados == 0:
-                messages.error(
-                    request,
-                    'No se vinculó nada: los movimientos elegidos ya estaban vinculados a ese renglón, '
-                    'o no quedaba capacidad disponible en el renglón.',
-                )
-            else:
-                texto = f'{creados} movimiento(s) vinculado(s) al renglón {renglon.id} (cubre {kg_cubiertos:.2f}).'
-                if kg_sin_cubrir > 0:
-                    texto += (
-                        f' El renglón no alcanzó para cubrir todo lo tildado: quedan {kg_sin_cubrir:.2f} '
-                        'todavía pendientes de vincular.'
-                    )
-                elif not sin_limite and disponible > 0:
-                    # Caso opuesto al de Bukay: el renglón factura MÁS de lo
-                    # que necesitaban los movimientos tildados. No hace
-                    # falta hacer nada especial -- la capacidad libre queda
-                    # calculada en vivo (_kg_disponible_renglon) y el
-                    # renglón va a seguir apareciendo en este mismo listado
-                    # la próxima vez, con ese resto disponible -- pero se
-                    # avisa para que quede claro que no se perdió nada.
-                    texto += f' Al renglón le quedan {disponible:.2f} de capacidad libre para vincular a otro movimiento.'
-                messages.success(request, texto)
+            _vincular_movimientos_a_renglones(request, renglon_ids, movimiento_ids)
         return redirect(redirect_url)
 
     # Solo para precargar el texto de los buscadores con el nombre ya
