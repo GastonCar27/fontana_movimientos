@@ -23,6 +23,10 @@
             <input type="checkbox" class="form-check-input" id="id_sin_renglones" name="sin_renglones" value="1" {% if q_sin_renglones %}checked{% endif %}>
             <label class="form-check-label" for="id_sin_renglones">Solo sin renglones cargados</label>
         </div>
+        <div class="col-auto form-check mb-1">
+            <input type="checkbox" class="form-check-input" id="id_no_coincide" name="no_coincide" value="1" {% if q_no_coincide %}checked{% endif %}>
+            <label class="form-check-label" for="id_no_coincide">Solo donde la suma de renglones no coincide con el total</label>
+        </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'comprobantes:comprobante_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
@@ -39,6 +43,7 @@
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
+                    <th class="text-end">{% sort_th 'suma_renglones' 'Suma renglones' %}</th>
                     <th>Moneda</th>
                     <th class="text-center">{% sort_th 'renglones' 'Renglones' %}</th>
                     <th class="text-center">Acciones</th>
@@ -53,6 +58,14 @@
                     <td>{{ c.tipo_comprobante }}</td>
                     <td>{{ c.numero }}</td>
                     <td class="text-end">{{ c.total|separador_miles }}</td>
+                    <td class="text-end">
+                        {% if c.renglones_no_coinciden %}
+                        <strong class="text-danger" title="No coincide con el total del comprobante">{{ c.suma_renglones|separador_miles }}</strong>
+                        <br><span class="text-danger small">dif. {{ c.diferencia_renglones|separador_miles }}</span>
+                        {% else %}
+                        {{ c.suma_renglones|separador_miles }}
+                        {% endif %}
+                    </td>
                     <td>{{ c.moneda }}</td>
                     <td class="text-center">
                         {% if c.cantidad_renglones %}
@@ -71,12 +84,15 @@
                         {% if not c.cantidad_renglones %}
                         <a class="btn btn-sm btn-warning" title="Este comprobante todavía no tiene ningún renglón cargado"
                            href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
+                        {% elif c.renglones_no_coinciden %}
+                        <a class="btn btn-sm btn-warning" title="La suma de los renglones no coincide con el total del comprobante (diferencia {{ c.diferencia_renglones|separador_miles }})"
+                           href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
                         {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-4">No hay comprobantes cargados.</td>
+                    <td colspan="10" class="text-center text-muted py-4">No hay comprobantes con este filtro.</td>
                 </tr>
                 {% endfor %}
             </tbody>

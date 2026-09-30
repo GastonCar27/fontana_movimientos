@@ -457,6 +457,9 @@ def comprobante_listado(request):
     # renglón directamente (ver botón "Agregar renglón" más abajo y en el
     # template).
     q_sin_renglones = request.GET.get('sin_renglones', '').strip()
+    # Agregado 2026-09-30 (pedido de Gastón): sólo los comprobantes cuyo
+    # total NO coincide con la suma de sus renglones.
+    q_no_coincide = request.GET.get('no_coincide', '').strip()
 
     if q_entidad:
         comprobantes = comprobantes.filter(
@@ -479,6 +482,20 @@ def comprobante_listado(request):
     # cargados cada comprobante, para mostrar el botón "Agregar renglón"
     # sólo en los que tienen 0.
     comprobantes = comprobantes.annotate(cantidad_renglones=Count('renglon_comprobante', distinct=True))
+    # Suma del 'total' de todos sus renglones (producto/servicio + IVA +
+    # otros tributos -- cada uno es un renglón aparte), para compararla con
+    # el total del comprobante. Es una sola relación multi-valuada (la misma
+    # que el Count de arriba), así que Sum no se duplica.
+    comprobantes = comprobantes.annotate(
+        suma_renglones=Coalesce(
+            Sum('renglon_comprobante__total'), Value(Decimal('0')),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        ),
+    )
+    if q_no_coincide:
+        comprobantes = comprobantes.exclude(suma_renglones=Coalesce(
+            F('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=18, decimal_places=2),
+        ))
 
     comprobantes = aplicar_orden_queryset(request, comprobantes, {
         'id': 'id',
@@ -488,14 +505,22 @@ def comprobante_listado(request):
         'numero': 'numero',
         'total': 'total',
         'renglones': 'cantidad_renglones',
+        'suma_renglones': 'suma_renglones',
     })
 
+    comprobantes = list(comprobantes[:200])
+    for c in comprobantes:
+        # total vacío se toma como 0, igual que en el filtro de arriba.
+        c.diferencia_renglones = _a_decimal(c.total) - _a_decimal(c.suma_renglones)
+        c.renglones_no_coinciden = c.diferencia_renglones != 0
+
     return render(request, 'comprobantes/comprobante_listado.html', {
-        'comprobantes': comprobantes[:200],
+        'comprobantes': comprobantes,
         'q_entidad': q_entidad,
         'q_id': q_id,
         'q_fecha': q_fecha,
         'q_sin_renglones': q_sin_renglones,
+        'q_no_coincide': q_no_coincide,
     })
 
 
