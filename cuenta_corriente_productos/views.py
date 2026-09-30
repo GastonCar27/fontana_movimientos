@@ -71,6 +71,9 @@ def _total_movimiento_en_kg(movimiento, equivalencias=None):
     se pasa (por ejemplo, para resolver un solo movimiento suelto, como en
     "Vincular renglón") se lo consulta acá mismo.
     """
+    kg_destino = _kg_destino_remito(movimiento)
+    if kg_destino is not None:
+        return kg_destino
     total = movimiento.total or Decimal('0')
     if movimiento.unidad_de_medida_id == UNIDAD_MEDIDA_KILOGRAMOS_ID:
         return total
@@ -90,6 +93,36 @@ def _total_movimiento_en_kg(movimiento, equivalencias=None):
             return total
         return total * factor
     return total
+
+
+def _kg_destino_remito(movimiento):
+    """
+    Kg confirmados en destino (RemitoRenglon.kilogramos_confirmados) del
+    remito que generó este Movimiento, SOLO cuando Fontana es el emisor y
+    el receptor es otra empresa (una salida/venta) y ese dato está cargado.
+    None en cualquier otro caso (se usa el total del movimiento como
+    siempre).
+
+    Pedido de Gastón (30/09): en las salidas, el receptor factura por el
+    peso que pesó en destino (en especial la canchada), no por el que salió
+    de Fontana -- así que para vincular movimientos contra renglones de
+    comprobante (Vincular por bloques / Pendientes por producto) hay que
+    usar ese peso. Normalmente Movimiento.total ya lo tiene (ver
+    remitos.views._sincronizar_movimiento_renglon: total =
+    kilogramos_definitivos = confirmados si está cargado), pero se toma
+    directo del renglón del remito para no depender de que el movimiento
+    se haya re-sincronizado (ej. un confirmado cargado por el admin de
+    Django, que no pasa por esa función). Siempre está en Kg.
+    """
+    if movimiento.entidad_emisor_id != ENTIDAD_PROPIA_ID or movimiento.entidad_receptor_id == ENTIDAD_PROPIA_ID:
+        return None
+    try:
+        renglon_remito = movimiento.renglon_remito
+    except ObjectDoesNotExist:
+        return None
+    if renglon_remito is None:
+        return None
+    return renglon_remito.kilogramos_confirmados
 
 
 def _movimiento_viene_de_remito(movimiento):
@@ -614,7 +647,7 @@ def vincular_por_bloques(request):
         movimientos_qs = (
             movimientos_qs
             .filter(Q(entidad_emisor_id=entidad.pk) | Q(entidad_receptor_id=entidad.pk))
-            .select_related('entidad_emisor', 'entidad_receptor', 'producto', 'unidad_de_medida')
+            .select_related('entidad_emisor', 'entidad_receptor', 'producto', 'unidad_de_medida', 'renglon_remito')
             .prefetch_related('vinculos_comprobante')
         )
         if fecha_desde_mov:
@@ -630,6 +663,10 @@ def vincular_por_bloques(request):
                 # -- lo usa el template para mostrar/comparar contra
                 # kg_pendiente en la misma unidad.
                 mov.total_kg = _total_movimiento_en_kg(mov, equivalencias)
+                # Kg confirmados en destino del remito (salida de Fontana a
+                # otra empresa), si están cargados -- el template avisa que
+                # se usa ese peso en vez del total del movimiento.
+                mov.kg_destino = _kg_destino_remito(mov)
                 movimientos.append(mov)
                 if len(movimientos) >= 300:
                     break
@@ -795,7 +832,7 @@ def vincular_por_bloques(request):
             .filter(Q(movimiento__entidad_emisor_id=entidad.pk) | Q(movimiento__entidad_receptor_id=entidad.pk))
             .select_related(
                 'movimiento', 'movimiento__entidad_emisor', 'movimiento__entidad_receptor',
-                'movimiento__unidad_de_medida',
+                'movimiento__unidad_de_medida', 'movimiento__renglon_remito',
                 'renglon', 'renglon__comprobante', 'renglon__comprobante__tipo_comprobante',
                 'renglon__renglon_detalle_comprobante',
             )
@@ -806,7 +843,7 @@ def vincular_por_bloques(request):
             vinculos_qs = vinculos_qs.filter(movimiento__fecha__lte=fecha_hasta_mov)
         vinculos_existentes = list(
             vinculos_qs
-            .prefetch_related('renglon__vinculos_movimiento__movimiento')
+            .prefetch_related('renglon__vinculos_movimiento__movimiento__renglon_remito')
             .order_by('-movimiento__fecha', '-movimiento_id')[:300]
         )
 
@@ -1326,7 +1363,7 @@ def _asignado_por_vinculo_null(renglon_ids, equivalencias=None):
     vinculos_qs = (
         ComprobanteRenglonMovimiento.objects
         .filter(renglon_id__in=renglon_ids)
-        .select_related('movimiento', 'renglon__renglon_detalle_comprobante')
+        .select_related('movimiento', 'movimiento__renglon_remito', 'renglon__renglon_detalle_comprobante')
         .order_by('movimiento__fecha', 'movimiento_id')
     )
     for vinculo in vinculos_qs:
@@ -1469,7 +1506,7 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
 
     movimientos_qs = (
         Movimiento.objects
-        .select_related('producto', 'unidad_de_medida', 'entidad_emisor', 'entidad_receptor')
+        .select_related('producto', 'unidad_de_medida', 'entidad_emisor', 'entidad_receptor', 'renglon_remito')
         .prefetch_related('vinculos_comprobante')
     )
     if producto_id:
@@ -1588,7 +1625,7 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
         .select_related(
             'producto', 'comprobante__entidad_emisor', 'renglon_detalle_comprobante__unidad_de_medida',
         )
-        .prefetch_related('vinculos_movimiento__movimiento')
+        .prefetch_related('vinculos_movimiento__movimiento__renglon_remito')
         .distinct()
     )
     if producto_id:

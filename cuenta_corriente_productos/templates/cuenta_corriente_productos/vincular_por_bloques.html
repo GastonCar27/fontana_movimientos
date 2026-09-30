@@ -174,7 +174,8 @@
                                 <td>{{ mov.unidad_de_medida }}</td>
                                 <td class="text-end">
                                     {{ mov.total|separador_miles }}
-                                    {% if mov.total_kg != mov.total %}<br><span class="text-muted small">(= {{ mov.total_kg|separador_miles }} Kg)</span>{% endif %}
+                                    {% if mov.kg_destino is not None %}<br><span class="text-muted small" title="Salida de Fontana: se usa el peso confirmado en destino del remito">(destino: {{ mov.kg_destino|separador_miles }} Kg)</span>
+                                    {% elif mov.total_kg != mov.total %}<br><span class="text-muted small">(= {{ mov.total_kg|separador_miles }} Kg)</span>{% endif %}
                                 </td>
                                 <td class="text-end">
                                     {{ mov.kg_pendiente|separador_miles }}
