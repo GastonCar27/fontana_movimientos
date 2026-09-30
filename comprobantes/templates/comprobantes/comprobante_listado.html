@@ -77,10 +77,10 @@
                     <td>{{ c.entidad_emisor }}</td>
                     <td>{{ c.tipo_comprobante }}</td>
                     <td>{{ c.numero }}</td>
-                    <td class="text-end">{{ c.total|separador_miles }}</td>
+                    <td class="text-end fw-bold text-nowrap" style="font-size: 1.05em;">{{ c.total|separador_miles }}</td>
                     <td class="text-end">
                         {% if c.renglones_no_coinciden %}
-                        <strong class="text-danger" title="No coincide con el total del comprobante">{{ c.suma_renglones|separador_miles }}</strong>
+                        <span class="text-danger" title="No coincide con el total del comprobante">{{ c.suma_renglones|separador_miles }}</span>
                         <br><span class="text-danger small">dif. {{ c.diferencia_renglones|separador_miles }}</span>
                         {% else %}
                         {{ c.suma_renglones|separador_miles }}
