@@ -127,7 +127,7 @@
         <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>ID</th><th>Fecha</th><th>Tipo</th><th>Número</th><th>Concepto</th><th>Monto</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for m in items.movimientos %}
-            <tr data-fecha="{{ m.emision|date:'Y-m-d' }}">
+            <tr data-fecha="{{ m.emision|date:'Y-m-d' }}"{% if m.preseleccionado %} style="background-color: #fff3cd;" title="Elegido desde Movimientos de caja sin liquidar"{% endif %}>
                 <td><input type="checkbox" name="mov_selected" value="{{ m.pk }}" class="chk-item"
                            data-monto="{{ m.monto_mostrar }}" {% if m.seleccionado %}checked{% endif %}></td>
                 <td>{{ m.id }}</td>

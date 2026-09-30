@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Case, Count, DecimalField, F, Max, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, Exists, F, Max, OuterRef, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Coalesce, Cast
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -22,6 +22,7 @@ from retenciones_inym.models import RetencionInym
 from . import documentos
 from .forms import (
     ComprobantesSinLiquidarFiltroForm,
+    MovimientosCajaSinLiquidarFiltroForm,
     LiquidacionSeleccionForm,
     LiquidacionReporteForm,
     RankingEntidadesForm,
@@ -651,6 +652,13 @@ def liquidacion_form(request, pk=None):
                 if c.id in preseleccion:
                     c.seleccionado = True
                     c.preseleccionado = True
+            # Idem ?movimiento=<id> (botón LIQUIDAR de "Movimientos de caja
+            # sin liquidar", 30/09).
+            preseleccion_mov = {int(x) for x in request.GET.getlist('movimiento') if x.isdigit()}
+            for m in items.get('movimientos', []):
+                if m.id in preseleccion_mov:
+                    m.seleccionado = True
+                    m.preseleccionado = True
 
     entidad_texto = ''
     if entidad:
@@ -1011,10 +1019,20 @@ def sin_liquidar_comprobantes(request):
 
 # --- Movimientos de caja -----------------------------------------------------
 
+def _q_fontana_emisora_movimiento():
+    """Movimientos de caja cuya entidad emisora es Fontana: igual que
+    MovimientoCaja.emisor, sin MovimientoCajaEmisor (o con la entidad vacía)
+    el emisor se toma como la entidad propia."""
+    return (
+        Q(emisor_relacion__id_entidad__isnull=True)
+        | Q(emisor_relacion__id_entidad_id=ENTIDAD_PROPIA_ID)
+    )
+
+
 def _movimientos_caja_sin_liquidar(request):
-    form = SinLiquidarFiltroForm(request.GET or None)
+    form = MovimientosCajaSinLiquidarFiltroForm(request.GET or None)
     movimientos = (
-        MovimientoCaja.objects.filter(liquidaciones__isnull=True)
+        MovimientoCaja.objects
         .select_related(
             'caja', 'receptor',
             'emisor_relacion__id_entidad', 'rel_numero',
@@ -1022,16 +1040,51 @@ def _movimientos_caja_sin_liquidar(request):
         )
         .order_by('-emision', '-id')
     )
-    if form.is_valid():
-        entidad = form.cleaned_data.get('entidad')
-        fecha_desde = form.cleaned_data.get('fecha_desde')
-        fecha_hasta = form.cleaned_data.get('fecha_hasta')
-        if entidad:
-            movimientos = movimientos.filter(receptor=entidad)
-        if fecha_desde:
-            movimientos = movimientos.filter(emision__gte=fecha_desde)
-        if fecha_hasta:
-            movimientos = movimientos.filter(emision__lte=fecha_hasta)
+    datos = form.cleaned_data if form.is_valid() else {}
+    sin_liq_pago = datos.get('sin_liq_pago')
+    sin_liq_cobro = datos.get('sin_liq_cobro')
+    if sin_liq_pago or sin_liq_cobro:
+        # Agregado 30/09 (pedido de Gastón): sin liquidación de PAGO y/o de
+        # COBRO, con el mismo criterio direccional que _armar_items:
+        #   pago  -> receptor = la entidad (no Fontana), Fontana le paga;
+        #   cobro -> receptor = Fontana y emisor = la entidad (no Fontana).
+        # Un vínculo a una liquidación que ya no existe no cuenta (el JOIN
+        # con liquidacion__tipo lo deja afuera). Los dos tildados: ambos.
+        movimientos = movimientos.annotate(
+            tiene_liq_pago=Exists(LiquidacionMovimiento.objects.filter(
+                movimiento_caja=OuterRef('pk'), liquidacion__tipo=Liquidacion.TIPO_PAGO)),
+            tiene_liq_cobro=Exists(LiquidacionMovimiento.objects.filter(
+                movimiento_caja=OuterRef('pk'), liquidacion__tipo=Liquidacion.TIPO_COBRO)),
+        )
+        condicion = Q(pk__in=[])
+        if sin_liq_pago:
+            condicion |= (
+                Q(receptor__isnull=False) & ~Q(receptor_id=ENTIDAD_PROPIA_ID) & Q(tiene_liq_pago=False)
+            )
+        if sin_liq_cobro:
+            condicion |= (
+                Q(receptor_id=ENTIDAD_PROPIA_ID) & ~_q_fontana_emisora_movimiento() & Q(tiene_liq_cobro=False)
+            )
+        movimientos = movimientos.filter(condicion)
+    else:
+        # Sin esos tildes: como siempre, los que no están en NINGUNA liquidación.
+        movimientos = movimientos.filter(liquidaciones__isnull=True)
+
+    entidad = datos.get('entidad')
+    fecha_desde = datos.get('fecha_desde')
+    fecha_hasta = datos.get('fecha_hasta')
+    if entidad:
+        # Receptor (pagos) o emisor (cobros): antes solo receptor, así los
+        # cobros de esa entidad (receptor = Fontana) no aparecían nunca.
+        movimientos = movimientos.filter(Q(receptor=entidad) | Q(emisor_relacion__id_entidad=entidad))
+    if fecha_desde:
+        movimientos = movimientos.filter(emision__gte=fecha_desde)
+    if fecha_hasta:
+        movimientos = movimientos.filter(emision__lte=fecha_hasta)
+    if datos.get('excluir_fontana_emisora'):
+        movimientos = movimientos.exclude(_q_fontana_emisora_movimiento())
+    if datos.get('excluir_fontana_receptora'):
+        movimientos = movimientos.exclude(receptor_id=ENTIDAD_PROPIA_ID)
     return form, movimientos
 
 
@@ -1039,14 +1092,27 @@ def sin_liquidar_movimientos_caja(request):
     form, movimientos = _movimientos_caja_sin_liquidar(request)
     movimientos = list(movimientos[:500])
     for m in movimientos:
-        # La entidad contra la que se liquida es el receptor del movimiento
-        # (mismo campo que usa liquidacion_form._armar_items).
-        m.entidad_liquidar_id = m.receptor_id
+        # Contra quién y de qué tipo se liquida (mismo criterio que
+        # _armar_items): receptor = otra entidad -> PAGO a esa entidad;
+        # receptor = Fontana y emisor = otra entidad -> COBRO a la emisora.
+        # Fontana a Fontana (o sin receptor): no hay a quién liquidar.
+        emisor_id = None
+        try:
+            if m.emisor_relacion and m.emisor_relacion.id_entidad_id:
+                emisor_id = m.emisor_relacion.id_entidad_id
+        except ObjectDoesNotExist:
+            pass
+        emisor_id = emisor_id or ENTIDAD_PROPIA_ID
+        if m.receptor_id and m.receptor_id != ENTIDAD_PROPIA_ID:
+            m.entidad_liquidar_id, m.tipo_liquidar = m.receptor_id, Liquidacion.TIPO_PAGO
+        elif m.receptor_id == ENTIDAD_PROPIA_ID and emisor_id != ENTIDAD_PROPIA_ID:
+            m.entidad_liquidar_id, m.tipo_liquidar = emisor_id, Liquidacion.TIPO_COBRO
+        else:
+            m.entidad_liquidar_id, m.tipo_liquidar = None, None
 
     return render(request, 'liquidaciones/sin_liquidar_movimientos_caja.html', {
         'form': form,
         'movimientos': movimientos,
-        'abrir_modal': not request.GET,
         'entidad_texto': _texto_entidad(getattr(form, 'cleaned_data', {}).get('entidad')),
     })
 

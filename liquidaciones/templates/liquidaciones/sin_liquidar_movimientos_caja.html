@@ -4,40 +4,58 @@
 
 <h1>Movimientos de caja sin liquidar</h1>
 
-<div style="margin-bottom:15px;">
-  <button type="button" class="btn btn-sm btn-outline-secondary" data-toggle="modal" data-target="#modalFiltro">Filtrar</button>
-  <a class="btn btn-sm btn-outline-success" href="{% url 'liquidaciones:sin_liquidar_excel' tipo='movimientos_caja' %}?{{ request.GET.urlencode }}">Exportar a Excel</a>
-  <a class="btn btn-sm btn-outline-danger" href="{% url 'liquidaciones:sin_liquidar_pdf' tipo='movimientos_caja' %}?{{ request.GET.urlencode }}">Exportar a PDF</a>
-  <a class="btn btn-sm btn-outline-dark" href="{% url 'liquidaciones:sin_liquidar_movimientos_caja' %}">Limpiar filtro</a>
-</div>
-
-<!-- Ventana modal de filtro -->
-<div class="modal fade" id="modalFiltro" tabindex="-1" role="dialog" aria-labelledby="modalFiltroLabel">
-  <div class="modal-dialog" role="document">
-    <div class="modal-content">
-      <form method="get">
-        <div class="modal-header">
-          <h5 class="modal-title" id="modalFiltroLabel">Filtrar movimientos de caja sin liquidar</h5>
-          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <form method="get" class="row gx-3 gy-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label for="entidad-buscador" class="mb-1 small text-muted">Entidad (emisora o receptora)</label>
+        <div class="buscador-wrapper">
+          <input type="text" id="entidad-buscador" autocomplete="off" class="form-control form-control-sm"
+                 placeholder="Buscar por ID, nombre o CUIT..." value="{{ entidad_texto }}">
+          {{ form.entidad }}
+          <div id="entidad-resultados" class="buscador-resultados"></div>
         </div>
-        <div class="modal-body">
-          <p>
-            {{ form.entidad.label_tag }}<br>
-            <div class="buscador-wrapper">
-              <input type="text" id="entidad-buscador" autocomplete="off" class="form-control"
-                     placeholder="Buscar por ID, nombre o CUIT..." value="{{ entidad_texto }}">
-              {{ form.entidad }}
-              <div id="entidad-resultados" class="buscador-resultados"></div>
-            </div>
-          </p>
-          <p>{{ form.fecha_desde.label_tag }}<br>{{ form.fecha_desde }}</p>
-          <p>{{ form.fecha_hasta.label_tag }}<br>{{ form.fecha_hasta }}</p>
+      </div>
+      <div class="col-6 col-md-2">
+        <label for="{{ form.fecha_desde.id_for_label }}" class="mb-1 small text-muted">Emisión desde</label>
+        <input type="date" name="fecha_desde" id="{{ form.fecha_desde.id_for_label }}" class="form-control form-control-sm" value="{{ form.fecha_desde.value|default_if_none:'' }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label for="{{ form.fecha_hasta.id_for_label }}" class="mb-1 small text-muted">Emisión hasta</label>
+        <input type="date" name="fecha_hasta" id="{{ form.fecha_hasta.id_for_label }}" class="form-control form-control-sm" value="{{ form.fecha_hasta.value|default_if_none:'' }}">
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="form-check">
+          {{ form.sin_liq_pago }}
+          <label class="form-check-label small" for="{{ form.sin_liq_pago.id_for_label }}" title="Movimientos donde Fontana le paga a otra entidad (receptor = esa entidad) que no están en una liquidación de pago">{{ form.sin_liq_pago.label }}</label>
         </div>
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-primary">Filtrar</button>
+        <div class="form-check">
+          {{ form.sin_liq_cobro }}
+          <label class="form-check-label small" for="{{ form.sin_liq_cobro.id_for_label }}" title="Movimientos donde otra entidad le paga a Fontana (receptor = Fontana) que no están en una liquidación de cobro">{{ form.sin_liq_cobro.label }}</label>
         </div>
-      </form>
-    </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="form-check">
+          {{ form.excluir_fontana_emisora }}
+          <label class="form-check-label small" for="{{ form.excluir_fontana_emisora.id_for_label }}">{{ form.excluir_fontana_emisora.label }}</label>
+        </div>
+        <div class="form-check">
+          {{ form.excluir_fontana_receptora }}
+          <label class="form-check-label small" for="{{ form.excluir_fontana_receptora.id_for_label }}">{{ form.excluir_fontana_receptora.label }}</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-8 d-flex flex-wrap gap-2 justify-content-md-end">
+        <button type="submit" class="btn btn-sm btn-primary px-3">Filtrar</button>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'liquidaciones:sin_liquidar_movimientos_caja' %}">Limpiar filtro</a>
+        <a class="btn btn-sm btn-outline-success" href="{% url 'liquidaciones:sin_liquidar_excel' tipo='movimientos_caja' %}?{{ request.GET.urlencode }}">Exportar a Excel</a>
+        <a class="btn btn-sm btn-outline-danger" href="{% url 'liquidaciones:sin_liquidar_pdf' tipo='movimientos_caja' %}?{{ request.GET.urlencode }}">Exportar a PDF</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      Sin tildar "sin liquidación de pago/cobro" se listan los movimientos que no están en ninguna liquidación.
+      Pago = Fontana le paga a otra entidad (receptor = esa entidad); cobro = otra entidad le paga a Fontana
+      (receptor = Fontana). Si los tildás los dos, trae ambos.
+    </p>
   </div>
 </div>
 
@@ -66,9 +84,10 @@
       <td>{{ m.monto }}</td>
       <td>
         {% if m.entidad_liquidar_id %}
-          <a class="btn btn-sm btn-success" href="{% url 'liquidaciones:alta' %}?entidad={{ m.entidad_liquidar_id }}">LIQUIDAR</a>
+          <a class="btn btn-sm btn-success" title="Liquidación de {{ m.tipo_liquidar }} con este movimiento ya tildado"
+             href="{% url 'liquidaciones:alta' %}?entidad={{ m.entidad_liquidar_id }}&tipo={{ m.tipo_liquidar }}&movimiento={{ m.pk }}">LIQUIDAR ({{ m.tipo_liquidar }})</a>
         {% else %}
-          <span style="color:#888;">Sin Entidad</span>
+          <span style="color:#888;" title="Fontana a Fontana, o sin receptor">Sin entidad a liquidar</span>
         {% endif %}
       </td>
     </tr>
@@ -80,9 +99,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    {% if abrir_modal %}
-    $('#modalFiltro').modal('show');
-    {% endif %}
     inicializarBuscador('entidad-buscador', '{{ form.entidad.id_for_label }}', 'entidad-resultados',
         '{% url "liquidaciones:entidad_buscar" %}');
 });

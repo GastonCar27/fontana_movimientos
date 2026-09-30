@@ -108,3 +108,33 @@ class ComprobantesSinLiquidarFiltroForm(SinLiquidarFiltroForm):
         label='Excluir donde Fontana es la receptora',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+
+
+class MovimientosCajaSinLiquidarFiltroForm(SinLiquidarFiltroForm):
+    """Filtro del listado de Movimientos de caja sin liquidar (pedido de
+    Gastón, 30/09/2026): además de Entidad/fechas, poder ver sólo los que
+    no están en una liquidación de PAGO (Fontana le paga a la entidad:
+    receptor = la entidad) y/o de COBRO (la entidad le paga a Fontana:
+    receptor = Fontana, emisor = la entidad) -- mismo criterio direccional
+    que liquidaciones.views._armar_items --, y excluir los movimientos donde
+    Fontana es la emisora y/o la receptora."""
+    sin_liq_pago = forms.BooleanField(
+        required=False,
+        label='Solo sin liquidación de pago',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+    sin_liq_cobro = forms.BooleanField(
+        required=False,
+        label='Solo sin liquidación de cobro',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+    excluir_fontana_emisora = forms.BooleanField(
+        required=False,
+        label='Excluir donde Fontana es la emisora',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+    excluir_fontana_receptora = forms.BooleanField(
+        required=False,
+        label='Excluir donde Fontana es la receptora',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
