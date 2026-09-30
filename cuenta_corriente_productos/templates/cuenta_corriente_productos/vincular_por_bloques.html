@@ -37,7 +37,10 @@
 
         <div class="card mb-2">
             <div class="card-body py-2">
-                <h6 class="text-muted mb-2">Movimientos (obligatorio)</h6>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0">Movimientos (obligatorio)</h6>
+                    <button type="button" id="btn-limpiar-movimientos" class="btn btn-sm btn-link text-muted p-0">Limpiar este lado</button>
+                </div>
                 <div class="row gx-2 gy-2 align-items-end">
                     <div class="col-auto">
                         <label for="producto-mov-buscador" class="mb-1 small text-muted">Producto</label>
@@ -72,7 +75,10 @@
 
         <div class="card mb-2">
             <div class="card-body py-2">
-                <h6 class="text-muted mb-2">Renglones de comprobante (obligatorio, precarga igual a movimientos)</h6>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0">Renglones de comprobante (obligatorio, precarga igual a movimientos)</h6>
+                    <button type="button" id="btn-limpiar-renglones" class="btn btn-sm btn-link text-muted p-0">Limpiar este lado</button>
+                </div>
                 <div class="row gx-2 gy-2 align-items-end">
                     <div class="col-auto">
                         <label for="producto-ren-buscador" class="mb-1 small text-muted">Producto</label>
@@ -112,15 +118,15 @@
     </form>
 
     {% if not filtro_movimientos_completo or not filtro_renglones_completo %}
-    <p class="text-muted fst-italic">
-        Todavía falta completar, para que aparezcan los resultados y el botón de vincular:
+    <div class="alert alert-warning">
+        Faltan campos obligatorios para poder buscar:
         {% if not entidad %}<strong>entidad</strong>{% endif %}
         {% if not producto_mov %}<strong>producto (movimientos)</strong>{% endif %}
         {% if not unidad_mov %}<strong>unidad de medida (movimientos)</strong>{% endif %}
         {% if not producto_ren %}<strong>producto (renglones)</strong>{% endif %}
         {% if not unidad_ren %}<strong>unidad de medida (renglones)</strong>{% endif %}
         &mdash; las fechas son opcionales, no hace falta completarlas.
-    </p>
+    </div>
     {% else %}
     <form method="post" id="form-vincular">
         {% csrf_token %}
@@ -405,6 +411,39 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('id_fecha_hasta_renglones').addEventListener('change', function () {
         fechaHastaRenTocado = true;
     });
+
+    // "Limpiar este lado": vacía solo los campos de esa tarjeta (Movimientos
+    // o Renglones de comprobante), sin tocar la Entidad (compartida por los
+    // dos lados) ni el otro lado -- para no tener que usar el "Limpiar"
+    // general de abajo, que reinicia todo el formulario. No dispara la
+    // búsqueda solo; el usuario sigue apretando "Buscar" después.
+    var btnLimpiarMov = document.getElementById('btn-limpiar-movimientos');
+    if (btnLimpiarMov) {
+        btnLimpiarMov.addEventListener('click', function () {
+            document.getElementById('producto-mov-buscador').value = '';
+            document.getElementById('id_producto_movimientos').value = '';
+            document.getElementById('id_unidad_movimientos').value = '';
+            document.getElementById('id_fecha_desde_movimientos').value = '';
+            document.getElementById('id_fecha_hasta_movimientos').value = '';
+        });
+    }
+    var btnLimpiarRen = document.getElementById('btn-limpiar-renglones');
+    if (btnLimpiarRen) {
+        btnLimpiarRen.addEventListener('click', function () {
+            document.getElementById('producto-ren-buscador').value = '';
+            document.getElementById('id_producto_renglones').value = '';
+            document.getElementById('id_unidad_renglones').value = '';
+            document.getElementById('id_fecha_desde_renglones').value = '';
+            document.getElementById('id_fecha_hasta_renglones').value = '';
+            // Queda marcado como "tocado" -- si después cambian el producto
+            // o la unidad del lado movimientos, ya no se le vuelve a copiar
+            // acá encima de lo que se acaba de limpiar a propósito.
+            productoRenTocado = true;
+            unidadRenTocado = true;
+            fechaDesdeRenTocado = true;
+            fechaHastaRenTocado = true;
+        });
+    }
 
     var totalTildado = document.getElementById('total-tildado');
     if (totalTildado) {
