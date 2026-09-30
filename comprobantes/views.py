@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.core.exceptions import ObjectDoesNotExist
 from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
@@ -451,7 +452,10 @@ def comprobante_listado(request):
 
     q_entidad = request.GET.get('entidad', '').strip()
     q_id = request.GET.get('id', '').strip()
-    q_fecha = request.GET.get('fecha', '').strip()
+    q_fecha = request.GET.get('fecha', '').strip()  # fecha exacta (links viejos)
+    # Agregado 2026-09-30 (pedido de Gastón): rango de fechas.
+    q_fecha_desde = request.GET.get('fecha_desde', '').strip()
+    q_fecha_hasta = request.GET.get('fecha_hasta', '').strip()
     # Agregado 2026-09-09: mismo filtro "sin renglones cargados" que
     # comprobante_reporte, para poder encontrarlos acá y agregarles un
     # renglón directamente (ver botón "Agregar renglón" más abajo y en el
@@ -461,10 +465,22 @@ def comprobante_listado(request):
     # total NO coincide con la suma de sus renglones.
     q_no_coincide = request.GET.get('no_coincide', '').strip()
 
-    if q_entidad:
+    # Entidad: texto libre (nombre o CUIT que contenga lo tipeado, como
+    # siempre) o, si se eligió una de la lista del buscador, esa entidad
+    # EXACTA ('entidad_id', agregado 2026-09-30 a pedido de Gastón) -- en
+    # ese caso manda el id y el texto se ignora.
+    q_entidad_id = request.GET.get('entidad_id', '').strip()
+    entidad_exacta = Entidad.objects.filter(pk=q_entidad_id).first() if q_entidad_id.isdigit() else None
+    if entidad_exacta:
+        comprobantes = comprobantes.filter(entidad_emisor=entidad_exacta)
+        q_entidad = texto_entidad_buscador(entidad_exacta)
+    elif q_entidad:
+        q_entidad_id = ''
         comprobantes = comprobantes.filter(
             Q(entidad_emisor__nombre__icontains=q_entidad) | Q(entidad_emisor__cuit__icontains=q_entidad)
         )
+    else:
+        q_entidad_id = ''
     if q_id:
         if q_id.isdigit():
             comprobantes = comprobantes.filter(id=int(q_id))
@@ -472,6 +488,10 @@ def comprobante_listado(request):
             comprobantes = comprobantes.none()
     if q_fecha:
         comprobantes = comprobantes.filter(fecha=q_fecha)
+    if q_fecha_desde:
+        comprobantes = comprobantes.filter(fecha__gte=q_fecha_desde)
+    if q_fecha_hasta:
+        comprobantes = comprobantes.filter(fecha__lte=q_fecha_hasta)
     if q_sin_renglones:
         comprobantes = comprobantes.filter(renglon_comprobante__isnull=True)
 
@@ -508,17 +528,37 @@ def comprobante_listado(request):
         'suma_renglones': 'suma_renglones',
     })
 
-    comprobantes = list(comprobantes[:200])
+    comprobantes = list(comprobantes.prefetch_related('liquidaciones__liquidacion')[:200])
     for c in comprobantes:
         # total vacío se toma como 0, igual que en el filtro de arriba.
         c.diferencia_renglones = _a_decimal(c.total) - _a_decimal(c.suma_renglones)
         c.renglones_no_coinciden = c.diferencia_renglones != 0
+        # Liquidaciones en las que está (agregado 2026-09-30, pedido de
+        # Gastón). Un vínculo a una liquidación que ya no existe (tablas
+        # managed=False sin FK real) se ignora, mismo criterio que el
+        # filtro liquidaciones_validas de movimientos_caja.
+        c.liquidaciones_validas = []
+        for lc in c.liquidaciones.all():
+            try:
+                c.liquidaciones_validas.append(lc.liquidacion)
+            except ObjectDoesNotExist:
+                continue
+        # Fontana es la RECEPTORA (una compra: le pagamos a la entidad)
+        # cuando es_emisor es 1 o vacío -- mismo criterio que liquidaciones
+        # (_armar_items / sin_liquidar_comprobantes). En ese caso lo que
+        # importa es si ya está en una liquidación de PAGO.
+        c.fontana_receptora = c.es_emisor != 0
+        c.liquidado_en_pago = any(l.tipo == 'pago' for l in c.liquidaciones_validas)
+        c.puede_liquidar_pago = c.fontana_receptora and not c.liquidado_en_pago
 
     return render(request, 'comprobantes/comprobante_listado.html', {
         'comprobantes': comprobantes,
         'q_entidad': q_entidad,
+        'q_entidad_id': q_entidad_id,
         'q_id': q_id,
         'q_fecha': q_fecha,
+        'q_fecha_desde': q_fecha_desde,
+        'q_fecha_hasta': q_fecha_hasta,
         'q_sin_renglones': q_sin_renglones,
         'q_no_coincide': q_no_coincide,
     })

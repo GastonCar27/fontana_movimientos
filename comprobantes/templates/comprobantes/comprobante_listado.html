@@ -8,16 +8,27 @@
 
     <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
         <div class="col-auto">
-            <label for="id_entidad" class="mb-1 small text-muted">Entidad</label>
-            <input type="text" id="id_entidad" name="entidad" class="form-control form-control-sm" value="{{ q_entidad }}" placeholder="Nombre o CUIT">
+            <label for="id_entidad" class="mb-1 small text-muted">
+                Entidad <span id="entidad-exacta-badge" class="badge text-bg-primary {% if not q_entidad_id %}d-none{% endif %}" title="Se filtra por esta entidad exacta">exacta</span>
+            </label>
+            <div class="buscador-wrapper" style="min-width: 280px;">
+                <input type="text" id="id_entidad" name="entidad" autocomplete="off" class="form-control form-control-sm"
+                       value="{{ q_entidad }}" placeholder="Nombre o CUIT (o elegí de la lista)">
+                <input type="hidden" id="id_entidad_id" name="entidad_id" value="{{ q_entidad_id }}">
+                <div id="entidad-resultados" class="buscador-resultados"></div>
+            </div>
         </div>
         <div class="col-auto">
             <label for="id_id" class="mb-1 small text-muted">ID</label>
             <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" placeholder="ID de comprobante">
         </div>
         <div class="col-auto">
-            <label for="id_fecha" class="mb-1 small text-muted">Fecha</label>
-            <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
+            <label for="id_fecha_desde" class="mb-1 small text-muted">Fecha desde</label>
+            <input type="date" id="id_fecha_desde" name="fecha_desde" class="form-control form-control-sm" value="{{ q_fecha_desde|default:q_fecha }}">
+        </div>
+        <div class="col-auto">
+            <label for="id_fecha_hasta" class="mb-1 small text-muted">Fecha hasta</label>
+            <input type="date" id="id_fecha_hasta" name="fecha_hasta" class="form-control form-control-sm" value="{{ q_fecha_hasta|default:q_fecha }}">
         </div>
         <div class="col-auto form-check mb-1">
             <input type="checkbox" class="form-check-input" id="id_sin_renglones" name="sin_renglones" value="1" {% if q_sin_renglones %}checked{% endif %}>
@@ -46,6 +57,7 @@
                     <th class="text-end">{% sort_th 'suma_renglones' 'Suma renglones' %}</th>
                     <th>Moneda</th>
                     <th class="text-center">{% sort_th 'renglones' 'Renglones' %}</th>
+                    <th>Liquidación</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
@@ -74,6 +86,17 @@
                         <span class="badge text-bg-warning">Sin renglones</span>
                         {% endif %}
                     </td>
+                    <td class="small">
+                        {% for l in c.liquidaciones_validas %}
+                        <a href="{% url 'liquidaciones:editar' l.pk %}" class="badge {% if l.tipo == 'pago' %}text-bg-success{% else %}text-bg-info{% endif %} text-decoration-none"
+                           title="Liquidación de {{ l.get_tipo_display }} del {{ l.fecha|default_if_none:'' }}">{{ l.tipo|capfirst }} {{ l.numero|default:l.pk }}</a>
+                        {% endfor %}
+                        {% if c.puede_liquidar_pago %}
+                        <span class="badge text-bg-warning">Sin liquidar (pago)</span>
+                        {% elif not c.liquidaciones_validas and not c.fontana_receptora %}
+                        <span class="text-muted">Sin liquidar</span>
+                        {% endif %}
+                    </td>
                     <td class="text-center text-nowrap">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
@@ -88,15 +111,77 @@
                         <a class="btn btn-sm btn-warning" title="La suma de los renglones no coincide con el total del comprobante (diferencia {{ c.diferencia_renglones|separador_miles }})"
                            href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
                         {% endif %}
+                        {% if c.puede_liquidar_pago %}
+                        <a class="btn btn-sm btn-success" title="Ir a una liquidación de pago nueva para esta entidad, con este comprobante ya tildado"
+                           href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=pago&comprobante={{ c.pk }}">Liquidar</a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="10" class="text-center text-muted py-4">No hay comprobantes con este filtro.</td>
+                    <td colspan="11" class="text-center text-muted py-4">No hay comprobantes con este filtro.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+// Buscador de entidad "mixto": se puede dejar el texto tipeado (busca
+// todas las entidades cuyo nombre/CUIT lo contengan, como siempre) o elegir
+// una de la lista para filtrar por esa entidad EXACTA. No usa
+// inicializarBuscador (buscador_ajax.js) porque ese borra el texto al salir
+// del campo si no se eligió nada de la lista, y acá el texto libre vale.
+document.addEventListener('DOMContentLoaded', function () {
+    var input = document.getElementById('id_entidad');
+    var hidden = document.getElementById('id_entidad_id');
+    var resultados = document.getElementById('entidad-resultados');
+    var badge = document.getElementById('entidad-exacta-badge');
+    var url = '{% url "comprobantes:entidad_buscar" %}';
+    var timeoutId = null;
+
+    input.addEventListener('input', function () {
+        hidden.value = '';  // al volver a escribir, deja de ser la entidad exacta
+        badge.classList.add('d-none');
+        var q = input.value.trim();
+        clearTimeout(timeoutId);
+        if (q.length < 2) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+        timeoutId = setTimeout(function () {
+            fetch(url + '?q=' + encodeURIComponent(q))
+                .then(function (resp) { return resp.json(); })
+                .then(function (data) {
+                    resultados.innerHTML = '';
+                    var lista = data.resultados || [];
+                    if (lista.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    lista.forEach(function (item) {
+                        var div = document.createElement('div');
+                        div.textContent = item.text;
+                        div.addEventListener('click', function () {
+                            input.value = item.text;
+                            hidden.value = item.id;
+                            badge.classList.remove('d-none');
+                            resultados.style.display = 'none';
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+});
+</script>
 {% endblock %}

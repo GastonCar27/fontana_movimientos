@@ -641,6 +641,16 @@ def liquidacion_form(request, pk=None):
 
     if entidad:
         items = _armar_items(entidad, tipo=tipo_liquidacion, liquidacion_actual=liquidacion)
+        # Alta con comprobante(s) ya tildado(s): link "Liquidar" desde el
+        # listado de comprobantes (/comprobante/modificar/, agregado
+        # 2026-09-30 a pedido de Gastón) -- ?comprobante=<id> (repetible).
+        # Solo precarga la selección; hay que revisar y guardar igual.
+        if request.method == 'GET' and not liquidacion:
+            preseleccion = {int(x) for x in request.GET.getlist('comprobante') if x.isdigit()}
+            for c in items.get('comprobantes', []):
+                if c.id in preseleccion:
+                    c.seleccionado = True
+                    c.preseleccionado = True
 
     entidad_texto = ''
     if entidad:

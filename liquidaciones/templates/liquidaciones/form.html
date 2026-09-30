@@ -159,7 +159,7 @@
         <thead><tr><th><input type="checkbox" class="chk-select-all" title="Seleccionar todos"></th><th>Fecha</th><th>ID</th><th>Tipo Comprobante</th><th>Punto de Venta</th><th>Número</th><th>Total</th><th>Debe/Haber</th></tr></thead>
         <tbody>
         {% for c in items.comprobantes %}
-            <tr data-fecha="{{ c.fecha|date:'Y-m-d' }}">
+            <tr data-fecha="{{ c.fecha|date:'Y-m-d' }}"{% if c.preseleccionado %} style="background-color: #fff3cd;" title="Elegido desde el listado de comprobantes"{% endif %}>
                 <td><input type="checkbox" name="comp_selected" value="{{ c.pk }}" class="chk-item"
                            data-monto="{{ c.monto_mostrar }}" {% if c.seleccionado %}checked{% endif %}></td>
                 <td>{{ c.fecha }}</td>
