@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
 from django.urls import reverse
-from .models import ComprobanteRenglon, Comprobante, ComprobanteRenglonDetalle
+from .models import ComprobanteRenglon, Comprobante, ComprobanteRenglonDetalle, ComprobanteUnidadDeMedida
 from entidades.models import Entidad
 from productos.models import ProductoDetalle
 from django.views.generic import DetailView, UpdateView
@@ -1465,14 +1465,29 @@ def comprobante_renglon_form(request, pk=None):
 
 
 def comprobante_renglon_listado(request):
-    """Listado/búsqueda de renglones de comprobante; puerta de entrada de 'Modificar'."""
+    """Listado/búsqueda de renglones de comprobante; puerta de entrada de 'Modificar'.
+
+    Filtros (todos opcionales y combinables): ID de renglón, ID de
+    comprobante, entidad (Comprobante.entidad_emisor -- la contraparte del
+    comprobante, sea compra o venta), producto y unidad de medida del
+    detalle del renglón (ComprobanteRenglonDetalle.unidad_de_medida). En
+    unidad, la opción "(sin unidad cargada)" trae los renglones sin detalle
+    o con detalle sin unidad -- útil para encontrar los que no pueden
+    aparecer en "Vincular por bloques" (agregado 30/09 a pedido de Gastón).
+    """
     renglones = (
-        ComprobanteRenglon.objects.select_related('comprobante', 'producto')
+        ComprobanteRenglon.objects.select_related(
+            'comprobante', 'comprobante__entidad_emisor', 'comprobante__tipo_comprobante',
+            'producto', 'renglon_detalle_comprobante', 'renglon_detalle_comprobante__unidad_de_medida',
+        )
         .order_by('-comprobante__fecha', '-id')
     )
 
     q_id = request.GET.get('id', '').strip()
     q_comprobante = request.GET.get('comprobante', '').strip()
+    q_entidad = request.GET.get('entidad', '').strip()
+    q_producto = request.GET.get('producto', '').strip()
+    q_unidad = request.GET.get('unidad', '').strip()
 
     if q_id:
         if q_id.isdigit():
@@ -1485,19 +1500,56 @@ def comprobante_renglon_listado(request):
         else:
             renglones = renglones.none()
 
+    entidad = Entidad.objects.filter(pk=q_entidad).first() if q_entidad.isdigit() else None
+    if q_entidad:
+        renglones = renglones.filter(comprobante__entidad_emisor=entidad) if entidad else renglones.none()
+
+    producto = ProductoDetalle.objects.filter(pk=q_producto).first() if q_producto.isdigit() else None
+    if q_producto:
+        renglones = renglones.filter(producto=producto) if producto else renglones.none()
+
+    if q_unidad == UNIDAD_FILTRO_SIN_UNIDAD:
+        renglones = renglones.filter(
+            Q(renglon_detalle_comprobante__isnull=True)
+            | Q(renglon_detalle_comprobante__unidad_de_medida__isnull=True)
+        )
+    elif q_unidad:
+        renglones = renglones.filter(renglon_detalle_comprobante__unidad_de_medida_id=q_unidad)
+
     renglones = aplicar_orden_queryset(request, renglones, {
         'id': 'id',
         'comprobante': 'comprobante_id',
         'fecha': 'comprobante__fecha',
+        'entidad': 'comprobante__entidad_emisor__nombre',
         'producto': 'producto__nombre',
+        'cantidad': 'renglon_detalle_comprobante__cantidad',
+        'unidad': 'renglon_detalle_comprobante__unidad_de_medida__nombre',
         'total': 'total',
     })
 
+    LIMITE = 200
+    renglones_pagina = list(renglones[:LIMITE + 1])
+    hay_mas = len(renglones_pagina) > LIMITE
+
     return render(request, 'comprobantes/comprobante_renglon_listado.html', {
-        'renglones': renglones[:200],
+        'renglones': renglones_pagina[:LIMITE],
+        'hay_mas': hay_mas,
+        'limite': LIMITE,
         'q_id': q_id,
         'q_comprobante': q_comprobante,
+        'q_entidad': q_entidad,
+        'q_producto': q_producto,
+        'q_unidad': q_unidad,
+        'entidad_texto': texto_entidad_buscador(entidad) if entidad else '',
+        'producto_texto': _texto_producto(producto) if producto else '',
+        'unidades_medida': ComprobanteUnidadDeMedida.objects.order_by('nombre'),
+        'unidad_sin_valor': UNIDAD_FILTRO_SIN_UNIDAD,
     })
+
+
+# Valor especial del filtro "Unidad de medida" del listado de renglones:
+# renglones sin ComprobanteRenglonDetalle o con el detalle sin unidad.
+UNIDAD_FILTRO_SIN_UNIDAD = '__sin__'
 
 
 def comprobante_renglon_eliminar(request, pk):

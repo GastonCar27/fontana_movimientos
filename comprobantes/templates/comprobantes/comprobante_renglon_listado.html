@@ -9,11 +9,39 @@
     <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
         <div class="col-auto">
             <label for="id_id" class="mb-1 small text-muted">ID renglón</label>
-            <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}">
+            <input type="text" id="id_id" name="id" class="form-control form-control-sm" style="width: 100px;" value="{{ q_id }}">
         </div>
         <div class="col-auto">
             <label for="id_comprobante" class="mb-1 small text-muted">ID comprobante</label>
-            <input type="text" id="id_comprobante" name="comprobante" class="form-control form-control-sm" value="{{ q_comprobante }}">
+            <input type="text" id="id_comprobante" name="comprobante" class="form-control form-control-sm" style="width: 110px;" value="{{ q_comprobante }}">
+        </div>
+        <div class="col-auto">
+            <label for="entidad-buscador" class="mb-1 small text-muted">Entidad</label>
+            <div class="buscador-wrapper" style="min-width: 260px;">
+                <input type="text" id="entidad-buscador" autocomplete="off" class="form-control form-control-sm"
+                       placeholder="Buscar por nombre o CUIT..." value="{{ entidad_texto }}">
+                <input type="hidden" id="id_entidad" name="entidad" value="{{ q_entidad }}">
+                <div id="entidad-resultados" class="buscador-resultados"></div>
+            </div>
+        </div>
+        <div class="col-auto">
+            <label for="producto-buscador" class="mb-1 small text-muted">Producto</label>
+            <div class="buscador-wrapper" style="min-width: 240px;">
+                <input type="text" id="producto-buscador" autocomplete="off" class="form-control form-control-sm"
+                       placeholder="Buscar por ID o nombre..." value="{{ producto_texto }}">
+                <input type="hidden" id="id_producto" name="producto" value="{{ q_producto }}">
+                <div id="producto-resultados" class="buscador-resultados"></div>
+            </div>
+        </div>
+        <div class="col-auto">
+            <label for="id_unidad" class="mb-1 small text-muted">Unidad de medida</label>
+            <select id="id_unidad" name="unidad" class="form-select form-select-sm">
+                <option value="">Todas</option>
+                <option value="{{ unidad_sin_valor }}" {% if q_unidad == unidad_sin_valor %}selected{% endif %}>(sin unidad cargada)</option>
+                {% for u in unidades_medida %}
+                <option value="{{ u.id }}" {% if q_unidad == u.id|stringformat:'s' %}selected{% endif %}>{{ u.nombre }}</option>
+                {% endfor %}
+            </select>
         </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
@@ -28,7 +56,10 @@
                     <th>{% sort_th 'id' 'ID' %}</th>
                     <th>{% sort_th 'comprobante' 'Comprobante' %}</th>
                     <th>{% sort_th 'fecha' 'Fecha' %}</th>
+                    <th>{% sort_th 'entidad' 'Entidad' %}</th>
                     <th>{% sort_th 'producto' 'Producto' %}</th>
+                    <th class="text-end">{% sort_th 'cantidad' 'Cantidad' %}</th>
+                    <th>{% sort_th 'unidad' 'Unidad' %}</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
                     <th class="text-center">Acciones</th>
                 </tr>
@@ -37,9 +68,12 @@
                 {% for r in renglones %}
                 <tr>
                     <td>{{ r.id }}</td>
-                    <td>{{ r.comprobante_id }}</td>
+                    <td>{{ r.comprobante_id }}{% if r.comprobante.tipo_comprobante %} <span class="text-muted small">({{ r.comprobante.tipo_comprobante }} {{ r.comprobante.numero }})</span>{% endif %}</td>
                     <td>{{ r.comprobante.fecha }}</td>
+                    <td>{{ r.comprobante.entidad_emisor|default_if_none:'' }}</td>
                     <td>{{ r.producto }}</td>
+                    <td class="text-end">{{ r.renglon_detalle_comprobante.cantidad|separador_miles }}</td>
+                    <td>{% if r.renglon_detalle_comprobante.unidad_de_medida %}{{ r.renglon_detalle_comprobante.unidad_de_medida.nombre }}{% else %}<span class="text-muted small">-</span>{% endif %}</td>
                     <td class="text-end">{{ r.total|separador_miles }}</td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_renglon_editar' r.pk %}">Editar</a>
@@ -48,11 +82,23 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="text-center text-muted py-4">No hay renglones cargados.</td>
+                    <td colspan="9" class="text-center text-muted py-4">No hay renglones con este filtro.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    {% if hay_mas %}
+    <p class="text-muted small">Se muestran los primeros {{ limite }} renglones; usá los filtros para acotar la búsqueda.</p>
+    {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('entidad-buscador', 'id_entidad', 'entidad-resultados',
+        '{% url "comprobantes:entidad_buscar" %}');
+    inicializarBuscador('producto-buscador', 'id_producto', 'producto-resultados',
+        '{% url "productos:buscar" %}');
+});
+</script>
 {% endblock %}
