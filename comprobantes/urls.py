@@ -20,8 +20,6 @@ urlpatterns=[
     ),
     path('<int:pk>/editar/', views.comprobante_form, name='comprobante_editar'),
     path('<int:pk>/eliminar/', views.comprobante_eliminar, name='comprobante_eliminar'),
-    path('<int:pk>/no-recibido/', views.comprobante_marcar_no_recibido, name='comprobante_marcar_no_recibido'),
-    path('<int:pk>/recibido/', views.comprobante_marcar_recibido, name='comprobante_marcar_recibido'),
     path('<int:pk>/exportar/excel/', views.comprobante_exportar_excel, name='comprobante_exportar_excel'),
     path('<int:pk>/exportar/pdf/', views.comprobante_exportar_pdf, name='comprobante_exportar_pdf'),
     path('entidad-buscar/', views.comprobante_entidad_buscar, name='entidad_buscar'),

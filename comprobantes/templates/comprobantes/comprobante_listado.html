@@ -79,7 +79,8 @@
             </thead>
             <tbody>
                 {% for c in comprobantes %}
-                <tr>
+                {# Comprobante marcado NO RECIBIDO: toda la fila en rojo (más la etiqueta en la columna Liquidación, porque el rojo solo también se usa para la diferencia de renglones). #}
+                <tr{% if c.marca_no_recibido %} class="table-danger"{% endif %}>
                     <td>{{ c.id }}</td>
                     <td>{{ c.fecha }}</td>
                     <td>{{ c.entidad_emisor }}</td>
@@ -104,7 +105,7 @@
                     </td>
                     <td class="small">
                         {% if c.marca_no_recibido %}
-                        <span class="badge bg-dark" title="Marcado el {{ c.marca_no_recibido.fecha_marcado|date:'d/m/Y H:i' }}{% if c.marca_no_recibido.usuario %} por {{ c.marca_no_recibido.usuario }}{% endif %}{% if c.marca_no_recibido.motivo %} — {{ c.marca_no_recibido.motivo }}{% endif %}">NO RECIBIDO</span>
+                        <span class="badge bg-danger" title="Marcado el {{ c.marca_no_recibido.fecha_marcado|date:'d/m/Y H:i' }}{% if c.marca_no_recibido.usuario %} por {{ c.marca_no_recibido.usuario }}{% endif %}{% if c.marca_no_recibido.motivo %} — {{ c.marca_no_recibido.motivo }}{% endif %}. Se cambia desde Editar.">NO RECIBIDO</span>
                         {% endif %}
                         {% for l in c.liquidaciones_validas %}
                         <a href="{% url 'liquidaciones:editar' l.pk %}" class="badge {% if l.tipo == 'pago' %}bg-success{% else %}bg-info text-dark{% endif %} text-decoration-none"
@@ -135,16 +136,6 @@
                                href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=cobro&comprobante={{ c.pk }}">Liquidar</a>
                             {% endif %}
                             <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
-                            {% if c.marca_no_recibido %}
-                            <form method="post" action="{% url 'comprobantes:comprobante_marcar_recibido' c.pk %}" class="d-inline">
-                                {% csrf_token %}
-                                <input type="hidden" name="next" value="{{ url_actual }}">
-                                <button type="submit" class="btn btn-sm btn-outline-dark" title="Sacar la marca NO RECIBIDO (por ejemplo, si al final llegó)">Marcar recibido</button>
-                            </form>
-                            {% else %}
-                            <a class="btn btn-sm btn-outline-dark" title="El comprobante figura en AFIP/ARCA pero nunca nos llegó: deja de contar para liquidaciones, cuenta corriente de productos y reportes"
-                               href="{% url 'comprobantes:comprobante_marcar_no_recibido' c.pk %}?next={{ url_actual|urlencode }}">No recibido</a>
-                            {% endif %}
                             <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
                             <a class="btn btn-sm btn-outline-success" title="Exportar a Excel"
                                href="{% url 'comprobantes:comprobante_exportar_excel' c.pk %}">Excel</a>

@@ -4,7 +4,6 @@ from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
 from django.urls import reverse
-from django.utils.http import url_has_allowed_host_and_scheme
 from .models import ComprobanteRenglon, Comprobante, ComprobanteRenglonDetalle, ComprobanteUnidadDeMedida, ComprobanteNoRecibido
 from entidades.models import Entidad
 from productos.models import ProductoDetalle
@@ -411,17 +410,51 @@ def comprobante_entidad_buscar(request):
 
 @transaction.atomic
 def comprobante_form(request, pk=None):
-    """Alta y modificación de un Comprobante (misma vista, pk=None para alta)."""
+    """Alta y modificación de un Comprobante (misma vista, pk=None para alta).
+
+    En la modificación (no en el alta) se puede además marcar / desmarcar
+    el comprobante como "NO RECIBIDO" (ver ComprobanteNoRecibido) -- se hace
+    acá y no con un botón en el listado a propósito (pedido de Gastón,
+    01/10/2026): es una acción poco frecuente y con consecuencias, así que
+    tiene que ser deliberada y con la advertencia a la vista.
+    """
     comprobante = get_object_or_404(Comprobante, pk=pk) if pk else None
+    marca_no_recibido = (
+        ComprobanteNoRecibido.objects.filter(comprobante=comprobante).first() if comprobante else None
+    )
+    error_no_recibido = None
 
     if request.method == 'POST':
         form = forms.ComprobanteForm(request.POST, instance=comprobante)
-        if form.is_valid():
+        quiere_no_recibido = bool(comprobante) and request.POST.get('no_recibido') == 'on'
+        motivo_no_recibido = request.POST.get('motivo_no_recibido', '').strip()[:255]
+        if quiere_no_recibido and not marca_no_recibido:
+            motivos = _motivos_no_puede_marcarse_no_recibido(comprobante)
+            if motivos:
+                error_no_recibido = 'No se puede marcar como NO RECIBIDO: ' + '; '.join(motivos) + '.'
+        if form.is_valid() and not error_no_recibido:
             nuevo = form.save(commit=False)
             if comprobante is None:
                 nuevo.id = _siguiente_id_comprobante()
             nuevo.save()
-            messages.success(request, f'Comprobante {nuevo.id} guardado correctamente.')
+            texto = f'Comprobante {nuevo.id} guardado correctamente.'
+            if comprobante is not None:
+                if quiere_no_recibido and not marca_no_recibido:
+                    ComprobanteNoRecibido.objects.create(
+                        comprobante=nuevo,
+                        motivo=motivo_no_recibido,
+                        usuario=(request.user.get_username() if getattr(request, 'user', None)
+                                 and request.user.is_authenticated else ''),
+                    )
+                    texto += (' Quedó marcado como NO RECIBIDO: ya no se tiene en cuenta para '
+                              'liquidaciones, cuenta corriente de productos ni reportes.')
+                elif quiere_no_recibido and marca_no_recibido and motivo_no_recibido != marca_no_recibido.motivo:
+                    marca_no_recibido.motivo = motivo_no_recibido
+                    marca_no_recibido.save(update_fields=['motivo'])
+                elif not quiere_no_recibido and marca_no_recibido:
+                    marca_no_recibido.delete()
+                    texto += ' Se le sacó la marca NO RECIBIDO: vuelve a contar como un comprobante normal.'
+            messages.success(request, texto)
             return redirect('comprobantes:comprobante_modificar')
     else:
         form = forms.ComprobanteForm(instance=comprobante)
@@ -437,10 +470,21 @@ def comprobante_form(request, pk=None):
             if entidad_actual.cuit else entidad_actual.nombre
         )
 
+    if request.method == 'POST' and comprobante:
+        no_recibido_tildado = request.POST.get('no_recibido') == 'on'
+        motivo_mostrar = request.POST.get('motivo_no_recibido', '')
+    else:
+        no_recibido_tildado = bool(marca_no_recibido)
+        motivo_mostrar = marca_no_recibido.motivo if marca_no_recibido else ''
+
     return render(request, 'comprobantes/comprobante_form.html', {
         'form': form,
         'comprobante': comprobante,
         'entidad_texto': entidad_texto,
+        'marca_no_recibido': marca_no_recibido,
+        'no_recibido_tildado': no_recibido_tildado,
+        'motivo_no_recibido': motivo_mostrar,
+        'error_no_recibido': error_no_recibido,
     })
 
 
@@ -643,63 +687,6 @@ def _motivos_no_puede_marcarse_no_recibido(comprobante):
     if LiquidacionProductoComprobanteRenglon.objects.filter(renglon__comprobante=comprobante).exists():
         motivos.append('tiene renglones incluidos en una liquidación de productos')
     return motivos
-
-
-def _redirect_siguiente(request, por_defecto):
-    siguiente = request.POST.get('next') or request.GET.get('next') or ''
-    if siguiente and url_has_allowed_host_and_scheme(siguiente, allowed_hosts={request.get_host()}):
-        return redirect(siguiente)
-    return redirect(por_defecto)
-
-
-def comprobante_marcar_no_recibido(request, pk):
-    """Marca un comprobante como "NO RECIBIDO" (ver ComprobanteNoRecibido):
-    GET muestra la confirmación con el motivo, POST la guarda."""
-    comprobante = get_object_or_404(
-        Comprobante.objects.select_related('entidad_emisor', 'tipo_comprobante'), pk=pk,
-    )
-    ya_marcado = ComprobanteNoRecibido.objects.filter(comprobante=comprobante).first()
-    motivos = [] if ya_marcado else _motivos_no_puede_marcarse_no_recibido(comprobante)
-    if request.method == 'POST':
-        if ya_marcado:
-            messages.info(request, f'El comprobante {comprobante.pk} ya estaba marcado como NO RECIBIDO.')
-        elif motivos:
-            messages.error(
-                request,
-                f'No se puede marcar el comprobante {comprobante.pk} como NO RECIBIDO: ' + '; '.join(motivos) + '.',
-            )
-        else:
-            ComprobanteNoRecibido.objects.create(
-                comprobante=comprobante,
-                motivo=request.POST.get('motivo', '').strip()[:255],
-                usuario=(request.user.get_username() if getattr(request, 'user', None)
-                         and request.user.is_authenticated else ''),
-            )
-            messages.success(
-                request,
-                f'Comprobante {comprobante.pk} marcado como NO RECIBIDO: ya no se va a tener en cuenta '
-                'para liquidaciones, cuenta corriente de productos ni reportes.',
-            )
-        return _redirect_siguiente(request, 'comprobantes:comprobante_modificar')
-    return render(request, 'comprobantes/comprobante_no_recibido_confirm.html', {
-        'comprobante': comprobante,
-        'ya_marcado': ya_marcado,
-        'motivos': motivos,
-        'next': request.GET.get('next', ''),
-    })
-
-
-def comprobante_marcar_recibido(request, pk):
-    """Saca la marca "NO RECIBIDO" (por ejemplo, si al final el comprobante
-    llegó). Sólo por POST."""
-    comprobante = get_object_or_404(Comprobante, pk=pk)
-    if request.method == 'POST':
-        borrados, _ = ComprobanteNoRecibido.objects.filter(comprobante=comprobante).delete()
-        if borrados:
-            messages.success(request, f'Comprobante {comprobante.pk}: se sacó la marca NO RECIBIDO.')
-        else:
-            messages.info(request, f'El comprobante {comprobante.pk} no estaba marcado como NO RECIBIDO.')
-    return _redirect_siguiente(request, 'comprobantes:comprobante_modificar')
 
 
 def comprobante_eliminar(request, pk):

@@ -31,6 +31,50 @@
         {% endif %}
     {% endfor %}
 
+    {% if comprobante %}
+    {# Marca "NO RECIBIDO" (ComprobanteNoRecibido): sólo al editar. #}
+    <fieldset class="border rounded p-3 my-3" style="max-width: 760px;">
+        <legend class="float-none w-auto px-2 fs-6 mb-0">Recepción del comprobante</legend>
+        {% if error_no_recibido %}
+        <div class="alert alert-danger py-2">{{ error_no_recibido }}</div>
+        {% endif %}
+        {% if marca_no_recibido %}
+        <div class="alert alert-danger py-2">
+            Marcado como <strong>NO RECIBIDO</strong> el {{ marca_no_recibido.fecha_marcado|date:"d/m/Y H:i" }}{% if marca_no_recibido.usuario %} por {{ marca_no_recibido.usuario }}{% endif %}.
+            Para sacar la marca (si al final llegó), destildá la casilla y guardá.
+        </div>
+        {% endif %}
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="no_recibido" id="id_no_recibido" {% if no_recibido_tildado %}checked{% endif %}>
+            <label class="form-check-label fw-bold" for="id_no_recibido">NO RECIBIDO (figura en AFIP/ARCA pero nunca nos llegó)</label>
+        </div>
+        <div id="bloque-no-recibido" class="mt-2" {% if not no_recibido_tildado %}style="display:none;"{% endif %}>
+            <div class="alert alert-warning py-2 mb-2">
+                <strong>Atención:</strong> un comprobante NO RECIBIDO deja de tenerse en cuenta en
+                <strong>liquidaciones</strong> (no se ofrece para liquidar ni figura como pendiente), en la
+                <strong>cuenta corriente de productos</strong> (sus renglones no se pueden vincular ni suman como
+                pendientes) y en los <strong>reportes y rankings</strong> de comprobantes (salvo que se tilde
+                "Incluir no recibidos"), y no va a entrar en ninguna exportación de IVA futura. El comprobante
+                <strong>no se borra</strong>: se puede desmarcar acá mismo si después llega. No se puede marcar si
+                ya está en una liquidación o si sus renglones ya están vinculados a movimientos.
+                {% if comprobante.tipo_comprobante and 'mipyme' in comprobante.tipo_comprobante.nombre|lower %}
+                <br><strong>Es una Factura de Crédito Electrónica MiPyME:</strong> además hay que rechazarla en el
+                Registro FCE de ARCA dentro del plazo, si no queda aceptada aunque acá esté marcada.
+                {% endif %}
+            </div>
+            <label for="id_motivo_no_recibido">Motivo (opcional)</label><br>
+            <input type="text" name="motivo_no_recibido" id="id_motivo_no_recibido" maxlength="255" size="70"
+                   value="{{ motivo_no_recibido }}"
+                   placeholder="Ej.: el proveedor no la envió / emitida por error, pedimos nota de crédito">
+        </div>
+    </fieldset>
+    <script>
+    document.getElementById('id_no_recibido').addEventListener('change', function () {
+        document.getElementById('bloque-no-recibido').style.display = this.checked ? '' : 'none';
+    });
+    </script>
+    {% endif %}
+
     <button type="submit">Guardar</button>
 </form>
 
