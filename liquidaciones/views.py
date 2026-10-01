@@ -409,7 +409,21 @@ def item_sin_liquidar_buscar(request):
     es_numero = q.isdigit()
 
     # --- Movimientos de caja ---
-    movimientos = MovimientoCaja.objects.filter(liquidaciones__isnull=True)
+    # Con 'tipo' (pago/cobro de la liquidación que se está armando, lo manda
+    # form.html) se excluyen sólo los que ya están en una liquidación de ESE
+    # tipo -- igual criterio que _armar_items. Caso real (01/10/2026,
+    # liquidación "a cuenta" de Gastón): un cheque de terceros que ya está
+    # en la liquidación de COBRO que lo trajo tiene que poder agregarse a
+    # una liquidación de PAGO para darlo como entregado a un proveedor
+    # (Seguros, Scholles Omar, Labandozcka...) aunque todavía no estén sus
+    # facturas; antes no aparecía en este buscador y no había forma de
+    # sacarlo de "Cheques recibidos sin pago". Sin 'tipo': como siempre,
+    # sólo los que no están en ninguna liquidación.
+    tipo_liq = request.GET.get('tipo', '').strip()
+    if tipo_liq in TIPOS_LIQUIDACION_VALIDOS:
+        movimientos = MovimientoCaja.objects.exclude(liquidaciones__liquidacion__tipo=tipo_liq)
+    else:
+        movimientos = MovimientoCaja.objects.filter(liquidaciones__isnull=True)
     if entidad_excluir_id.isdigit():
         movimientos = movimientos.exclude(receptor_id=int(entidad_excluir_id))
 
@@ -424,14 +438,23 @@ def item_sin_liquidar_buscar(request):
 
     movimientos = (
         movimientos.filter(filtro_mov)
-        .select_related('receptor', 'tipo', 'rel_numero')
+        .select_related('receptor', 'tipo', 'rel_numero', 'emisor_relacion__id_entidad')
         .order_by('-emision')[:20]
     )
     for m in movimientos:
+        # Un cheque de terceros tiene a Fontana como receptor: mostrar quién
+        # lo emitió, que es lo que identifica al cheque.
+        entidad_mostrar = m.receptor
+        if m.receptor_id == ENTIDAD_PROPIA_ID:
+            try:
+                if m.emisor_relacion and m.emisor_relacion.id_entidad_id:
+                    entidad_mostrar = m.emisor_relacion.id_entidad
+            except ObjectDoesNotExist:
+                pass
         resultados.append({
             'tipo': 'mov',
             'id': m.id,
-            'entidad': str(m.receptor) if m.receptor else 'Sin entidad',
+            'entidad': str(entidad_mostrar) if entidad_mostrar else 'Sin entidad',
             'fecha': m.emision.strftime('%d/%m/%Y') if m.emision else '',
             'detalle': ' - '.join(filter(None, [
                 m.tipo.nombre if m.tipo_id else None,

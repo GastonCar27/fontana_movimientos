@@ -461,7 +461,11 @@ function agregarOtroItem(item) {
 
         timeoutId = setTimeout(function () {
             const entidadExcluir = entidadIdInput ? entidadIdInput.value : '';
-            fetch(`{% url 'liquidaciones:item_sin_liquidar_buscar' %}?q=${encodeURIComponent(q)}&entidad_excluir=${encodeURIComponent(entidadExcluir)}`)
+            // Tipo (pago/cobro) de esta liquidación: el buscador excluye sólo
+            // lo que ya está en una liquidación de ESE tipo.
+            const tipoInput = document.querySelector('[name="tipo"]');
+            const tipoLiq = tipoInput ? tipoInput.value : '';
+            fetch(`{% url 'liquidaciones:item_sin_liquidar_buscar' %}?q=${encodeURIComponent(q)}&entidad_excluir=${encodeURIComponent(entidadExcluir)}&tipo=${encodeURIComponent(tipoLiq)}`)
                 .then(resp => resp.json())
                 .then(data => {
                     resultados.innerHTML = '';
