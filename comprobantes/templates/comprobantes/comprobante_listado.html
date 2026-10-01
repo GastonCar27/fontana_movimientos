@@ -47,6 +47,14 @@
             <label class="form-check-label" for="id_sin_liq_cobro" title="Ventas (Fontana emisora) que todavía no están en ninguna liquidación de cobro">Solo sin liquidación de cobro</label>
         </div>
         <div class="col-auto">
+            <label for="id_recepcion" class="mb-1 small text-muted">Recepción</label>
+            <select id="id_recepcion" name="recepcion" class="form-select form-select-sm">
+                <option value="">Todos</option>
+                <option value="recibidos" {% if q_recepcion == 'recibidos' %}selected{% endif %}>Solo recibidos</option>
+                <option value="no_recibidos" {% if q_recepcion == 'no_recibidos' %}selected{% endif %}>Solo NO recibidos</option>
+            </select>
+        </div>
+        <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'comprobantes:comprobante_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
         </div>
@@ -95,6 +103,9 @@
                         {% endif %}
                     </td>
                     <td class="small">
+                        {% if c.marca_no_recibido %}
+                        <span class="badge bg-dark" title="Marcado el {{ c.marca_no_recibido.fecha_marcado|date:'d/m/Y H:i' }}{% if c.marca_no_recibido.usuario %} por {{ c.marca_no_recibido.usuario }}{% endif %}{% if c.marca_no_recibido.motivo %} — {{ c.marca_no_recibido.motivo }}{% endif %}">NO RECIBIDO</span>
+                        {% endif %}
                         {% for l in c.liquidaciones_validas %}
                         <a href="{% url 'liquidaciones:editar' l.pk %}" class="badge {% if l.tipo == 'pago' %}bg-success{% else %}bg-info text-dark{% endif %} text-decoration-none"
                            title="Liquidación de {{ l.get_tipo_display }} del {{ l.fecha|default_if_none:'' }}">{{ l.tipo|capfirst }} {{ l.numero|default:l.pk }}</a>
@@ -108,7 +119,8 @@
                     <td style="min-width: 240px;">
                         {# Botones con flex-wrap: si no entran en una línea bajan a la siguiente en vez de quedar tapados a la derecha. Las acciones "pendientes" (agregar renglón / liquidar) van primero para que siempre se vean. #}
                         <div class="d-flex flex-wrap gap-1 justify-content-end">
-                            {% if not c.cantidad_renglones %}
+                            {% if c.marca_no_recibido %}
+                            {% elif not c.cantidad_renglones %}
                             <a class="btn btn-sm btn-warning" title="Este comprobante todavía no tiene ningún renglón cargado"
                                href="{% url 'comprobantes:comprobante_renglon_alta' %}?comprobante={{ c.pk }}">Agregar renglón</a>
                             {% elif c.renglones_no_coinciden %}
@@ -123,6 +135,16 @@
                                href="{% url 'liquidaciones:alta' %}?entidad={{ c.entidad_emisor_id }}&tipo=cobro&comprobante={{ c.pk }}">Liquidar</a>
                             {% endif %}
                             <a class="btn btn-sm btn-outline-primary" href="{% url 'comprobantes:comprobante_editar' c.pk %}">Editar</a>
+                            {% if c.marca_no_recibido %}
+                            <form method="post" action="{% url 'comprobantes:comprobante_marcar_recibido' c.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ url_actual }}">
+                                <button type="submit" class="btn btn-sm btn-outline-dark" title="Sacar la marca NO RECIBIDO (por ejemplo, si al final llegó)">Marcar recibido</button>
+                            </form>
+                            {% else %}
+                            <a class="btn btn-sm btn-outline-dark" title="El comprobante figura en AFIP/ARCA pero nunca nos llegó: deja de contar para liquidaciones, cuenta corriente de productos y reportes"
+                               href="{% url 'comprobantes:comprobante_marcar_no_recibido' c.pk %}?next={{ url_actual|urlencode }}">No recibido</a>
+                            {% endif %}
                             <a class="btn btn-sm btn-outline-danger" href="{% url 'comprobantes:comprobante_eliminar' c.pk %}">Eliminar</a>
                             <a class="btn btn-sm btn-outline-success" title="Exportar a Excel"
                                href="{% url 'comprobantes:comprobante_exportar_excel' c.pk %}">Excel</a>

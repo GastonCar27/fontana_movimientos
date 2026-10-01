@@ -160,6 +160,9 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     comprobantes = list(
         comprobantes_qs
         .exclude(id__in=comp_excl)
+        # Los marcados "NO RECIBIDO" (comprobantes.ComprobanteNoRecibido) no
+        # se ofrecen, salvo que ya estén en ESTA liquidación (edición).
+        .filter(Q(no_recibido__isnull=True) | Q(id__in=list(comp_tipo.keys())))
         .select_related('tipo_de_cambio', 'tipo_comprobante')
         .order_by('-fecha')
     )
@@ -438,7 +441,8 @@ def item_sin_liquidar_buscar(request):
         })
 
     # --- Comprobantes ---
-    comprobantes = Comprobante.objects.filter(liquidaciones__isnull=True)
+    # (los marcados "NO RECIBIDO" tampoco se ofrecen acá)
+    comprobantes = Comprobante.objects.filter(liquidaciones__isnull=True, no_recibido__isnull=True)
     if entidad_excluir_id.isdigit():
         comprobantes = comprobantes.exclude(entidad_emisor_id=int(entidad_excluir_id))
 
@@ -964,7 +968,8 @@ def _entidad_propia():
 def _comprobantes_sin_liquidar(request):
     form = ComprobantesSinLiquidarFiltroForm(request.GET or None)
     comprobantes = (
-        Comprobante.objects.filter(liquidaciones__isnull=True)
+        # Un comprobante marcado "NO RECIBIDO" no está pendiente de liquidar.
+        Comprobante.objects.filter(liquidaciones__isnull=True, no_recibido__isnull=True)
         .select_related('entidad_emisor', 'tipo_comprobante')
         .order_by('-fecha', '-id')
     )

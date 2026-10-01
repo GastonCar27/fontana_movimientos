@@ -195,3 +195,49 @@ class ComprobanteRenglonDetalle(models.Model):
     class Meta:
         managed = False
         db_table = 'comprobante_renglon_detalle'
+
+
+class ComprobanteNoRecibido(models.Model):
+    """
+    Marca "NO RECIBIDO" de un Comprobante (agregado 2026-10-01, pedido de
+    Gastón): comprobantes que se cargaron automáticamente desde AFIP/ARCA
+    pero que nunca llegaron físicamente -- el emisor no hizo llegar la
+    factura, o la emitió mal --, y que por eso NO deben tomarse en cuenta
+    como pendientes.
+
+    Un comprobante con esta marca:
+      - no se ofrece en Liquidaciones (alta/edición, "Sin liquidar",
+        buscador de "otros comprobantes");
+      - sus renglones no aparecen en Cuenta corriente de productos
+        ("Vincular por bloques", "Vincular renglón", "Pendientes por
+        producto");
+      - no suma en los reportes/rankings de comprobantes, salvo que se tilde
+        "Incluir no recibidos";
+      - y no tiene que entrar en ninguna futura exportación de IVA para
+        ARCA (hoy el sistema no genera ninguna).
+
+    Tabla NUEVA y aparte (managed=True) a propósito, para no tocar la tabla
+    legada 'comprobante' que se carga desde AFIP. Sin FK real en la base
+    (db_constraint=False), igual que el resto de las relaciones contra
+    tablas legadas, para no depender del tipo exacto de 'comprobante.id'.
+    Para "desmarcar" (si al final llegó) se borra la fila.
+    """
+    id = models.AutoField(primary_key=True)
+    comprobante = models.OneToOneField(
+        Comprobante,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name='no_recibido',
+    )
+    fecha_marcado = models.DateTimeField('Marcado el', auto_now_add=True)
+    motivo = models.CharField('Motivo', max_length=255, blank=True)
+    usuario = models.CharField('Marcado por', max_length=150, blank=True)
+
+    class Meta:
+        managed = True
+        db_table = 'comprobante_no_recibido'
+        verbose_name = 'comprobante no recibido'
+        verbose_name_plural = 'comprobantes no recibidos'
+
+    def __str__(self):
+        return f'Comprobante {self.comprobante_id} NO RECIBIDO'

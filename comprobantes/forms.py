@@ -146,6 +146,13 @@ class ComprobanteReporteForm(forms.Form):
         label='Solo sin renglones cargados',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+    # Agregado 2026-10-01: los comprobantes marcados "NO RECIBIDO"
+    # (ComprobanteNoRecibido) quedan afuera salvo que se tilde esto.
+    incluir_no_recibidos = forms.BooleanField(
+        required=False,
+        label='Incluir no recibidos',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +309,13 @@ class RankingEntidadesForm(forms.Form):
         label='Excluir Fontana (entidad propia)',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+    # Agregado 2026-10-01: los comprobantes marcados "NO RECIBIDO"
+    # (ComprobanteNoRecibido) quedan afuera salvo que se tilde esto.
+    incluir_no_recibidos = forms.BooleanField(
+        required=False,
+        label='Incluir no recibidos',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -328,4 +342,11 @@ class ComprobanteRenglonReporteForm(forms.Form):
     fecha_hasta = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    # Agregado 2026-10-01: los comprobantes marcados "NO RECIBIDO"
+    # (ComprobanteNoRecibido) quedan afuera salvo que se tilde esto.
+    incluir_no_recibidos = forms.BooleanField(
+        required=False,
+        label='Incluir no recibidos',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )

@@ -40,6 +40,12 @@
                         {{ form.excluir_fontana.label }}
                     </label>
                 </div>
+                <div class="col-12 col-md-3 form-check ms-1">
+                    {{ form.incluir_no_recibidos }}
+                    <label class="form-check-label" for="{{ form.incluir_no_recibidos.id_for_label }}" title="Comprobantes marcados como NO RECIBIDO en Comprobantes > Modificar">
+                        {{ form.incluir_no_recibidos.label }}
+                    </label>
+                </div>
                 <div class="col-12 col-lg-2 d-flex gap-2">
                     <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
                     {% if filtros_activos %}

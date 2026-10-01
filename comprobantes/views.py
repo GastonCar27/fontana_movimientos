@@ -4,7 +4,8 @@ from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
 from django.urls import reverse
-from .models import ComprobanteRenglon, Comprobante, ComprobanteRenglonDetalle, ComprobanteUnidadDeMedida
+from django.utils.http import url_has_allowed_host_and_scheme
+from .models import ComprobanteRenglon, Comprobante, ComprobanteRenglonDetalle, ComprobanteUnidadDeMedida, ComprobanteNoRecibido
 from entidades.models import Entidad
 from productos.models import ProductoDetalle
 from django.views.generic import DetailView, UpdateView
@@ -446,7 +447,7 @@ def comprobante_form(request, pk=None):
 def comprobante_listado(request):
     """Listado/búsqueda de comprobantes; es la puerta de entrada de 'Modificar'."""
     comprobantes = (
-        Comprobante.objects.select_related('entidad_emisor', 'tipo_comprobante')
+        Comprobante.objects.select_related('entidad_emisor', 'tipo_comprobante', 'no_recibido')
         .order_by('-fecha', '-id')
     )
 
@@ -469,6 +470,9 @@ def comprobante_listado(request):
     # (ventas: Fontana emisora). Si se tildan los dos, trae ambos.
     q_sin_liq_pago = request.GET.get('sin_liq_pago', '').strip()
     q_sin_liq_cobro = request.GET.get('sin_liq_cobro', '').strip()
+    # Agregado 2026-10-01: filtro por la marca "NO RECIBIDO"
+    # (ComprobanteNoRecibido). Vacío = todos.
+    q_recepcion = request.GET.get('recepcion', '').strip()
 
     # Entidad: texto libre (nombre o CUIT que contenga lo tipeado, como
     # siempre) o, si se eligió una de la lista del buscador, esa entidad
@@ -521,7 +525,13 @@ def comprobante_listado(request):
         comprobantes = comprobantes.exclude(suma_renglones=Coalesce(
             F('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=18, decimal_places=2),
         ))
+    if q_recepcion == 'recibidos':
+        comprobantes = comprobantes.filter(no_recibido__isnull=True)
+    elif q_recepcion == 'no_recibidos':
+        comprobantes = comprobantes.filter(no_recibido__isnull=False)
     if q_sin_liq_pago or q_sin_liq_cobro:
+        # Un comprobante NO RECIBIDO nunca está "pendiente de liquidar".
+        comprobantes = comprobantes.filter(no_recibido__isnull=True)
         # Import local: liquidaciones.models ya importa comprobantes.models.
         from liquidaciones.models import LiquidacionComprobante
         # El JOIN con liquidacion (liquidacion__tipo) deja afuera solo los
@@ -577,6 +587,13 @@ def comprobante_listado(request):
         c.puede_liquidar_pago = c.fontana_receptora and not c.liquidado_en_pago
         # Ventas (Fontana emisora): lo que importa es la liquidación de cobro.
         c.puede_liquidar_cobro = not c.fontana_receptora and not c.liquidado_en_cobro
+        # Marca "NO RECIBIDO": no se liquida ni se le agregan renglones.
+        try:
+            c.marca_no_recibido = c.no_recibido
+        except ObjectDoesNotExist:
+            c.marca_no_recibido = None
+        if c.marca_no_recibido:
+            c.puede_liquidar_pago = c.puede_liquidar_cobro = False
 
     return render(request, 'comprobantes/comprobante_listado.html', {
         'comprobantes': comprobantes,
@@ -590,7 +607,99 @@ def comprobante_listado(request):
         'q_no_coincide': q_no_coincide,
         'q_sin_liq_pago': q_sin_liq_pago,
         'q_sin_liq_cobro': q_sin_liq_cobro,
+        'q_recepcion': q_recepcion,
+        'url_actual': request.get_full_path(),
     })
+
+
+def _motivos_no_puede_marcarse_no_recibido(comprobante):
+    """Motivos por los que un comprobante NO puede marcarse "NO RECIBIDO"
+    (lista vacía = se puede): si ya está en una liquidación, o si sus
+    renglones ya están vinculados a movimientos / en una liquidación de
+    productos -- primero hay que sacarlo de ahí, si no esos totales
+    quedarían contando algo que se supone que nunca llegó."""
+    from liquidaciones.models import LiquidacionComprobante
+    from cuenta_corriente_productos.models import (
+        ComprobanteRenglonMovimiento, LiquidacionProductoComprobanteRenglon,
+    )
+    motivos = []
+    liquidaciones = []
+    for lc in LiquidacionComprobante.objects.filter(comprobante=comprobante).select_related('liquidacion'):
+        try:
+            liquidaciones.append(lc.liquidacion)
+        except ObjectDoesNotExist:
+            continue  # vínculo a una liquidación que ya no existe: no cuenta
+    if liquidaciones:
+        motivos.append(
+            'está incluido en la(s) liquidación(es) '
+            + ', '.join(str(l.numero or l.pk) for l in liquidaciones)
+            + ' -- sacalo de ahí primero'
+        )
+    if ComprobanteRenglonMovimiento.objects.filter(renglon__comprobante=comprobante).exists():
+        motivos.append(
+            'tiene renglones vinculados a movimientos de productos (Cuenta corriente de productos) '
+            '-- desvinculalos primero'
+        )
+    if LiquidacionProductoComprobanteRenglon.objects.filter(renglon__comprobante=comprobante).exists():
+        motivos.append('tiene renglones incluidos en una liquidación de productos')
+    return motivos
+
+
+def _redirect_siguiente(request, por_defecto):
+    siguiente = request.POST.get('next') or request.GET.get('next') or ''
+    if siguiente and url_has_allowed_host_and_scheme(siguiente, allowed_hosts={request.get_host()}):
+        return redirect(siguiente)
+    return redirect(por_defecto)
+
+
+def comprobante_marcar_no_recibido(request, pk):
+    """Marca un comprobante como "NO RECIBIDO" (ver ComprobanteNoRecibido):
+    GET muestra la confirmación con el motivo, POST la guarda."""
+    comprobante = get_object_or_404(
+        Comprobante.objects.select_related('entidad_emisor', 'tipo_comprobante'), pk=pk,
+    )
+    ya_marcado = ComprobanteNoRecibido.objects.filter(comprobante=comprobante).first()
+    motivos = [] if ya_marcado else _motivos_no_puede_marcarse_no_recibido(comprobante)
+    if request.method == 'POST':
+        if ya_marcado:
+            messages.info(request, f'El comprobante {comprobante.pk} ya estaba marcado como NO RECIBIDO.')
+        elif motivos:
+            messages.error(
+                request,
+                f'No se puede marcar el comprobante {comprobante.pk} como NO RECIBIDO: ' + '; '.join(motivos) + '.',
+            )
+        else:
+            ComprobanteNoRecibido.objects.create(
+                comprobante=comprobante,
+                motivo=request.POST.get('motivo', '').strip()[:255],
+                usuario=(request.user.get_username() if getattr(request, 'user', None)
+                         and request.user.is_authenticated else ''),
+            )
+            messages.success(
+                request,
+                f'Comprobante {comprobante.pk} marcado como NO RECIBIDO: ya no se va a tener en cuenta '
+                'para liquidaciones, cuenta corriente de productos ni reportes.',
+            )
+        return _redirect_siguiente(request, 'comprobantes:comprobante_modificar')
+    return render(request, 'comprobantes/comprobante_no_recibido_confirm.html', {
+        'comprobante': comprobante,
+        'ya_marcado': ya_marcado,
+        'motivos': motivos,
+        'next': request.GET.get('next', ''),
+    })
+
+
+def comprobante_marcar_recibido(request, pk):
+    """Saca la marca "NO RECIBIDO" (por ejemplo, si al final el comprobante
+    llegó). Sólo por POST."""
+    comprobante = get_object_or_404(Comprobante, pk=pk)
+    if request.method == 'POST':
+        borrados, _ = ComprobanteNoRecibido.objects.filter(comprobante=comprobante).delete()
+        if borrados:
+            messages.success(request, f'Comprobante {comprobante.pk}: se sacó la marca NO RECIBIDO.')
+        else:
+            messages.info(request, f'El comprobante {comprobante.pk} no estaba marcado como NO RECIBIDO.')
+    return _redirect_siguiente(request, 'comprobantes:comprobante_modificar')
 
 
 def comprobante_eliminar(request, pk):
@@ -1051,11 +1160,16 @@ def comprobante_reporte(request):
     )
 
     entidad = None
+    if not form.is_valid():
+        # Sin filtros enviados: los NO RECIBIDOS igual quedan afuera.
+        comprobantes = comprobantes.filter(no_recibido__isnull=True)
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
         sin_renglones = form.cleaned_data.get('sin_renglones')
+        if not form.cleaned_data.get('incluir_no_recibidos'):
+            comprobantes = comprobantes.filter(no_recibido__isnull=True)
         if entidad:
             comprobantes = comprobantes.filter(entidad_emisor=entidad)
         if fecha_desde:
@@ -1120,6 +1234,9 @@ def _comprobantes_ranking_filtrados(request):
     if rol not in dict(forms.RankingEntidadesForm.ROL_CHOICES):
         rol = forms.RankingEntidadesForm.ROL_EMISORA
     comprobantes = comprobantes.filter(es_emisor=1 if rol == forms.RankingEntidadesForm.ROL_EMISORA else 0)
+    # Los NO RECIBIDOS no suman, salvo que se tilde "Incluir no recibidos".
+    if not (form.is_valid() and form.cleaned_data.get('incluir_no_recibidos')):
+        comprobantes = comprobantes.filter(no_recibido__isnull=True)
 
     filtros_activos = False
     if form.is_valid():
@@ -1681,6 +1798,9 @@ def comprobante_renglon_reporte(request):
     )
 
     producto = None
+    # Renglones de comprobantes NO RECIBIDOS: afuera, salvo que se pida.
+    if not (form.is_valid() and form.cleaned_data.get('incluir_no_recibidos')):
+        renglones = renglones.filter(comprobante__no_recibido__isnull=True)
     if form.is_valid():
         producto = form.cleaned_data.get('producto')
         fecha_desde = form.cleaned_data.get('fecha_desde')

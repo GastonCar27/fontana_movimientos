@@ -730,6 +730,9 @@ def vincular_por_bloques(request):
             .filter(
                 producto_id=producto_ren.pk,
                 comprobante__entidad_emisor_id=entidad.pk,
+                # Comprobante marcado "NO RECIBIDO" (comprobantes.
+                # ComprobanteNoRecibido): no se ofrece para vincular.
+                comprobante__no_recibido__isnull=True,
             )
             # Un renglón incluido en una liquidación ya está "cerrado":
             # igual que no se lo puede desvincular sin revertir esa
@@ -1050,7 +1053,7 @@ def vincular_renglon(request, movimiento_id):
         filtro = Q(comprobante__numero__icontains=q) | Q(comprobante__entidad_emisor__nombre__icontains=q)
         renglones = (
             ComprobanteRenglon.objects
-            .filter(filtro, producto=movimiento.producto)
+            .filter(filtro, producto=movimiento.producto, comprobante__no_recibido__isnull=True)
             .exclude(vinculos_movimiento__movimiento=movimiento)
             # Igual que en "Vincular por bloques": un renglón ya incluido
             # en una liquidación no se ofrece para vincular más -- ese
@@ -1674,6 +1677,8 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
                 producto_id__in=productos_con_movimientos,
             )
         )
+        # Renglones de comprobantes marcados "NO RECIBIDO": no cuentan.
+        .filter(comprobante__no_recibido__isnull=True)
         .select_related(
             'producto', 'comprobante__entidad_emisor', 'renglon_detalle_comprobante__unidad_de_medida',
         )

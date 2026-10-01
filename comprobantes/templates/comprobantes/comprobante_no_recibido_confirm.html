@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "comprobantes/menu.html" %}
+    <h4 class="mt-3 mb-3">Marcar comprobante como NO RECIBIDO</h4>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <strong>Comprobante {{ comprobante.id }}</strong>
+            {% if comprobante.tipo_comprobante %} &middot; {{ comprobante.tipo_comprobante }}{% endif %}
+            {% if comprobante.numero %} N° {{ comprobante.punto_de_venta|default_if_none:"" }}{% if comprobante.punto_de_venta %}-{% endif %}{{ comprobante.numero }}{% endif %}
+            {% if comprobante.entidad_emisor %}<br>Entidad: {{ comprobante.entidad_emisor }}{% endif %}
+            {% if comprobante.fecha %}<br>Fecha: {{ comprobante.fecha }}{% endif %}
+            <br>Total: <strong>{{ comprobante.total|separador_miles }}</strong>
+        </div>
+    </div>
+
+    {% if ya_marcado %}
+    <div class="alert alert-info">
+        Este comprobante ya está marcado como NO RECIBIDO desde el {{ ya_marcado.fecha_marcado|date:"d/m/Y H:i" }}{% if ya_marcado.usuario %} (por {{ ya_marcado.usuario }}){% endif %}{% if ya_marcado.motivo %}: {{ ya_marcado.motivo }}{% endif %}.
+    </div>
+    <a href="{{ next|default:'/comprobante/modificar/' }}" class="btn btn-outline-secondary">Volver</a>
+    {% elif motivos %}
+    <div class="alert alert-danger">
+        No se puede marcar como NO RECIBIDO porque:
+        <ul class="mb-0">
+            {% for m in motivos %}<li>{{ m }}</li>{% endfor %}
+        </ul>
+    </div>
+    <a href="{{ next|default:'/comprobante/modificar/' }}" class="btn btn-outline-secondary">Volver</a>
+    {% else %}
+    <div class="alert alert-warning">
+        Un comprobante NO RECIBIDO deja de tenerse en cuenta en liquidaciones, en la cuenta corriente de
+        productos y en los reportes/rankings de comprobantes (y no va a entrar en ninguna futura
+        exportación de IVA). El comprobante NO se borra: si después llega, se le puede sacar la marca con
+        "Marcar recibido".
+    </div>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="mb-3">
+            <label for="id_motivo" class="form-label">Motivo (opcional)</label>
+            <input type="text" id="id_motivo" name="motivo" maxlength="255" class="form-control"
+                   placeholder="Ej.: el proveedor no la envió / emitida por error, pedimos nota de crédito">
+        </div>
+        <button type="submit" class="btn btn-dark">Marcar como NO RECIBIDO</button>
+        <a href="{{ next|default:'/comprobante/modificar/' }}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
