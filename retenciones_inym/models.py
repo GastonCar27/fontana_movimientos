@@ -133,14 +133,10 @@ def subquery_no_aplicado(campo_id_retencion):
     )
 
 
-class RetencionInymNoAplicacion(models.Model):
-    id = models.IntegerField(primary_key=True)
-    id_certificado_inym_no_aplicacion = models.IntegerField(blank=True, null=True)
-    total = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = 'retencion_inym_no_aplicacion'
+# RetencionInymNoAplicacion (tabla legacy `retencion_inym_no_aplicacion`) se
+# sacó el 02/10/2026: la reemplazan CertificadoNoAplicacionInym y
+# RetencionInymNoAplicacionVinculo (más abajo). La migración 0006 borra la
+# tabla de la base SÓLO si está vacía y nada la referencia.
 
 
 class RetencionInymOrigen(models.Model):
@@ -242,8 +238,8 @@ class RetencionInymHistorico(models.Model):
 # lo realmente retenido es IMPORTE - IMPORTE_NO_RETENIDO.
 #
 # Tablas nuevas, managed=True (python manage.py migrate retenciones_inym).
-# La tabla legacy `retencion_inym_no_aplicacion` (RetencionInymNoAplicacion,
-# más arriba) no se usa: no se sabe con qué criterio se llenaba.
+# Reemplaza a la tabla legacy `retencion_inym_no_aplicacion` (ver migración
+# 0006, que la borra si está vacía y sin vínculos).
 # ---------------------------------------------------------------------------
 
 class CertificadoNoAplicacionInym(models.Model):

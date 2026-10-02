@@ -71,8 +71,8 @@ con el mismo criterio que ya document repository.py del lado escritorio.
 IDCERT_NO_APLICACION/IMPORTE_NO_RETENIDO SÍ se usan desde el 02/10/2026:
 vinculan la retención con su certificado de no aplicación (tablas nuevas
 certificado_no_aplicacion_inym / retencion_inym_cert_no_aplicacion, ver
-_vincular_no_aplicacion y models.py); la tabla legacy
-`retencion_inym_no_aplicacion` sigue sin usarse.
+_vincular_no_aplicacion y models.py), que reemplazan a la tabla legacy
+`retencion_inym_no_aplicacion` (la migración 0006 la borra si está vacía).
 """
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation

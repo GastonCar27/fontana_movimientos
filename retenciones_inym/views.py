@@ -1054,17 +1054,32 @@ def certificados_no_aplicacion(request):
 
 def certificados_no_aplicacion_importar(request):
     from .importador_no_aplicacion import importar_certificados, leer_certificados
+    import datetime as _dt
     resultado = None
     error = None
+    fecha_desde_txt = request.POST.get('fecha_desde', '').strip() if request.method == 'POST' else ''
+    fecha_hasta_txt = request.POST.get('fecha_hasta', '').strip() if request.method == 'POST' else ''
     if request.method == 'POST':
         archivo = request.FILES.get('archivo')
-        if not archivo:
+        try:
+            fecha_desde = _dt.date.fromisoformat(fecha_desde_txt) if fecha_desde_txt else None
+            fecha_hasta = _dt.date.fromisoformat(fecha_hasta_txt) if fecha_hasta_txt else None
+        except ValueError:
+            fecha_desde = fecha_hasta = None
+            error = 'Fecha desde/hasta no válida.'
+        if error:
+            pass
+        elif fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+            error = 'La fecha desde no puede ser posterior a la fecha hasta.'
+        elif not archivo:
             error = 'Elegí el archivo Excel exportado de INYM.'
         elif archivo.name.rsplit('.', 1)[-1].lower() not in ('xls', 'xlsx'):
             error = 'El archivo tiene que ser .xls o .xlsx.'
         else:
             try:
-                resultado = importar_certificados(leer_certificados(archivo, archivo.name))
+                resultado = importar_certificados(
+                    leer_certificados(archivo, archivo.name), fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+                )
             except ErrorImportacion as exc:
                 error = str(exc)
             else:
@@ -1075,5 +1090,6 @@ def certificados_no_aplicacion_importar(request):
                 )
     return render(request, 'retenciones_inym/certificados_no_aplicacion_importar.html', {
         'resultado': resultado, 'error': error,
+        'fecha_desde': fecha_desde_txt, 'fecha_hasta': fecha_hasta_txt,
     })
 

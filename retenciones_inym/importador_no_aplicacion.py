@@ -116,9 +116,20 @@ def leer_certificados(archivo, nombre_archivo):
     return resultado
 
 
-def importar_certificados(filas):
+def importar_certificados(filas, fecha_desde=None, fecha_hasta=None):
+    """fecha_desde/fecha_hasta (opcionales, 02/10/2026): sólo se importan los
+    certificados cuya FECHA cae en ese rango (ambos extremos incluidos); los
+    que no tienen fecha quedan afuera si se puso algún extremo."""
+    validas = [f for f in filas if '_error' not in f]
+    if fecha_desde or fecha_hasta:
+        filas = [f for f in filas if '_error' in f or (
+            f.get('fecha') is not None
+            and (not fecha_desde or f['fecha'] >= fecha_desde)
+            and (not fecha_hasta or f['fecha'] <= fecha_hasta)
+        )]
     resultado = {
-        'total_en_archivo': len([f for f in filas if '_error' not in f]),
+        'total_en_archivo': len(validas),
+        'en_rango_fecha': len([f for f in filas if '_error' not in f]),
         'creados': 0,
         'actualizados': 0,
         'sin_cambios': 0,

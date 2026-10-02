@@ -15,6 +15,17 @@
         {% csrf_token %}
         <label for="id_archivo" class="form-label">Archivo Excel</label>
         <input type="file" id="id_archivo" name="archivo" accept=".xls,.xlsx" class="form-control form-control-sm mb-3" required>
+        <div class="row g-2 mb-1">
+            <div class="col-6">
+                <label for="id_fecha_desde" class="form-label small mb-1">Fecha desde (opcional)</label>
+                <input type="date" id="id_fecha_desde" name="fecha_desde" value="{{ fecha_desde }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-6">
+                <label for="id_fecha_hasta" class="form-label small mb-1">Fecha hasta (opcional)</label>
+                <input type="date" id="id_fecha_hasta" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control form-control-sm">
+            </div>
+        </div>
+        <p class="form-text small mb-3">Sólo se importan los certificados cuya fecha (columna FECHA) esté en ese rango. Vacío = todos los del archivo.</p>
         <div>
             <button type="submit" class="btn btn-primary btn-sm">Importar</button>
             <a href="{% url 'retenciones_inym:certificados_no_aplicacion' %}" class="btn btn-outline-secondary btn-sm">Volver</a>
@@ -26,6 +37,7 @@
         <h6>Resultado</h6>
         <ul class="mb-0">
             <li>Certificados en el archivo: <strong>{{ resultado.total_en_archivo }}</strong></li>
+            <li>Dentro del rango de fechas elegido: <strong>{{ resultado.en_rango_fecha }}</strong></li>
             <li>Nuevos: <strong>{{ resultado.creados }}</strong></li>
             <li>Actualizados: <strong>{{ resultado.actualizados }}</strong></li>
             <li>Sin cambios: <strong>{{ resultado.sin_cambios }}</strong></li>
