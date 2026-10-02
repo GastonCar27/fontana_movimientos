@@ -5,10 +5,19 @@
         {% if modo == 'alta' %}Nuevo {{ config.nombre_singular }}{% else %}Editar {{ config.nombre_singular }}{% endif %}
     </h4>
 
-    {% if objeto %}<p class="text-muted">ID: {{ objeto.id }}</p>{% endif %}
+    {% if objeto %}<p class="text-muted">ID actual: {{ objeto.id }}</p>{% endif %}
+
+    {% if modo == 'modificar' and id_editable %}
+    <div class="alert alert-warning py-2 small">
+        Podés cambiar el ID. Si lo cambiás, los registros que usan este tipo
+        (por ejemplo los comprobantes) pasan automáticamente al ID nuevo.
+        No se puede elegir un ID que ya tenga otro registro.
+    </div>
+    {% endif %}
 
     <form method="post">
         {% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger py-2 small">{{ form.non_field_errors|striptags }}</div>{% endif %}
         {% for field in form %}
         <div class="form-group mb-3">
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>

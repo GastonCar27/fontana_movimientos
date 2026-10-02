@@ -14,6 +14,7 @@
     <button type="submit">Generar backup ahora</button>
 </form>
 <p>El archivo se guarda en el servidor con el nombre <code>fontana_dd-mm-aaaa_hh-mm.sql</code> y además se descarga automáticamente al generarlo.</p>
+<p><a href="{% url 'respaldo:importar' %}">Importar una base de datos (restaurar un backup)</a> — pide confirmación y una clave especial.</p>
 
 <h2>Backups existentes</h2>
 {% if backups_existentes %}

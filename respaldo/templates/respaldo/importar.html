@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="col" style="max-width: 820px;">
+    <h4 class="mt-3 mb-3">Importar base de datos</h4>
+
+    <div class="alert alert-danger">
+        <strong>Atención:</strong> esto importa un archivo <code>.sql</code> sobre la base de datos
+        <strong>que está usando el sistema ahora mismo</strong>:
+        <div class="fs-5 my-2"><strong>{{ nombre_bd }}</strong> en <strong>{{ host_bd }}</strong>{% if es_bd_local %} <span class="badge bg-secondary">local / desarrollo</span>{% else %} <span class="badge bg-danger">servidor</span>{% endif %}</div>
+        Las tablas que vengan en el archivo <strong>reemplazan</strong> a las que hay en esa base (un backup
+        generado por este sistema trae todas). Lo cargado después de la fecha del archivo se pierde.
+        Antes de importar se hace <strong>automáticamente un backup</strong> de la base actual; si ese
+        backup falla, no se importa nada.
+    </div>
+
+    {% if not clave_configurada %}
+    <div class="alert alert-warning">
+        Todavía no hay una <strong>clave de importación</strong> configurada, así que no se puede importar.
+        Se define una sola vez en el servidor, desde la carpeta del proyecto:
+        <pre class="mb-0 mt-2"><code>python manage.py clave_importacion</code></pre>
+    </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" class="card card-body">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="id_archivo" class="form-label">Archivo .sql a importar</label>
+            <input type="file" name="archivo" id="id_archivo" accept=".sql" class="form-control" required {% if not clave_configurada %}disabled{% endif %}>
+        </div>
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="entiendo" id="id_entiendo" required {% if not clave_configurada %}disabled{% endif %}>
+            <label class="form-check-label" for="id_entiendo">
+                Entiendo que se van a reemplazar los datos de la base <strong>{{ nombre_bd }}</strong>.
+            </label>
+        </div>
+        <div class="mb-3">
+            <label for="id_confirmar_nombre" class="form-label">Para confirmar, escribí el nombre de la base (<code>{{ nombre_bd }}</code>)</label>
+            <input type="text" name="confirmar_nombre" id="id_confirmar_nombre" autocomplete="off" class="form-control" required {% if not clave_configurada %}disabled{% endif %}>
+        </div>
+        <div class="mb-3">
+            <label for="id_clave" class="form-label">Clave de importación</label>
+            <input type="password" name="clave" id="id_clave" autocomplete="new-password" class="form-control" required {% if not clave_configurada %}disabled{% endif %}>
+        </div>
+        <div>
+            <button type="submit" class="btn btn-danger" id="btn-importar" {% if not clave_configurada %}disabled{% endif %}>Importar</button>
+            <a href="{% url 'respaldo:backup' %}" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
+        <p class="text-muted small mt-3 mb-0">
+            La importación puede tardar varios minutos según el tamaño del archivo; no cierres la página
+            mientras tanto. Cada intento queda registrado en <code>backups/importaciones.log</code>. Si la
+            importación cambia la tabla de sesiones, puede que tengas que volver a iniciar sesión.
+        </p>
+    </form>
+</div>
+<script>
+document.querySelector('form[enctype="multipart/form-data"]').addEventListener('submit', function (e) {
+    if (!confirm('¿Seguro? Se van a reemplazar los datos de la base {{ nombre_bd|escapejs }} con el archivo elegido.')) {
+        e.preventDefault();
+        return;
+    }
+    var btn = document.getElementById('btn-importar');
+    btn.disabled = true;
+    btn.textContent = 'Importando… no cierres la página';
+});
+</script>
+{% endblock %}

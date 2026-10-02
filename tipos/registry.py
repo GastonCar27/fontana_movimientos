@@ -70,6 +70,29 @@ TIPOS_REGISTRY = [
             ('abreviatura', 'Abreviatura'),
         ],
         'orden': 'nombre',
+        # Pedido de Gastón (02/10/2026): el ID local de cada tipo de
+        # comprobante tiene que poder coincidir con el código de AFIP
+        # (ej. "082" -> ID 82). Se puede elegir en el ALTA y también
+        # cambiar en la MODIFICACIÓN, pero nunca pisando el ID de otro
+        # tipo ya existente (ver tipos/views.py).
+        'id_editable': True,
+        'id_editable_en_modificar': True,
+        # En el alta, si el ID queda vacío y el "ID AFIP" es numérico y
+        # ese número está libre, se usa como ID (ej. "082" -> 82).
+        'id_sugerido_desde': 'id_afip',
+        'ayuda_id': (
+            'Conviene que coincida con el código de AFIP (ej. ID AFIP "082" → ID 82). '
+            'No se puede usar un ID que ya tenga otro tipo de comprobante.'
+        ),
+        # Columnas de otras tablas que guardan el ID de este tipo:
+        # (app, modelo, campo, descripción para el mensaje). Al cambiar el
+        # ID en la modificación se actualizan en la misma transacción
+        # (comprobante.id_tipo_comp además tiene FK con ON UPDATE CASCADE
+        # en la base; retencion.tipo_comp_origen no tiene FK).
+        'referencias_id': [
+            ('comprobantes', 'Comprobante', 'tipo_comprobante_id', 'comprobantes'),
+            ('retenciones', 'Retencion', 'tipo_comp_origen', 'retenciones'),
+        ],
     },
     {
         'slug': 'cuenta-tipo',
@@ -109,6 +132,10 @@ TIPOS_REGISTRY = [
         # mano (opcional, ver tipos/views.py::_form_class_para_alta).
         # Ningún otro catálogo del registry usa esto por ahora.
         'id_editable': True,
+        'ayuda_id': (
+            'Dejalo vacío para asignar el próximo disponible automáticamente. '
+            'Completalo si tiene que coincidir con el ID que usa INYM para este tipo de tarifa.'
+        ),
     },
     {
         'slug': 'item-tipo',
