@@ -66,10 +66,13 @@ Cómo funciona, en criollo:
      y qué filas no se pudieron cargar (con el motivo).
 
 Las columnas OPER_ORIGEN/IDEMPRESA_ORIGEN/NOMBRE_ORIGEN/TIPO_OPER_ORIGEN
-(tabla `retencion_inym_origen`), IDCERT_NO_APLICACION/IMPORTE_NO_RETENIDO
-(tabla `retencion_inym_no_aplicacion`) y TASA_SINDICAL se ignoran a
-propósito, con el mismo criterio que ya document repository.py del lado
-escritorio: esas tablas no las usa ninguna vista de este sistema.
+(tabla `retencion_inym_origen`) y TASA_SINDICAL se ignoran a propósito,
+con el mismo criterio que ya document repository.py del lado escritorio.
+IDCERT_NO_APLICACION/IMPORTE_NO_RETENIDO SÍ se usan desde el 02/10/2026:
+vinculan la retención con su certificado de no aplicación (tablas nuevas
+certificado_no_aplicacion_inym / retencion_inym_cert_no_aplicacion, ver
+_vincular_no_aplicacion y models.py); la tabla legacy
+`retencion_inym_no_aplicacion` sigue sin usarse.
 """
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
@@ -79,7 +82,48 @@ from django.db.models import Max
 
 from entidades.models import Entidad, Inym_Operador, Inym_Operador_Tipo
 
-from .models import InymRetencionTipo, RetencionInym
+from .models import (
+    CertificadoNoAplicacionInym, InymRetencionTipo, RetencionInym, RetencionInymNoAplicacionVinculo,
+)
+
+AGREGADO_DESDE_EXCEL_RETENCIONES = 'excel_retenciones_inym'
+
+
+def _vincular_no_aplicacion(retencion, fila, resultado):
+    """Si la fila del Excel de retenciones trae IDCERT_NO_APLICACION e
+    IMPORTE_NO_RETENIDO, vincula (o actualiza) ese certificado con la
+    retención: lo realmente retenido pasa a ser IMPORTE - IMPORTE_NO_RETENIDO
+    (pedido de Gastón, 02/10/2026). Si el certificado todavía no existe en
+    el sistema se crea con lo que se sabe (número); el resto de sus datos
+    se completa al importar el listado de certificados de INYM."""
+    numero = fila.get('id_cert_no_aplicacion')
+    importe = fila.get('importe_no_retenido')
+    if not numero or importe is None or importe == 0:
+        return
+    certificado, creado = CertificadoNoAplicacionInym.objects.get_or_create(
+        numero=numero, defaults={'agregado_desde': AGREGADO_DESDE_EXCEL_RETENCIONES},
+    )
+    if creado:
+        resultado['certificados_creados'] += 1
+    vinculo = RetencionInymNoAplicacionVinculo.objects.filter(retencion=retencion, certificado=certificado).first()
+    if vinculo is None:
+        RetencionInymNoAplicacionVinculo.objects.create(
+            retencion=retencion, certificado=certificado, importe=importe,
+            agregado_desde=AGREGADO_DESDE_EXCEL_RETENCIONES,
+        )
+        resultado['no_aplicacion_vinculadas'] += 1
+        resultado['no_aplicacion_detalle'].append(
+            f'Retención INYM {retencion.id} (cert. INYM {retencion.id_certificado_inym}): '
+            f'certificado de no aplicación N° {numero} por {importe}'
+        )
+    elif vinculo.importe != importe:
+        resultado['no_aplicacion_detalle'].append(
+            f'Retención INYM {retencion.id}: certificado de no aplicación N° {numero} -- '
+            f'importe actualizado de {vinculo.importe} a {importe}'
+        )
+        vinculo.importe = importe
+        vinculo.save(update_fields=['importe'])
+        resultado['no_aplicacion_actualizadas'] += 1
 
 COLUMNAS_REQUERIDAS = [
     'IDCERTIFICADO', 'FECHA', 'PERIODO', 'TARIFA', 'IDTIPO_TARIFA', 'TIPO_TARIFA',
@@ -205,6 +249,10 @@ def _fila_desde_valores(valores, numero_fila_excel):
         'kgs': _parse_decimal(valores.get('KILOS')),
         'total': _parse_decimal(valores.get('IMPORTE')),
         'eliminacion': _parse_fecha(valores.get('FECHA_ELIMINACION')),
+        # Certificado de no aplicación (02/10/2026): columnas opcionales
+        # (si el Excel no las trae, quedan en None y no se vincula nada).
+        'id_cert_no_aplicacion': _parse_int(valores.get('IDCERT_NO_APLICACION')) or None,
+        'importe_no_retenido': _parse_decimal(valores.get('IMPORTE_NO_RETENIDO')),
     }
 
 
@@ -402,6 +450,11 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
         'operadores_creados': [],
         'tipos_tarifa_no_encontrados': set(),
         'filas_con_error': [(f['fila_excel'], f['_error']) for f in filas if '_error' in f],
+        # Certificados de no aplicación (02/10/2026)
+        'no_aplicacion_vinculadas': 0,
+        'no_aplicacion_actualizadas': 0,
+        'certificados_creados': 0,
+        'no_aplicacion_detalle': [],
     }
 
     filas_validas = [f for f in filas if '_error' not in f]
@@ -449,6 +502,9 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
                 # completar/reportar diferencias (views.py::_agregado_desde_tras_editar).
                 if (registro_existente.agregado_desde or '').startswith(AGREGADO_DESDE_MANUAL):
                     _actualizar_desde_excel(registro_existente, fila, contexto, resultado)
+                # El certificado de no aplicación se vincula también en las
+                # retenciones que ya estaban cargadas (al reimportar).
+                _vincular_no_aplicacion(registro_existente, fila, resultado)
                 continue
 
             tipo_tarifa = tipos_por_id.get(fila['id_tipo_tarifa'])
@@ -505,5 +561,6 @@ def importar_filas(filas, fecha_desde=None, fecha_hasta=None):
             siguiente_id_retencion += 1
             existentes_por_clave[clave] = nueva_retencion
             resultado['importadas'] += 1
+            _vincular_no_aplicacion(nueva_retencion, fila, resultado)
 
     return resultado

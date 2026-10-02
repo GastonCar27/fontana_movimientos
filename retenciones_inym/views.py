@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import ExtractMonth, ExtractYear
 from django.http import JsonResponse
@@ -17,7 +18,10 @@ from .forms import (
 )
 from .importador import ErrorImportacion, importar_filas, leer_filas_excel
 from .importador_historico import importar_filas_historico
-from .models import InymRetencionTipo, RetencionInym, RetencionInymHistorico
+from .models import (
+    CertificadoNoAplicacionInym, InymRetencionTipo, RetencionInym, RetencionInymHistorico,
+    RetencionInymNoAplicacionVinculo,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +56,28 @@ def _form_a_datos(cleaned_data):
     datos = dict(cleaned_data)
     datos.pop('operador_emisor_nombre', None)
     datos.pop('operador_retenido_nombre', None)
+    # Certificado de no aplicación: se guarda aparte (ver _guardar_no_aplicacion).
+    datos.pop('cert_no_aplicacion', None)
+    datos.pop('importe_no_aplicado', None)
     return datos
+
+
+def _guardar_no_aplicacion(registro, cleaned_data):
+    """Guarda el certificado de no aplicación elegido en el form (02/10/2026):
+    deja vinculado SÓLO ese certificado con ese importe (si se sacó o se
+    cambió, se borra el vínculo anterior). Sin certificado elegido, la
+    retención queda sin descuento."""
+    cert = cleaned_data.get('cert_no_aplicacion')
+    importe = cleaned_data.get('importe_no_aplicado')
+    vinculos = RetencionInymNoAplicacionVinculo.objects.filter(retencion=registro)
+    if cert is None:
+        vinculos.delete()
+        return
+    vinculos.exclude(certificado=cert).delete()
+    RetencionInymNoAplicacionVinculo.objects.update_or_create(
+        retencion=registro, certificado=cert,
+        defaults={'importe': importe, 'agregado_desde': 'retenciones_inym_app'},
+    )
 
 
 def operador_inym_buscar(request):
@@ -134,7 +159,7 @@ def _retencion_inym_listado_filtrado(request):
         'id_tipo_tarifa',
         'operador_emisor__entidad', 'operador_emisor__tipo_operador',
         'operador_retenido__entidad', 'operador_retenido__tipo_operador',
-    )
+    ).prefetch_related('no_aplicaciones__certificado')
     # Pedido de Gastón (24/09/2026): filtro de fecha "desde/hasta" en vez de
     # una fecha exacta -- mismo criterio que ChequesRecibidosSinPagoFiltroForm
     # (movimientos_caja), ambos extremos opcionales e independientes.
@@ -193,6 +218,7 @@ def _filas_retencion_inym_listado(registros):
         'CUIT emisor', 'Emisor', 'Tipo oper. emisor',
         'CUIT retenido', 'Retenido', 'Tipo oper. retenido',
         'Kgs', 'Tarifa', 'Total', 'Eliminación (INYM)', 'N° cert. INYM', 'Agregado desde',
+        'Cert. no aplicación', 'No retenido', 'Retenido neto',
     ]
     filas = [
         [
@@ -207,6 +233,9 @@ def _filas_retencion_inym_listado(registros):
             float(r.tarifa) if r.tarifa is not None else None,
             float(r.total) if r.total is not None else None,
             r.eliminacion, r.id_certificado_inym, r.agregado_desde or '',
+            r.certificados_no_aplicacion_texto,
+            float(r.importe_no_aplicado) if r.importe_no_aplicado else None,
+            float(r.importe_neto) if r.total is not None else None,
         ]
         for r in registros
     ]
@@ -218,8 +247,8 @@ def _filas_retencion_inym_listado(registros):
         # miles), y la Tarifa puede tener hasta 6 (pedido de Gastón,
         # 24/09/2026 -- ver forms.py). Kgs y Total sí son montos/pesos de
         # toda la vida, siguen en 2 decimales.
-        'columnas_numericas': {9, 11},  # Kgs, Total
-        'anchos': [0.7, 0.7, 1.1, 1.0, 1.6, 1.0, 1.0, 1.6, 1.0, 0.7, 0.7, 0.9, 0.9, 0.8, 1.3],
+        'columnas_numericas': {9, 11, 16, 17},  # Kgs, Total, No retenido, Neto
+        'anchos': [0.7, 0.7, 1.1, 1.0, 1.6, 1.0, 1.0, 1.6, 1.0, 0.7, 0.7, 0.9, 0.9, 0.8, 1.3, 0.8, 0.8, 0.9],
     }
 
 
@@ -240,10 +269,12 @@ def retencion_inym_alta(request):
         form = RetencionInymForm(request.POST)
         if form.is_valid():
             nuevo_id = _siguiente_id_retencion_inym()
-            RetencionInym.objects.create(
-                id=nuevo_id, agregado_desde='retenciones_inym_app',
-                **_form_a_datos(form.cleaned_data),
-            )
+            with transaction.atomic():
+                registro = RetencionInym.objects.create(
+                    id=nuevo_id, agregado_desde='retenciones_inym_app',
+                    **_form_a_datos(form.cleaned_data),
+                )
+                _guardar_no_aplicacion(registro, form.cleaned_data)
             messages.success(request, 'La retención INYM se guardó correctamente.')
             return redirect('retenciones_inym:listado')
     else:
@@ -263,13 +294,25 @@ def retencion_inym_modificar(request, pk):
         )
         return redirect('retenciones_inym:listado')
 
+    vinculos_na = list(RetencionInymNoAplicacionVinculo.objects.filter(retencion=registro).select_related('certificado'))
+    vinculo_na = vinculos_na[0] if vinculos_na else None
+    if len(vinculos_na) > 1:
+        messages.warning(
+            request,
+            'Esta retención tiene más de un certificado de no aplicación vinculado ('
+            + ', '.join(f'N° {v.certificado.numero}: {v.importe}' for v in vinculos_na)
+            + '). Este formulario maneja uno solo: si guardás, queda sólo el que esté elegido abajo.',
+        )
+
     if request.method == 'POST':
         form = RetencionInymForm(request.POST, instance_id=registro.id)
         if form.is_valid():
             for campo, valor in _form_a_datos(form.cleaned_data).items():
                 setattr(registro, campo, valor)
             registro.agregado_desde = _agregado_desde_tras_editar(registro.agregado_desde)
-            registro.save()
+            with transaction.atomic():
+                registro.save()
+                _guardar_no_aplicacion(registro, form.cleaned_data)
             messages.success(request, 'La retención INYM se modificó correctamente.')
             return redirect('retenciones_inym:listado')
     else:
@@ -286,6 +329,8 @@ def retencion_inym_modificar(request, pk):
             'total': registro.total,
             'eliminacion': registro.eliminacion,
             'id_certificado_inym': registro.id_certificado_inym,
+            'cert_no_aplicacion': vinculo_na.certificado_id if vinculo_na else None,
+            'importe_no_aplicado': vinculo_na.importe if vinculo_na else None,
         })
 
     return render(request, 'retenciones_inym/retencion_inym_form.html', {
@@ -962,3 +1007,73 @@ def retencion_inym_analisis_kgs_mensual_pdf(request):
     mensual = _pivot_tipo_tarifa_mes(qs)
     resultado = _filas_analisis_kgs_mensual(mensual)
     return pdf_response('analisis_kgs_inym_mensual', 'Kgs INYM por mes y tipo de tarifa', resultado)
+
+
+# ---------------------------------------------------------------------------
+# Certificados de no aplicación de INYM (pedido de Gastón, 02/10/2026).
+# Ver models.py::CertificadoNoAplicacionInym e importador_no_aplicacion.py.
+# ---------------------------------------------------------------------------
+
+def certificados_no_aplicacion(request):
+    q_numero = request.GET.get('numero', '').strip()
+    q_valida = request.GET.get('valida', '').strip()
+    q_estado = request.GET.get('estado', 'vigentes').strip()
+    q_disponible = request.GET.get('disponible', '').strip()
+
+    qs = CertificadoNoAplicacionInym.objects.prefetch_related('aplicaciones__retencion')
+    if q_numero.isdigit():
+        qs = qs.filter(numero=int(q_numero))
+    if q_valida:
+        qs = qs.filter(nombre_valida__icontains=q_valida)
+    if q_estado == 'vigentes':
+        qs = qs.filter(fecha_eliminacion__isnull=True)
+    elif q_estado == 'eliminados':
+        qs = qs.filter(fecha_eliminacion__isnull=False)
+
+    certificados = list(qs.order_by('-fecha', '-numero'))
+    for c in certificados:
+        c.aplicado = c.importe_aplicado
+        c.disponible = c.saldo
+    if q_disponible == 'con_saldo':
+        certificados = [c for c in certificados if c.disponible is None or c.disponible > 0]
+    elif q_disponible == 'sin_usar':
+        certificados = [c for c in certificados if not c.aplicado]
+    elif q_disponible == 'usados':
+        certificados = [c for c in certificados if c.aplicado]
+
+    totales = {
+        'total': sum((c.total or Decimal('0') for c in certificados), Decimal('0')),
+        'aplicado': sum((c.aplicado for c in certificados), Decimal('0')),
+    }
+    return render(request, 'retenciones_inym/certificados_no_aplicacion.html', {
+        'certificados': certificados[:1000],
+        'totales': totales,
+        'q_numero': q_numero, 'q_valida': q_valida, 'q_estado': q_estado, 'q_disponible': q_disponible,
+    })
+
+
+def certificados_no_aplicacion_importar(request):
+    from .importador_no_aplicacion import importar_certificados, leer_certificados
+    resultado = None
+    error = None
+    if request.method == 'POST':
+        archivo = request.FILES.get('archivo')
+        if not archivo:
+            error = 'Elegí el archivo Excel exportado de INYM.'
+        elif archivo.name.rsplit('.', 1)[-1].lower() not in ('xls', 'xlsx'):
+            error = 'El archivo tiene que ser .xls o .xlsx.'
+        else:
+            try:
+                resultado = importar_certificados(leer_certificados(archivo, archivo.name))
+            except ErrorImportacion as exc:
+                error = str(exc)
+            else:
+                messages.success(
+                    request,
+                    f"Certificados importados: {resultado['creados']} nuevos, {resultado['actualizados']} "
+                    f"actualizados, {resultado['sin_cambios']} sin cambios.",
+                )
+    return render(request, 'retenciones_inym/certificados_no_aplicacion_importar.html', {
+        'resultado': resultado, 'error': error,
+    })
+

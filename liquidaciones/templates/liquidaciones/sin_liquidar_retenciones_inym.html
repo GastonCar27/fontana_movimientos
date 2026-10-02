@@ -46,7 +46,7 @@
     <tr>
       <th>ID</th><th>Fecha</th><th>Entidad emisora</th><th>Operador INYM emisor</th>
       <th>Entidad retenida</th><th>Operador INYM retenido</th>
-      <th>Kgs</th><th>Tarifa</th><th>Eliminación</th><th>Total</th><th>Acción</th>
+      <th>Kgs</th><th>Tarifa</th><th>Eliminación</th><th>Total</th><th>No retenido (cert.)</th><th>Neto</th><th>Acción</th>
     </tr>
   </thead>
   <tbody>
@@ -62,6 +62,8 @@
       <td>{{ ri.tarifa|default:"-" }}</td>
       <td>{{ ri.eliminacion|default:"-" }}</td>
       <td>{{ ri.total }}</td>
+      <td>{% if ri.importe_no_aplicado %}{{ ri.importe_no_aplicado }} (cert. {{ ri.certificados_no_aplicacion_texto }}){% else %}-{% endif %}</td>
+      <td><strong>{{ ri.importe_neto }}</strong></td>
       <td>
         {% if ri.entidad_liquidar_id %}
           <a class="btn btn-sm btn-success" href="{% url 'liquidaciones:alta' %}?entidad={{ ri.entidad_liquidar_id }}">LIQUIDAR</a>
@@ -71,7 +73,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="11">No hay retenciones INYM sin liquidar.</td></tr>
+    <tr><td colspan="13">No hay retenciones INYM sin liquidar.</td></tr>
     {% endfor %}
   </tbody>
 </table>

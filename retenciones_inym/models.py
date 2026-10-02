@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from entidades.models import Inym_Operador
 # Create your models here.
@@ -87,6 +89,48 @@ class RetencionInym(models.Model):
 
     def __str__(self):
         return f'Id.:{self.id} {self.fecha} Receptor:{self.operador_retenido} $:{self.total}'
+
+    # --- Certificados de no aplicación (02/10/2026, pedido de Gastón) ---
+    # 'total' es el importe BRUTO de la retención (kgs x tarifa, columna
+    # IMPORTE del Excel de INYM). Si la retención tiene vinculado uno o más
+    # certificados de no aplicación (RetencionInymNoAplicacionVinculo, columna
+    # IMPORTE_NO_RETENIDO del Excel), lo realmente retenido es
+    # total - importe no aplicado. Liquidaciones usa SIEMPRE el neto.
+
+    @property
+    def importe_no_aplicado(self):
+        return sum((v.importe or Decimal('0') for v in self.no_aplicaciones.all()), Decimal('0'))
+
+    @property
+    def importe_neto(self):
+        return (self.total or Decimal('0')) - self.importe_no_aplicado
+
+    @property
+    def certificados_no_aplicacion_texto(self):
+        return ', '.join(str(v.certificado.numero) for v in self.no_aplicaciones.all())
+
+
+def subquery_no_aplicado(campo_id_retencion):
+    """Expresión SQL con la suma de lo no aplicado (certificados de no
+    aplicación) de la retención INYM cuyo id está en `campo_id_retencion`
+    (un OuterRef: ej. 'retencion_inym_id' desde LiquidacionRetencionInym, o
+    'pk' desde RetencionInym). 0 si no tiene ninguno."""
+    from django.db.models import DecimalField, OuterRef, Subquery, Sum, Value
+    from django.db.models.functions import Coalesce
+    dec = DecimalField(max_digits=20, decimal_places=2)
+    return Coalesce(
+        Subquery(
+            RetencionInymNoAplicacionVinculo.objects
+            .filter(retencion_id=OuterRef(campo_id_retencion))
+            .order_by()
+            .values('retencion_id')
+            .annotate(s=Sum('importe'))
+            .values('s'),
+            output_field=dec,
+        ),
+        Value(Decimal('0')),
+        output_field=dec,
+    )
 
 
 class RetencionInymNoAplicacion(models.Model):
@@ -185,3 +229,96 @@ class RetencionInymHistorico(models.Model):
 
     def __str__(self):
         return f'Histórico {self.id} - {self.fecha} - {self.id_tipo_tarifa}'
+
+
+# ---------------------------------------------------------------------------
+# Certificados de no aplicación de INYM (pedido de Gastón, 02/10/2026).
+#
+# Fontana (operador 181, secadero) emite certificados de no aplicación
+# (hasta ahora casi siempre por "STOCK INICIAL - CAMBIO TARIFA"); el
+# operador que nos retiene (ej. Establecimiento Las Marías) los "valida" y
+# por ese importe NO nos retiene. En el Excel de retenciones INYM la
+# retención trae IMPORTE (bruto) + IDCERT_NO_APLICACION + IMPORTE_NO_RETENIDO:
+# lo realmente retenido es IMPORTE - IMPORTE_NO_RETENIDO.
+#
+# Tablas nuevas, managed=True (python manage.py migrate retenciones_inym).
+# La tabla legacy `retencion_inym_no_aplicacion` (RetencionInymNoAplicacion,
+# más arriba) no se usa: no se sabe con qué criterio se llenaba.
+# ---------------------------------------------------------------------------
+
+class CertificadoNoAplicacionInym(models.Model):
+    """Un certificado de no aplicación de INYM. Se crea solo al importar el
+    Excel de retenciones (con lo que trae esa planilla: número e importe
+    aplicado), y se completa/actualiza al importar el listado de
+    certificados que se exporta desde INYM ("Listado Cert. de No
+    Aplicación": fecha, período, vencimiento, total, quién lo validó...)."""
+    id = models.AutoField(primary_key=True)
+    numero = models.IntegerField(unique=True)  # IDCERT_NO_APLICACION de INYM
+    id_operador_emisor = models.IntegerField(blank=True, null=True)  # IDOPERADOR (181 = Fontana secadero)
+    cuit_emisor = models.CharField(max_length=20, blank=True, default='')
+    tipo_oper_emisor = models.CharField(max_length=100, blank=True, default='')
+    fecha = models.DateField(blank=True, null=True)
+    periodo = models.DateField(blank=True, null=True)
+    vencimiento = models.DateField(blank=True, null=True)
+    total = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    # Tipo / tarifa / kgs: hoy el listado de INYM no los trae; quedan para
+    # cargarlos si más adelante vienen en otra planilla.
+    tipo = models.CharField(max_length=150, blank=True, default='')
+    tarifa = models.DecimalField(max_digits=20, decimal_places=6, blank=True, null=True)
+    kgs = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    # Operador que lo validó (el que nos retuvo y descontó el certificado).
+    id_operador_valida = models.IntegerField(blank=True, null=True)
+    tipo_oper_valida = models.CharField(max_length=100, blank=True, default='')
+    nombre_valida = models.CharField(max_length=200, blank=True, default='')
+    fecha_validacion = models.DateField(blank=True, null=True)
+    fecha_eliminacion = models.DateField(blank=True, null=True)
+    agregado_desde = models.CharField(max_length=45, blank=True, default='')
+    fecha_agregado = models.DateTimeField(auto_now_add=True)
+    fecha_modificado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        managed = True
+        db_table = 'certificado_no_aplicacion_inym'
+        ordering = ['-fecha', '-numero']
+
+    def __str__(self):
+        return f'Cert. no aplicación N° {self.numero}'
+
+    @property
+    def importe_aplicado(self):
+        return sum((v.importe or Decimal('0') for v in self.aplicaciones.all()), Decimal('0'))
+
+    @property
+    def saldo(self):
+        if self.total is None:
+            return None
+        return self.total - self.importe_aplicado
+
+
+class RetencionInymNoAplicacionVinculo(models.Model):
+    """Cuánto de un certificado de no aplicación se descontó en una
+    retención INYM (IMPORTE_NO_RETENIDO del Excel de retenciones). Una
+    retención puede tener más de un certificado y un certificado puede
+    repartirse entre varias retenciones (se controla con el saldo)."""
+    id = models.AutoField(primary_key=True)
+    retencion = models.ForeignKey(
+        RetencionInym, models.DO_NOTHING, db_column='id_retencion_inym',
+        db_constraint=False, related_name='no_aplicaciones',
+    )
+    certificado = models.ForeignKey(
+        CertificadoNoAplicacionInym, models.PROTECT, db_column='id_certificado',
+        related_name='aplicaciones',
+    )
+    importe = models.DecimalField(max_digits=20, decimal_places=2)
+    agregado_desde = models.CharField(max_length=45, blank=True, default='')
+    fecha_agregado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'retencion_inym_cert_no_aplicacion'
+        constraints = [
+            models.UniqueConstraint(fields=['retencion', 'certificado'], name='unico_retencion_cert_no_aplicacion'),
+        ]
+
+    def __str__(self):
+        return f'Ret. INYM {self.retencion_id} - cert. {self.certificado_id}: {self.importe}'

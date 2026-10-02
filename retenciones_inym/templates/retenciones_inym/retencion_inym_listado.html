@@ -6,6 +6,7 @@
 
     <a href="{% url 'retenciones_inym:alta' %}" class="btn btn-sm btn-primary mb-3">+ Nueva retención INYM</a>
     <a href="{% url 'retenciones_inym:importar' %}" class="btn btn-sm btn-outline-primary mb-3">Importar desde Excel de INYM</a>
+    <a href="{% url 'retenciones_inym:certificados_no_aplicacion' %}" class="btn btn-sm btn-outline-secondary mb-3">Certificados de no aplicación</a>
 
     <form method="get" class="form-row align-items-end mb-3">
         <div class="form-group col-auto">
@@ -71,6 +72,8 @@
                     <th class="text-end">Kgs</th>
                     <th class="text-end">Tarifa</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
+                    <th class="text-end" title="Descontado con certificado de no aplicación">No retenido</th>
+                    <th class="text-end" title="Total − no retenido: lo que cuenta en liquidaciones">Neto</th>
                     <th>Eliminación (INYM)</th>
                     <th>N° cert. INYM</th>
                     <th>Agregado desde</th>
@@ -91,6 +94,12 @@
                     <td class="text-end">{{ r.kgs|default:"-" }}</td>
                     <td class="text-end">{{ r.tarifa|default:"-" }}</td>
                     <td class="text-end">{{ r.total|separador_miles }}</td>
+                    <td class="text-end">
+                        {% for v in r.no_aplicaciones.all %}
+                        <span title="Certificado de no aplicación N° {{ v.certificado.numero }}">{{ v.importe|separador_miles }} <span class="badge bg-info text-dark">cert. {{ v.certificado.numero }}</span></span>{% if not forloop.last %}<br>{% endif %}
+                        {% empty %}<span class="text-muted">-</span>{% endfor %}
+                    </td>
+                    <td class="text-end">{% if r.no_aplicaciones.all %}<strong>{{ r.importe_neto|separador_miles }}</strong>{% else %}{{ r.total|separador_miles }}{% endif %}</td>
                     <td>{{ r.eliminacion|default:"-" }}</td>
                     <td>{{ r.id_certificado_inym|default:"-" }}</td>
                     <td>{{ r.agregado_desde|default:"-" }}</td>
@@ -103,7 +112,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="15" class="text-center text-muted">No se encontraron retenciones INYM.</td>
+                    <td colspan="17" class="text-center text-muted">No se encontraron retenciones INYM.</td>
                 </tr>
                 {% endfor %}
             </tbody>

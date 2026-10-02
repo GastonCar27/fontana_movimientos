@@ -76,6 +76,32 @@
                         <small class="form-text text-muted">Se calcula solo (Kgs × Tarifa) si cargás los dos; si no, se respeta lo que escribas acá.</small>
                     </div>
                 </div>
+                <div class="border rounded p-2 mb-2" style="background:#f8f9fa;">
+                    <div class="small fw-bold mb-1">Certificado de no aplicación (si el que retuvo descontó uno de Fontana)</div>
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label>{{ form.cert_no_aplicacion.label }}</label>
+                            {{ form.cert_no_aplicacion }}
+                            <small class="form-text text-muted">
+                                Se muestran primero los validados por el operador emisor elegido arriba
+                                (<a href="#" id="ver-todos-cert">ver todos</a>).
+                                ¿No está? Importá el listado de certificados en
+                                <a href="{% url 'retenciones_inym:certificados_no_aplicacion' %}" target="_blank">Certificados de no aplicación</a>.
+                            </small>
+                            {% if form.cert_no_aplicacion.errors %}<div class="text-danger small">{{ form.cert_no_aplicacion.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="form-group col-md-3">
+                            <label>{{ form.importe_no_aplicado.label }}</label>
+                            {{ form.importe_no_aplicado }}
+                            {% if form.importe_no_aplicado.errors %}<div class="text-danger small">{{ form.importe_no_aplicado.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="form-group col-md-3">
+                            <label>Retenido neto (lo que cuenta en liquidaciones)</label>
+                            <div class="form-control form-control-sm bg-white" id="neto-retenido">-</div>
+                            <small class="form-text text-muted">Total − importe no retenido.</small>
+                        </div>
+                    </div>
+                </div>
                 {% if form.non_field_errors %}
                     <div class="text-danger small">{{ form.non_field_errors|join:", " }}</div>
                 {% endif %}
@@ -191,6 +217,58 @@
             }
         });
     }
+
+    // --- Certificado de no aplicación (02/10/2026) ---
+    const selectCert = document.getElementById('id_cert_no_aplicacion');
+    const importeNA = document.getElementById('id_importe_no_aplicado');
+    const netoDiv = document.getElementById('neto-retenido');
+    const hiddenEmisor = document.getElementById('id_operador_emisor');
+    let mostrarTodosCert = false;
+
+    function formatear(n) {
+        const signo = n < 0 ? '-' : '';
+        const partes = Math.abs(n).toFixed(2).split('.');
+        partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        return signo + partes.join(',');
+    }
+    function recalcularNeto() {
+        if (!netoDiv || !total) return;
+        const bruto = parseFloat(total.value);
+        const na = parseFloat(importeNA && importeNA.value) || 0;
+        netoDiv.textContent = isNaN(bruto) ? '-' : '$ ' + formatear(bruto - na);
+    }
+    // Muestra sólo los certificados validados por el operador emisor (el que
+    // nos retuvo) y los todavía sin validar; "ver todos" los muestra todos.
+    function filtrarCertificados() {
+        if (!selectCert) return;
+        const operador = hiddenEmisor ? hiddenEmisor.value : '';
+        Array.from(selectCert.options).forEach(function (op) {
+            if (!op.value) return;
+            const valida = op.dataset.operadorValida || '';
+            const visible = mostrarTodosCert || !operador || !valida || valida === operador || op.selected;
+            op.hidden = !visible;
+            op.disabled = !visible;
+        });
+    }
+    if (selectCert) {
+        selectCert.addEventListener('focus', filtrarCertificados);
+        selectCert.addEventListener('mousedown', filtrarCertificados);
+        filtrarCertificados();
+    }
+    const linkTodos = document.getElementById('ver-todos-cert');
+    if (linkTodos) {
+        linkTodos.addEventListener('click', function (e) {
+            e.preventDefault();
+            mostrarTodosCert = true;
+            filtrarCertificados();
+            if (selectCert) selectCert.focus();
+        });
+    }
+    if (importeNA) importeNA.addEventListener('input', recalcularNeto);
+    if (total) total.addEventListener('input', recalcularNeto);
+    if (kgs) kgs.addEventListener('input', recalcularNeto);
+    if (tarifa) tarifa.addEventListener('input', recalcularNeto);
+    recalcularNeto();
 
     conectarBuscadorOperador('id_operador_emisor_nombre', 'id_operador_emisor', 'operador-emisor-resultados');
     conectarBuscadorOperador('id_operador_retenido_nombre', 'id_operador_retenido', 'operador-retenido-resultados');

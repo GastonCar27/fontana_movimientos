@@ -265,7 +265,9 @@
                     {% if ri.eliminacion %}<br><span class="text-danger small">Eliminada en INYM ({{ ri.eliminacion }})</span>{% endif %}
                 </td>
                 <td>{{ ri.kgs|separador_miles }}</td>
-                <td>{{ ri.monto_mostrar|separador_miles }}</td>
+                <td>{{ ri.monto_mostrar|separador_miles }}
+                    {% if ri.importe_no_aplicado %}<br><span class="text-muted small" title="Neto de certificado de no aplicación">bruto {{ ri.total|separador_miles }} − cert. {{ ri.certificados_no_aplicacion_texto }} {{ ri.importe_no_aplicado|separador_miles }}</span>{% endif %}
+                </td>
                 <td>
                     <select name="retinym_tipo_{{ ri.pk }}" class="sel-tipo">
                         <option value="debe" {% if ri.tipo_actual == "debe" %}selected{% endif %}>Debe</option>

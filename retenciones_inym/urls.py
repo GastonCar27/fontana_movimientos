@@ -13,6 +13,12 @@ urlpatterns = [
     path('<int:pk>/modificar/', views.retencion_inym_modificar, name='modificar'),
     path('<int:pk>/eliminar/', views.retencion_inym_eliminar, name='eliminar'),
     path('importar/', views.retencion_inym_importar, name='importar'),
+    # Certificados de no aplicación (02/10/2026)
+    path('certificados-no-aplicacion/', views.certificados_no_aplicacion, name='certificados_no_aplicacion'),
+    path(
+        'certificados-no-aplicacion/importar/', views.certificados_no_aplicacion_importar,
+        name='certificados_no_aplicacion_importar',
+    ),
     path('importar/diferencias/excel/', views.retencion_inym_importar_diferencias_excel, name='importar_diferencias_excel'),
     path('importar/diferencias/pdf/', views.retencion_inym_importar_diferencias_pdf, name='importar_diferencias_pdf'),
 

@@ -154,6 +154,18 @@ def _texto_retencion(retencion):
     return f'Ret. {retencion.id}'
 
 
+def _texto_ret_inym(ri):
+    """Texto de una retención INYM en el PDF/Excel: si tiene certificado de
+    no aplicación, aclara bruto y descuento (el monto de la fila es el neto)."""
+    texto = f'Ret.Inym {ri.id}'
+    if ri.importe_no_aplicado:
+        texto += (
+            f' (bruto {separador_miles(ri.total)} - cert. no aplic. '
+            f'{ri.certificados_no_aplicacion_texto}: {separador_miles(ri.importe_no_aplicado)})'
+        )
+    return texto
+
+
 def _filas_debe(liquidacion):
     """Arma las filas del lado Debe ("Comprobantes a Pagar"), mezclando
     comprobantes, movimientos de caja, retenciones y retenciones INYM en el
@@ -190,11 +202,14 @@ def _filas_debe(liquidacion):
         total += monto
         filas.append([r.id, r.fecha, _texto_retencion(r), entidad_texto, monto])
 
-    for lri in liquidacion.retenciones_inym.filter(tipo='debe').select_related('retencion_inym'):
+    for lri in liquidacion.retenciones_inym.filter(tipo='debe').select_related('retencion_inym').prefetch_related(
+        'retencion_inym__no_aplicaciones__certificado'
+    ):
         ri = lri.retencion_inym
-        monto = ri.total or Decimal('0')
+        # Neto de certificados de no aplicación (02/10/2026).
+        monto = ri.importe_neto
         total += monto
-        filas.append([ri.id, ri.fecha, f'Ret.Inym {ri.id}', entidad_texto, monto])
+        filas.append([ri.id, ri.fecha, _texto_ret_inym(ri), entidad_texto, monto])
 
     return filas, total
 
@@ -232,11 +247,14 @@ def _filas_haber(liquidacion):
         total += monto
         filas.append([r.id, r.fecha, '-', _texto_retencion(r), entidad_texto, monto])
 
-    for lri in liquidacion.retenciones_inym.filter(tipo='haber').select_related('retencion_inym'):
+    for lri in liquidacion.retenciones_inym.filter(tipo='haber').select_related('retencion_inym').prefetch_related(
+        'retencion_inym__no_aplicaciones__certificado'
+    ):
         ri = lri.retencion_inym
-        monto = ri.total or Decimal('0')
+        # Neto de certificados de no aplicación (02/10/2026).
+        monto = ri.importe_neto
         total += monto
-        filas.append([ri.id, ri.fecha, '', f'Ret.Inym {ri.id}', entidad_texto, monto])
+        filas.append([ri.id, ri.fecha, '', _texto_ret_inym(ri), entidad_texto, monto])
 
     return filas, total
 

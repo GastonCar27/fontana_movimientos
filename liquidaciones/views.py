@@ -18,7 +18,7 @@ from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
 from movimientos_caja.models import MovimientoCaja
 from retenciones.models import Retencion
-from retenciones_inym.models import RetencionInym
+from retenciones_inym.models import RetencionInym, subquery_no_aplicado
 
 from . import documentos
 from .forms import (
@@ -66,6 +66,9 @@ def _monto_item(item_obj):
     if hasattr(item_obj, 'monto'):
         return item_obj.monto or Decimal('0')
     total = getattr(item_obj, 'total', None) or Decimal('0')
+    if isinstance(item_obj, RetencionInym):
+        # Neto de certificados de no aplicación (02/10/2026).
+        return item_obj.importe_neto
     if isinstance(item_obj, Comprobante):
         try:
             total = (total * item_obj.tipo_de_cambio.tipo_de_cambio).quantize(Decimal('0.01'))
@@ -280,6 +283,7 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     retenciones_inym = list(
         retenciones_inym_qs
         .exclude(id__in=retinym_excl)
+        .prefetch_related('no_aplicaciones__certificado')
         .order_by('-fecha')
     )
     for ri in retenciones_inym:
@@ -1013,6 +1017,25 @@ def liquidacion_diferencias(request):
             Value(Decimal('0')),
         )
 
+    def suma_retenciones_inym_neto(tipo):
+        """Retenciones INYM netas de certificados de no aplicación
+        (02/10/2026) -- mismo criterio que Liquidacion.recalcular_totales."""
+        dec = DecimalField(max_digits=20, decimal_places=2)
+        return Coalesce(
+            Subquery(
+                LiquidacionRetencionInym.objects
+                .filter(liquidacion=OuterRef('pk'), tipo=tipo)
+                .annotate(monto_neto=Coalesce(F('retencion_inym__total'), Value(Decimal('0')), output_field=dec)
+                          - subquery_no_aplicado('retencion_inym_id'))
+                .order_by()
+                .values('liquidacion')
+                .annotate(total=Sum('monto_neto'))
+                .values('total'),
+                output_field=dec,
+            ),
+            Value(Decimal('0')),
+        )
+
     def suma_movimientos(tipo):
         """
         Igual que suma_relacionada, pero además invierte el signo de un
@@ -1105,8 +1128,8 @@ def liquidacion_diferencias(request):
             comp_haber=suma_comprobantes('haber'),
             ret_debe=suma_relacionada(LiquidacionRetencion, 'retencion__total', 'debe'),
             ret_haber=suma_relacionada(LiquidacionRetencion, 'retencion__total', 'haber'),
-            retinym_debe=suma_relacionada(LiquidacionRetencionInym, 'retencion_inym__total', 'debe'),
-            retinym_haber=suma_relacionada(LiquidacionRetencionInym, 'retencion_inym__total', 'haber'),
+            retinym_debe=suma_retenciones_inym_neto('debe'),
+            retinym_haber=suma_retenciones_inym_neto('haber'),
         )
         .annotate(
             debe_calculado=F('mov_debe') + F('comp_debe') + F('ret_debe') + F('retinym_debe'),
@@ -1434,6 +1457,7 @@ def _retenciones_inym_sin_liquidar(request):
             'operador_emisor__entidad', 'operador_emisor__tipo_operador',
             'operador_retenido__entidad', 'operador_retenido__tipo_operador',
         )
+        .prefetch_related('no_aplicaciones__certificado')
         .order_by('-fecha', '-id')
     )
     if form.is_valid():
@@ -1678,7 +1702,7 @@ def _filas_retenciones_sin_liquidar(request):
 
 def _filas_retenciones_inym_sin_liquidar(request):
     _, retenciones_inym = _retenciones_inym_sin_liquidar(request)
-    columnas = ['ID', 'Fecha', 'Entidad emisora', 'Operador INYM emisor', 'Entidad retenida', 'Operador INYM retenido', 'Kgs', 'Tarifa', 'Eliminación', 'Total']
+    columnas = ['ID', 'Fecha', 'Entidad emisora', 'Operador INYM emisor', 'Entidad retenida', 'Operador INYM retenido', 'Kgs', 'Tarifa', 'Eliminación', 'Total', 'No retenido (cert.)', 'Neto']
     filas = []
     for ri in retenciones_inym:
         emisora = ri.operador_emisor.entidad if ri.operador_emisor_id else None
@@ -1688,12 +1712,14 @@ def _filas_retenciones_inym_sin_liquidar(request):
             str(emisora) if emisora else '', str(ri.operador_emisor) if ri.operador_emisor_id else '',
             str(retenido) if retenido else '', str(ri.operador_retenido) if ri.operador_retenido_id else '',
             _numero_o_none(ri.kgs), _numero_o_none(ri.tarifa), ri.eliminacion, _numero_o_none(ri.total),
+            _numero_o_none(ri.importe_no_aplicado) if ri.importe_no_aplicado else None,
+            _numero_o_none(ri.importe_neto),
         ])
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {6, 7, 9},  # Kgs, Tarifa, Total
-        'anchos': [0.5, 0.8, 1.6, 1.6, 1.6, 1.6, 0.8, 0.8, 0.8, 1.0],
+        'columnas_numericas': {6, 7, 9, 10, 11},  # Kgs, Tarifa, Total, No retenido, Neto
+        'anchos': [0.5, 0.8, 1.6, 1.6, 1.6, 1.6, 0.8, 0.8, 0.8, 1.0, 1.0, 1.0],
     }
 
 

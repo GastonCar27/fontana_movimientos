@@ -6,7 +6,7 @@ from django.db.models.functions import Coalesce, Cast
 from entidades.models import Entidad
 from comprobantes.models import Comprobante
 from retenciones.models import Retencion
-from retenciones_inym.models import RetencionInym
+from retenciones_inym.models import RetencionInym, subquery_no_aplicado
 from movimientos_caja.models import MovimientoCaja
 
 # Mismo valor y mismo patrón (constante local por app) que ya usan
@@ -142,7 +142,17 @@ class Liquidacion(models.Model):
             (movimientos_qs, 'monto_para_liquidacion'),
             (comprobantes_qs, 'monto_convertido'),
             (self.retenciones.all(), 'retencion__total'),
-            (self.retenciones_inym.all(), 'retencion_inym__total'),
+            # Retenciones INYM: NETO de certificados de no aplicación
+            # (02/10/2026): total bruto - lo descontado con certificados.
+            (
+                self.retenciones_inym.annotate(
+                    monto_neto=Coalesce(
+                        F('retencion_inym__total'), Value(Decimal('0')),
+                        output_field=DecimalField(max_digits=20, decimal_places=2),
+                    ) - subquery_no_aplicado('retencion_inym_id'),
+                ),
+                'monto_neto',
+            ),
         ]
 
         for queryset, campo_monto in fuentes:

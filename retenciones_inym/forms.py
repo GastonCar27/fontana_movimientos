@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django import forms
 
 from entidades.models import Inym_Operador
-from .models import InymRetencionTipo
+from .models import CertificadoNoAplicacionInym, InymRetencionTipo, RetencionInymNoAplicacionVinculo
 
 
 class RankingEntidadesForm(forms.Form):
@@ -49,6 +49,39 @@ def texto_operador_inym(operador):
 class OperadorInymChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
         return texto_operador_inym(obj)
+
+
+class CertificadoNoAplicacionSelect(forms.Select):
+    """<select> que agrega a cada opción el operador INYM que validó el
+    certificado (data-operador-valida), para que el JS del form pueda
+    mostrar primero/sólo los del operador que nos retuvo."""
+    operadores = {}
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        opcion = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        clave = str(getattr(value, 'value', value) or '')
+        if clave:
+            opcion['attrs']['data-operador-valida'] = self.operadores.get(clave, '')
+        return opcion
+
+
+class CertificadoNoAplicacionChoiceField(forms.ModelChoiceField):
+    """Muestra en cada opción número, fecha, quién lo validó, total y saldo
+    disponible. 'saldos' lo completa RetencionInymForm.__init__."""
+    saldos = {}
+
+    def label_from_instance(self, obj):
+        from movimientos.templatetags.movimientos_extras import separador_miles
+        partes = [f'N° {obj.numero}']
+        if obj.fecha:
+            partes.append(obj.fecha.strftime('%d/%m/%Y'))
+        partes.append(f'validado por: {obj.nombre_valida}' if obj.nombre_valida else 'sin validar')
+        if obj.total is not None:
+            partes.append(f'total $ {separador_miles(obj.total)}')
+        saldo = self.saldos.get(obj.id)
+        if saldo is not None:
+            partes.append(f'disponible $ {separador_miles(saldo)}')
+        return ' — '.join(partes)
 
 
 class RetencionInymForm(forms.Form):
@@ -161,6 +194,24 @@ class RetencionInymForm(forms.Form):
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm'}),
     )
 
+    # --- Certificado de no aplicación (02/10/2026, pedido de Gastón) ---
+    # Las retenciones que le hacen a Fontana no se pueden bajar de INYM: se
+    # reciben y se cargan a mano, y recién ahí se sabe si el que retuvo
+    # descontó un certificado de no aplicación de Fontana. 'total' sigue
+    # siendo el BRUTO (kgs x tarifa); lo realmente retenido es
+    # total - importe_no_aplicado (es lo que se usa en liquidaciones).
+    cert_no_aplicacion = CertificadoNoAplicacionChoiceField(
+        queryset=CertificadoNoAplicacionInym.objects.none(),
+        required=False,
+        label='Certificado de no aplicación',
+        widget=CertificadoNoAplicacionSelect(attrs={'class': 'form-control form-control-sm', 'id': 'id_cert_no_aplicacion'}),
+    )
+    importe_no_aplicado = forms.DecimalField(
+        required=False, label='Importe no retenido (descontado con el certificado)',
+        max_digits=20, decimal_places=2,
+        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'id': 'id_importe_no_aplicado'}),
+    )
+
     def __init__(self, *args, instance_id=None, **kwargs):
         """instance_id: pk de la retención que se está modificando (None en
         alta) -- se necesita para que la validación de "no repetido dentro
@@ -171,6 +222,40 @@ class RetencionInymForm(forms.Form):
         manual; de acá en más es obligatorio y no se puede repetir)."""
         self.instance_id = instance_id
         super().__init__(*args, **kwargs)
+        # Certificados ofrecidos: los no eliminados en INYM con saldo
+        # disponible, más el que ya esté vinculado a esta retención.
+        from django.db.models import Q as _Q
+        vinculados = []
+        if instance_id is not None:
+            vinculados = list(
+                RetencionInymNoAplicacionVinculo.objects.filter(retencion_id=instance_id)
+                .values_list('certificado_id', flat=True)
+            )
+        candidatos = (
+            CertificadoNoAplicacionInym.objects
+            .filter(_Q(fecha_eliminacion__isnull=True) | _Q(id__in=vinculados))
+            .prefetch_related('aplicaciones')
+            .order_by('-fecha', '-numero')
+        )
+        ids = []
+        self.saldos_cert = {}
+        for cert in candidatos:
+            # Saldo disponible para ESTA retención: no cuenta lo que ya
+            # tiene aplicado esta misma retención (si se está modificando).
+            aplicado_otros = sum(
+                (v.importe for v in cert.aplicaciones.all() if v.retencion_id != instance_id), Decimal('0')
+            )
+            saldo = (cert.total - aplicado_otros) if cert.total is not None else None
+            self.saldos_cert[cert.id] = saldo
+            if cert.id in vinculados or saldo is None or saldo > 0:
+                ids.append(cert.id)
+        self.fields['cert_no_aplicacion'].queryset = (
+            CertificadoNoAplicacionInym.objects.filter(id__in=ids).order_by('-fecha', '-numero')
+        )
+        self.fields['cert_no_aplicacion'].saldos = self.saldos_cert
+        self.fields['cert_no_aplicacion'].widget.operadores = {
+            str(c.id): str(c.id_operador_valida or '') for c in candidatos if c.id in ids
+        }
 
     def clean(self):
         cleaned = super().clean()
@@ -189,6 +274,29 @@ class RetencionInymForm(forms.Form):
         # tarifa (ver models.py::RetencionInym.id_certificado_inym) -- se
         # valida acá porque este form no es un ModelForm. Pedido de
         # Gastón, 24/09/2026.
+        # Certificado de no aplicación (02/10/2026).
+        cert = cleaned.get('cert_no_aplicacion')
+        importe_na = cleaned.get('importe_no_aplicado')
+        if cert is None and importe_na:
+            self.add_error('cert_no_aplicacion', 'Elegí el certificado de no aplicación al que corresponde ese importe.')
+        elif cert is not None:
+            if not importe_na or importe_na <= 0:
+                self.add_error('importe_no_aplicado', 'Cargá el importe que se descontó con el certificado (mayor a 0).')
+            else:
+                total_bruto = cleaned.get('total')
+                if total_bruto is not None and importe_na > total_bruto:
+                    self.add_error(
+                        'importe_no_aplicado',
+                        f'No puede ser mayor que el total de la retención ({total_bruto}).',
+                    )
+                saldo = self.saldos_cert.get(cert.id)
+                if saldo is not None and importe_na > saldo:
+                    self.add_error(
+                        'importe_no_aplicado',
+                        f'El certificado N° {cert.numero} sólo tiene disponible {saldo} '
+                        '(total del certificado menos lo ya descontado en otras retenciones).',
+                    )
+
         id_certificado_inym = cleaned.get('id_certificado_inym')
         id_tipo_tarifa = cleaned.get('id_tipo_tarifa')
         if id_certificado_inym is not None and id_tipo_tarifa is not None:
