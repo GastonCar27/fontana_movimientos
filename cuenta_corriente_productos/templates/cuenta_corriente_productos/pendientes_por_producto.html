@@ -37,12 +37,24 @@
         "Vincular por bloques" hasta que se cargue una (botón "Cargar equivalencia" de esa fila).
     </p>
 
+    {% if fecha_desde %}
+    <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+        <div>
+            <strong>Atención: sólo se muestra lo pendiente desde el {{ fecha_desde_texto }}{% if fecha_hasta %} hasta el {{ fecha_hasta_texto }}{% endif %}.</strong>
+            {% if fecha_desde_es_default %}(filtro por defecto){% endif %}
+            Los movimientos anteriores a esa fecha sin vincular, y los renglones de comprobantes anteriores con
+            capacidad sin usar, <strong>no aparecen</strong> en esta lista ni en las exportaciones, aunque sigan pendientes.
+            Para ver todo lo cargado, borrá la "Fecha desde" y tocá <em>Filtrar</em>.
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form method="get" class="row gx-3 gy-3 align-items-end">
                 <input type="hidden" name="filtrado" value="1">
                 <div class="col-6 col-md-3">
-                    <label for="id_fecha_desde" class="mb-1 small text-muted">Fecha desde (opcional)</label>
+                    <label for="id_fecha_desde" class="mb-1 small text-muted">Fecha desde (por defecto 01/01/2026)</label>
                     <input type="date" id="id_fecha_desde" name="fecha_desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
                 </div>
                 <div class="col-6 col-md-3">
@@ -60,13 +72,14 @@
                 <div class="col-12 col-md-4 d-flex gap-2">
                     <button type="submit" class="btn btn-primary btn-sm px-3">Filtrar</button>
                     {% if filtro_no_default %}
-                    <a href="{% url 'cuenta_corriente_productos:pendientes_por_producto' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                    <a href="{% url 'cuenta_corriente_productos:pendientes_por_producto' %}" class="btn btn-outline-secondary btn-sm px-3">Volver al filtro por defecto</a>
                     {% endif %}
                 </div>
             </form>
             <p class="text-muted small mb-0 mt-2">
                 El filtro de fechas se aplica a la fecha del movimiento (lado pendiente) y a la fecha del
-                comprobante (lado vinculado de más). Sin fechas, se calcula sobre todo lo cargado. El filtro de
+                comprobante (lado vinculado de más). Al entrar a la pantalla se filtra desde el 01/01/2026; sin fechas
+                (borrando "Fecha desde" y filtrando), se calcula sobre todo lo cargado. El filtro de
                 Fontana S.A. a Fontana S.A. (tildado por defecto) deja afuera los movimientos en los que emisor y
                 receptor son los dos Fontana S.A.; destildado, se incluyen (aparecen bajo la entidad Fontana S.A.).
             </p>

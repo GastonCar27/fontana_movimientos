@@ -1,3 +1,4 @@
+import datetime
 from datetime import timedelta
 from decimal import Decimal
 
@@ -1765,6 +1766,13 @@ def _calcular_pendientes_por_producto(fecha_desde=None, fecha_hasta=None, produc
     return filas_producto
 
 
+# Pedido de Gastón (02/10/2026): al entrar a "Pendientes por producto" se
+# filtra por defecto desde esta fecha, con una advertencia visible de que
+# lo anterior no se muestra. Si se borra la fecha y se filtra, se calcula
+# sobre todo lo cargado.
+FECHA_DESDE_DEFAULT_PENDIENTES = '2026-01-01'
+
+
 def pendientes_por_producto(request):
     """
     Pantalla principal: una fila por (producto, unidad de medida) con
@@ -1772,7 +1780,11 @@ def pendientes_por_producto(request):
     con el saldo total agregado y, al lado, los botones para exportar el
     detalle por entidad de ESE producto (Excel/PDF).
     """
-    fecha_desde = request.GET.get('fecha_desde', '').strip()
+    if request.GET.get('filtrado'):
+        fecha_desde = request.GET.get('fecha_desde', '').strip()
+    else:
+        # Recién se entra a la pantalla (sin haber tocado "Filtrar").
+        fecha_desde = request.GET.get('fecha_desde', '').strip() or FECHA_DESDE_DEFAULT_PENDIENTES
     fecha_hasta = request.GET.get('fecha_hasta', '').strip()
     excluir_internos = _excluir_internos_desde_get(request)
 
@@ -1788,8 +1800,21 @@ def pendientes_por_producto(request):
         # de "Cargar equivalencia".
         'url_actual': request.get_full_path(),
         'excluir_internos': excluir_internos,
-        'filtro_no_default': bool(fecha_desde or fecha_hasta or not excluir_internos),
+        'filtro_no_default': bool(
+            fecha_desde != FECHA_DESDE_DEFAULT_PENDIENTES or fecha_hasta or not excluir_internos
+        ),
+        'fecha_desde_texto': _fecha_ddmmaaaa(fecha_desde),
+        'fecha_hasta_texto': _fecha_ddmmaaaa(fecha_hasta),
+        'fecha_desde_es_default': fecha_desde == FECHA_DESDE_DEFAULT_PENDIENTES,
     })
+
+
+def _fecha_ddmmaaaa(valor):
+    """'2026-01-01' -> '01/01/2026' (o el texto tal cual si no es una fecha)."""
+    try:
+        return datetime.date.fromisoformat(valor).strftime('%d/%m/%Y') if valor else ''
+    except ValueError:
+        return valor
 
 
 def _excluir_internos_desde_get(request):
