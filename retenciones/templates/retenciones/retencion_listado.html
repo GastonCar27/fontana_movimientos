@@ -6,7 +6,11 @@
 
     <a href="{% url 'retenciones:alta' %}" class="btn btn-sm btn-primary mb-3">+ Nueva retención</a>
 
-    <form method="get" class="form-row align-items-end mb-3">
+    <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label for="id_id" class="mb-1">ID</label>
+            <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" placeholder="ID de retención" style="max-width: 130px;">
+        </div>
         <div class="form-group col-auto">
             <label for="id_anio" class="mb-1">Año</label>
             <input type="text" id="id_anio" name="anio" class="form-control form-control-sm" value="{{ q_anio }}">
@@ -16,8 +20,31 @@
             <input type="text" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}">
         </div>
         <div class="form-group col-auto">
-            <label for="id_entidad" class="mb-1">Entidad</label>
-            <input type="text" id="id_entidad" name="entidad" class="form-control form-control-sm" value="{{ q_entidad }}" placeholder="Nombre">
+            <label for="id_monto" class="mb-1">Monto</label>
+            <input type="text" id="id_monto" name="monto" class="form-control form-control-sm {% if monto_invalido %}is-invalid{% endif %}"
+                   value="{{ q_monto }}" placeholder="Ej. 1.234,56" style="max-width: 140px;" title="Total exacto de la retención">
+            {% if monto_invalido %}<div class="invalid-feedback">Monto no válido</div>{% endif %}
+        </div>
+        <div class="form-group col-auto">
+            <label for="id_entidad" class="mb-1">
+                Entidad <span id="entidad-exacta-badge" class="badge bg-primary {% if not q_entidad_id %}d-none{% endif %}" title="Se filtra por esta entidad exacta">exacta</span>
+            </label>
+            <div class="buscador-wrapper" style="min-width: 280px;">
+                <input type="text" id="id_entidad" name="entidad" autocomplete="off" class="form-control form-control-sm"
+                       value="{{ q_entidad }}" placeholder="Nombre o CUIT (o elegí de la lista)">
+                <input type="hidden" id="id_entidad_id" name="entidad_id" value="{{ q_entidad_id }}">
+                <div id="entidad-resultados" class="buscador-resultados"></div>
+            </div>
+        </div>
+        <div class="form-group col-auto">
+            <label for="id_liquidacion" class="mb-1">Liquidación</label>
+            <select id="id_liquidacion" name="liquidacion" class="form-select form-select-sm">
+                <option value="" {% if not q_liquidacion %}selected{% endif %}>Todas</option>
+                <option value="con" {% if q_liquidacion == 'con' %}selected{% endif %}>Con liquidación</option>
+                <option value="sin" {% if q_liquidacion == 'sin' %}selected{% endif %}>Sin liquidación</option>
+                <option value="pago" {% if q_liquidacion == 'pago' %}selected{% endif %}>En liquidación de pago</option>
+                <option value="cobro" {% if q_liquidacion == 'cobro' %}selected{% endif %}>En liquidación de cobro</option>
+            </select>
         </div>
         <div class="form-group col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
@@ -29,24 +56,37 @@
         <table class="table table-striped table-sm table-hover align-middle">
             <thead class="table-light">
                 <tr>
+                    <th>ID</th>
                     <th>{% sort_th 'anio' 'Año' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'direccion' 'Dirección' %}</th>
                     <th>{% sort_th 'entidad' 'Entidad' %}</th>
                     <th>{% sort_th 'fecha' 'Fecha' %}</th>
                     <th class="text-end">{% sort_th 'total' 'Total' %}</th>
+                    <th>{% sort_th 'liquidacion' 'Liquidación' %}</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for g in grupos %}
                 <tr>
+                    <td>{{ g.id }}</td>
                     <td>{{ g.año }}</td>
                     <td>{{ g.numero }}</td>
                     <td>{% if g.es_emisor == 0 %}Sufrida{% else %}Practicada{% endif %}</td>
                     <td>{{ g.entidad_nombre }}</td>
                     <td>{{ g.fecha|default:"-" }}</td>
                     <td class="text-end">{{ g.total|separador_miles }}</td>
+                    <td>
+                        {% for liq in g.liquidaciones %}
+                        <a class="badge text-decoration-none {% if liq.tipo == 'cobro' %}bg-success{% else %}bg-primary{% endif %}"
+                           href="{% url 'liquidaciones:editar' liq.pk %}" title="Abrir la liquidación">
+                            {% if liq.tipo == 'cobro' %}Cobro{% else %}Pago{% endif %} N° {{ liq.pk }}
+                        </a>
+                        {% empty %}
+                        <span class="badge bg-light text-dark border" title="No está en ninguna liquidación">Sin liquidación</span>
+                        {% endfor %}
+                    </td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'retenciones:modificar' id=g.id %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'retenciones:eliminar' id=g.id %}">Eliminar</a>
@@ -60,11 +100,66 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted">No se encontraron retenciones.</td>
+                    <td colspan="9" class="text-center text-muted">No se encontraron retenciones.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+<script>
+// Buscador de entidad "mixto" (mismo que el listado de comprobantes): se
+// puede dejar el texto tipeado (busca todas las entidades cuyo nombre/CUIT
+// lo contengan) o elegir una de la lista para filtrar por esa entidad EXACTA.
+document.addEventListener('DOMContentLoaded', function () {
+    var input = document.getElementById('id_entidad');
+    var hidden = document.getElementById('id_entidad_id');
+    var resultados = document.getElementById('entidad-resultados');
+    var badge = document.getElementById('entidad-exacta-badge');
+    var url = '{% url "comprobantes:entidad_buscar" %}';
+    var timeoutId = null;
+
+    input.addEventListener('input', function () {
+        hidden.value = '';  // al volver a escribir, deja de ser la entidad exacta
+        badge.classList.add('d-none');
+        var q = input.value.trim();
+        clearTimeout(timeoutId);
+        if (q.length < 2) {
+            resultados.style.display = 'none';
+            resultados.innerHTML = '';
+            return;
+        }
+        timeoutId = setTimeout(function () {
+            fetch(url + '?q=' + encodeURIComponent(q))
+                .then(function (resp) { return resp.json(); })
+                .then(function (data) {
+                    resultados.innerHTML = '';
+                    var lista = data.resultados || [];
+                    if (lista.length === 0) {
+                        resultados.style.display = 'none';
+                        return;
+                    }
+                    lista.forEach(function (item) {
+                        var div = document.createElement('div');
+                        div.textContent = item.text;
+                        div.addEventListener('click', function () {
+                            input.value = item.text;
+                            hidden.value = item.id;
+                            badge.classList.remove('d-none');
+                            resultados.style.display = 'none';
+                        });
+                        resultados.appendChild(div);
+                    });
+                    resultados.style.display = 'block';
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!resultados.contains(e.target) && e.target !== input) {
+            resultados.style.display = 'none';
+        }
+    });
+});
+</script>
 {% endblock %}

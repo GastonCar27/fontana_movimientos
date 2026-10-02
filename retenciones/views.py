@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from types import SimpleNamespace
 
 from django.contrib import messages
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
@@ -10,6 +11,7 @@ from django.urls import reverse
 
 from comprobantes.models import Comprobante, ComprobanteTipo
 from entidades.models import Entidad
+from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
 from services.reportes import excel_response, pdf_response
@@ -980,14 +982,53 @@ def retencion_listado(request):
     q_anio = request.GET.get('anio', '').strip()
     q_numero = request.GET.get('numero', '').strip()
     q_entidad = request.GET.get('entidad', '').strip()
+    q_id = request.GET.get('id', '').strip()
+    q_monto = request.GET.get('monto', '').strip()
+    # Liquidación asociada (02/10/2026): '' = todas, 'con', 'sin', 'pago', 'cobro'.
+    q_liquidacion = request.GET.get('liquidacion', '').strip()
 
-    qs = Retencion.objects.select_related('entidad')
+    qs = Retencion.objects.select_related('entidad').prefetch_related('liquidaciones__liquidacion')
+    if q_id:
+        qs = qs.filter(id=int(q_id)) if q_id.isdigit() else qs.none()
     if q_anio.isdigit():
         qs = qs.filter(año=int(q_anio))
     if q_numero.isdigit():
         qs = qs.filter(numero=int(q_numero))
-    if q_entidad:
-        qs = qs.filter(Q(entidad_nombre__icontains=q_entidad) | Q(entidad__nombre__icontains=q_entidad))
+    # Monto (02/10/2026): total exacto, al centavo. Acepta "1.234.567,89",
+    # "1234567,89" o "1234567.89".
+    monto_buscado = _monto_desde_texto(q_monto)
+    if q_monto:
+        if monto_buscado is None:
+            qs = qs.none()
+        else:
+            qs = qs.filter(total__gte=monto_buscado - Decimal('0.005'), total__lt=monto_buscado + Decimal('0.005'))
+
+    # Entidad: texto libre (nombre/CUIT que contenga lo tipeado) o, si se
+    # eligió una de la lista del buscador, esa entidad EXACTA ('entidad_id')
+    # -- mismo buscador mixto que el listado de comprobantes (02/10/2026).
+    q_entidad_id = request.GET.get('entidad_id', '').strip()
+    entidad_exacta = Entidad.objects.filter(pk=q_entidad_id).first() if q_entidad_id.isdigit() else None
+    if entidad_exacta:
+        qs = qs.filter(entidad=entidad_exacta)
+        q_entidad = texto_entidad_buscador(entidad_exacta)
+    else:
+        q_entidad_id = ''
+        if q_entidad:
+            qs = qs.filter(
+                Q(entidad_nombre__icontains=q_entidad)
+                | Q(entidad__nombre__icontains=q_entidad)
+                | Q(entidad__cuit__icontains=q_entidad)
+            )
+
+    # Sólo cuentan los vínculos a liquidaciones que existen (un vínculo
+    # huérfano, sin liquidación, no se muestra ni cuenta): por eso se filtra
+    # por 'tipo' de la liquidación (columna NOT NULL), que obliga al JOIN.
+    if q_liquidacion == 'con':
+        qs = qs.filter(liquidaciones__liquidacion__tipo__isnull=False).distinct()
+    elif q_liquidacion == 'sin':
+        qs = qs.exclude(liquidaciones__liquidacion__tipo__isnull=False)
+    elif q_liquidacion in ('pago', 'cobro'):
+        qs = qs.filter(liquidaciones__liquidacion__tipo=q_liquidacion).distinct()
 
     # Cada fila de Retencion es un comprobante independiente (no se agrupan
     # por año+numero: ese agrupamiento fue la causa del bug reportado por
@@ -1003,6 +1044,7 @@ def retencion_listado(request):
             'fecha': r.fecha,
             'total': r.total or Decimal('0'),
             'es_emisor': r.es_emisor if r.es_emisor is not None else Retencion.ES_EMISOR,
+            'liquidaciones': _liquidaciones_de_retencion(r),
         }
         for r in qs.order_by('-año', '-numero', '-id')
     ]
@@ -1014,6 +1056,7 @@ def retencion_listado(request):
         'fecha': lambda f: f['fecha'],
         'total': lambda f: f['total'],
         'direccion': lambda f: f['es_emisor'],
+        'liquidacion': lambda f: (len(f['liquidaciones']), f['liquidaciones'][0].id if f['liquidaciones'] else 0),
     }
     if request.GET.get('orden') in campos_orden:
         lista = aplicar_orden_lista(request, filas, campos_orden)
@@ -1028,7 +1071,47 @@ def retencion_listado(request):
         'q_anio': q_anio,
         'q_numero': q_numero,
         'q_entidad': q_entidad,
+        'q_entidad_id': q_entidad_id,
+        'q_id': q_id,
+        'q_liquidacion': q_liquidacion,
+        'q_monto': q_monto,
+        'monto_invalido': bool(q_monto) and monto_buscado is None,
     })
+
+
+def _monto_desde_texto(texto):
+    """Convierte lo tipeado en el filtro "Monto" a Decimal (o None si no se
+    entiende). Formato argentino (punto de miles, coma decimal) o con punto
+    decimal: "1.234.567,89", "1234567,89", "1234567.89", "$ 1.500". Con un
+    único punto seguido de exactamente 3 dígitos ("1.500") se toma como
+    separador de miles."""
+    t = (texto or '').replace('$', '').replace(' ', '').strip()
+    if not t:
+        return None
+    if ',' in t:
+        t = t.replace('.', '').replace(',', '.')
+    elif t.count('.') > 1 or (t.count('.') == 1 and len(t.split('.')[1]) == 3):
+        t = t.replace('.', '')
+    try:
+        valor = Decimal(t)
+    except InvalidOperation:
+        return None
+    return abs(valor)
+
+
+def _liquidaciones_de_retencion(retencion):
+    """Liquidaciones (de pago o de cobro) a las que está vinculada esta
+    retención, sin repetir y sin vínculos huérfanos. Usa el prefetch
+    'liquidaciones__liquidacion' del listado."""
+    vistas = {}
+    for vinculo in retencion.liquidaciones.all():
+        try:
+            liq = vinculo.liquidacion
+        except ObjectDoesNotExist:
+            liq = None
+        if liq is not None and liq.id not in vistas:
+            vistas[liq.id] = liq
+    return sorted(vistas.values(), key=lambda l: l.id)
 
 
 # ---------------------------------------------------------------------------
