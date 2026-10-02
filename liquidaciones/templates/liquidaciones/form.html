@@ -89,6 +89,18 @@
     z-index: 1050;
     box-shadow: 0 2px 8px rgba(0,0,0,0.35);
 }
+/* Liquidación provisoria (02/10/2026) */
+.caja-provisoria {
+    margin: 10px 0 14px;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #f8f9fa;
+}
+.caja-provisoria.activa {
+    background: #fff3cd;
+    border-color: #ffc107;
+}
 /* Filtro de fechas "Desde/Hasta" por recuadro (Movimientos de caja,
    Comprobantes, Retenciones, Retenciones INYM) -- pedido de Gastón,
    24/09/2026, para achicar la lista cuando hay muchos ítems. Sólo esconde
@@ -116,6 +128,28 @@
     <label>Fecha:
         <input type="date" name="fecha" value="{{ fecha|date:'Y-m-d'|default:'' }}" required>
     </label>
+
+    <!-- Liquidación provisoria (02/10/2026): queda con saldo a propósito
+         (ej. retención provisoria de INYM descontada en un cobro) y se
+         englobá después en una liquidación definitiva. -->
+    <div class="caja-provisoria {% if es_provisoria %}activa{% endif %}" id="caja-provisoria">
+        {% if englobada_en %}
+            <input type="hidden" name="es_provisoria" value="1">
+            <strong>Liquidación PROVISORIA</strong>, englobada en la liquidación
+            <a href="{% url 'liquidaciones:editar' englobada_en.pk %}">N° {{ englobada_en.pk }}</a>.
+            <span class="text-muted small">Para dejar de marcarla como provisoria, primero sacala de esa liquidación.</span>
+        {% else %}
+            <label style="margin:0;">
+                <input type="checkbox" name="es_provisoria" value="1" id="chk-provisoria" {% if es_provisoria %}checked{% endif %}>
+                <strong>Liquidación provisoria</strong>
+            </label>
+            <div class="text-muted small">
+                Tildala cuando la liquidación queda con un saldo que se va a cerrar más adelante
+                (por ejemplo, la retención provisoria de INYM que descuenta el cliente).
+                Después la englobás en la liquidación definitiva, que es la que tiene que dar 0.
+            </div>
+        {% endif %}
+    </div>
 
     <h2>Movimientos de caja</h2>
     <div class="filtro-fecha-caja" data-tabla="tabla-movimientos">
@@ -301,10 +335,48 @@
         </tbody>
     </table>
 
+    <h2>Englobar liquidaciones provisorias</h2>
+    <div id="seccion-englobar">
+    {% if candidatas_englobar %}
+        <p style="margin:4px 0 8px; color:#555;">
+            Liquidaciones <strong>provisorias pendientes</strong> de {{ entidad_texto|default:"esta entidad" }}
+            ({% if tipo_liquidacion == 'cobro' %}cobro{% else %}pago{% endif %}). Tildá las que cierra esta
+            liquidación: su saldo se suma al de ésta en el <strong>saldo consolidado</strong>, que es el que tiene que dar 0.
+            Las provisorias no se modifican: conservan sus ítems.
+        </p>
+        <p id="aviso-provisoria-no-engloba" class="text-danger small" style="display:none;">
+            Una liquidación provisoria no puede englobar otras: destildá "Liquidación provisoria" para usar esta sección.
+        </p>
+        <table border="1" cellpadding="5" id="tabla-englobar">
+            <thead><tr><th>Englobar</th><th>N°</th><th>Fecha</th><th>Debe</th><th>Haber</th><th>Saldo (Haber − Debe)</th></tr></thead>
+            <tbody>
+            {% for p in candidatas_englobar %}
+                <tr>
+                    <td><input type="checkbox" name="englobar" value="{{ p.pk }}" class="chk-englobar"
+                               data-saldo="{{ p.saldo_js }}" {% if p.seleccionada %}checked{% endif %}></td>
+                    <td><a href="{% url 'liquidaciones:editar' p.pk %}" target="_blank">{{ p.numero|default:p.pk }}</a></td>
+                    <td>{{ p.fecha|date:"d/m/Y" }}</td>
+                    <td>{{ p.debe|separador_miles }}</td>
+                    <td>{{ p.haber|separador_miles }}</td>
+                    <td>{{ p.saldo_js|separador_miles }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">No hay liquidaciones provisorias pendientes de esta entidad para englobar.</p>
+    {% endif %}
+    </div>
+
     <div id="resumen-totales" style="margin-top:20px; font-weight:bold;">
         Debe: <span id="total-debe">0,00</span> —
         Haber: <span id="total-haber">0,00</span> —
         Diferencia: <span id="total-diferencia">0,00</span>
+        <span id="resumen-englobe" style="display:none;">
+            — Provisorias englobadas: <span id="total-englobadas">0,00</span>
+            — <span style="font-size:1.1em;">Saldo consolidado: <span id="total-consolidado">0,00</span></span>
+        </span>
+        <span id="resumen-provisoria" class="badge bg-warning text-dark" style="display:none;">PROVISORIA: el saldo queda pendiente</span>
     </div>
 
     <button type="submit" class="btn btn-primary btn-guardar-liquidacion" style="margin-top:15px;">Guardar liquidación</button>
@@ -511,10 +583,15 @@ function formatearMiles(numero, decimales) {
 let ultimoTotalDebe = 0;
 let ultimoTotalHaber = 0;
 
+let ultimoSaldoEnglobadas = 0;
+
 // Diferencia = Haber - Debe: queda NEGATIVA (roja) cuando el Haber es menor
 // que el Debe, y POSITIVA (verde) cuando el Haber es mayor o igual al Debe.
+// Si se agregan englobadas provisorias (02/10/2026), se suma su saldo: es el saldo
+// CONSOLIDADO, que es el que tiene que dar 0 (y el que controla el cartel
+// de "hay diferencia" al guardar).
 function calcularDiferencia() {
-    return ultimoTotalHaber - ultimoTotalDebe;
+    return ultimoTotalHaber - ultimoTotalDebe + ultimoSaldoEnglobadas;
 }
 
 function recalcularTotales() {
@@ -540,13 +617,44 @@ function recalcularTotales() {
     document.getElementById('total-debe').textContent = formatearMiles(totalDebe);
     document.getElementById('total-haber').textContent = formatearMiles(totalHaber);
 
-    const diferencia = calcularDiferencia();
+    const diferencia = Math.round((ultimoTotalHaber - ultimoTotalDebe) * 100) / 100;
     const spanDiferencia = document.getElementById('total-diferencia');
     spanDiferencia.textContent = formatearMiles(diferencia);
     spanDiferencia.style.color = diferencia < 0 ? '#dc3545' : '#198754';
+
+    // --- Provisorias englobadas / saldo consolidado (02/10/2026) ---
+    const chkProvisoria = document.getElementById('chk-provisoria');
+    const esProvisoria = chkProvisoria ? chkProvisoria.checked : !!document.querySelector('input[type=hidden][name=es_provisoria]');
+    const cajaProvisoria = document.getElementById('caja-provisoria');
+    if (cajaProvisoria) cajaProvisoria.classList.toggle('activa', esProvisoria);
+    const resumenProvisoria = document.getElementById('resumen-provisoria');
+    if (resumenProvisoria) resumenProvisoria.style.display = esProvisoria ? '' : 'none';
+
+    // Una provisoria no puede englobar: se deshabilitan los checks.
+    const avisoNoEngloba = document.getElementById('aviso-provisoria-no-engloba');
+    if (avisoNoEngloba) avisoNoEngloba.style.display = esProvisoria ? '' : 'none';
+    document.querySelectorAll('.chk-englobar').forEach(function (chk) {
+        chk.disabled = esProvisoria;
+    });
+
+    ultimoSaldoEnglobadas = 0;
+    let hayEnglobadas = false;
+    document.querySelectorAll('.chk-englobar:checked:not(:disabled)').forEach(function (chk) {
+        ultimoSaldoEnglobadas += parseFloat(chk.dataset.saldo) || 0;
+        hayEnglobadas = true;
+    });
+    const resumenEnglobe = document.getElementById('resumen-englobe');
+    if (resumenEnglobe) {
+        resumenEnglobe.style.display = hayEnglobadas ? '' : 'none';
+        document.getElementById('total-englobadas').textContent = formatearMiles(ultimoSaldoEnglobadas);
+        const consolidado = calcularDiferencia();
+        const spanConsolidado = document.getElementById('total-consolidado');
+        spanConsolidado.textContent = formatearMiles(consolidado);
+        spanConsolidado.style.color = Math.abs(consolidado) < 0.005 ? '#198754' : '#dc3545';
+    }
 }
 
-document.querySelectorAll('.chk-item, .sel-tipo').forEach(function (el) {
+document.querySelectorAll('.chk-item, .sel-tipo, .chk-englobar, #chk-provisoria').forEach(function (el) {
     el.addEventListener('change', recalcularTotales);
 });
 
@@ -656,6 +764,12 @@ document.querySelectorAll('.filtro-fecha-caja').forEach(function (contenedor) {
     formItems.addEventListener('submit', function (evento) {
         if (guardarConfirmado) {
             return; // ya se confirmó desde el cartel: se deja continuar el envío
+        }
+        // Una liquidación PROVISORIA queda con saldo a propósito: no se
+        // pregunta nada (02/10/2026).
+        const chkProv = document.getElementById('chk-provisoria');
+        if ((chkProv && chkProv.checked) || document.querySelector('input[type=hidden][name=es_provisoria]')) {
+            return;
         }
         // Tolerancia chica para evitar falsos positivos por redondeo binario.
         const diferencia = Math.round(calcularDiferencia() * 100) / 100;

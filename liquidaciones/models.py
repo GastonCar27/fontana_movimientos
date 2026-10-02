@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models import Sum, Case, When, F, Value, DecimalField
 from django.db.models.functions import Coalesce, Cast
@@ -155,6 +156,50 @@ class Liquidacion(models.Model):
     def diferencia(self):
         return (self.debe or Decimal('0')) - (self.haber or Decimal('0'))
 
+    # --- Liquidaciones provisorias / englobadas (pedido de Gastón,
+    # 02/10/2026; ver LiquidacionProvisoria más abajo) ---
+
+    @property
+    def info_provisoria(self):
+        """El registro LiquidacionProvisoria de esta liquidación, o None si
+        no es provisoria."""
+        try:
+            return self.provisoria
+        except ObjectDoesNotExist:
+            return None
+
+    @property
+    def es_provisoria(self):
+        return self.info_provisoria is not None
+
+    @property
+    def englobada_en(self):
+        """Liquidación definitiva en la que quedó englobada (o None)."""
+        info = self.info_provisoria
+        return info.englobada_en if info is not None else None
+
+    def liquidaciones_englobadas(self):
+        """Liquidaciones provisorias englobadas en ésta (queryset)."""
+        return Liquidacion.objects.filter(provisoria__englobada_en=self).select_related('entidad').order_by('fecha', 'id')
+
+    @property
+    def saldo_englobadas(self):
+        """Suma de las diferencias (debe - haber) de las provisorias
+        englobadas en ésta."""
+        total = Decimal('0')
+        for liq in self.liquidaciones_englobadas():
+            total += liq.diferencia
+        return total
+
+    @property
+    def saldo_consolidado(self):
+        """Diferencia propia + diferencias de todas las provisorias
+        englobadas. Es el saldo "real" de la definitiva: si da 0, el grupo
+        quedó cerrado. NO se guarda en debe/haber (esos siguen siendo sólo
+        los ítems propios, para que reportes y rankings no sumen dos veces
+        lo mismo)."""
+        return self.diferencia + self.saldo_englobadas
+
 
 class LiquidacionComprobante(models.Model):
     comprobante = models.ForeignKey(Comprobante, models.DO_NOTHING, db_column='id_comprobante', related_name='liquidaciones')
@@ -194,3 +239,60 @@ class LiquidacionMovimiento(models.Model):
     class Meta:
         managed = False
         db_table = 'liquidacion_movimiento'
+
+
+class LiquidacionProvisoria(models.Model):
+    """Marca una liquidación como PROVISORIA y, más adelante, en qué
+    liquidación definitiva quedó ENGLOBADA (pedido de Gastón, 02/10/2026).
+
+    Caso de uso: en los cobros de yerba canchada el cliente descuenta una
+    retención provisoria (anticipo de la retención INYM oficial que hace a
+    fin de mes). Cada cobro del mes se liquida como siempre pero tildado
+    "Provisoria": queda con saldo, sin cargar ninguna retención inventada.
+    Cuando llega lo que cierra el mes (la retención oficial, un pago),
+    se arma una liquidación definitiva con esos ítems y se le
+    agregan las provisorias: el saldo consolidado (propio + el de las
+    englobadas) debería dar 0.
+
+    * Una fila por liquidación provisoria (OneToOne). Si no hay fila, la
+      liquidación es normal.
+    * englobada_en NULL = provisoria pendiente; con valor = ya englobada.
+    * Sólo se pueden englobar provisorias de la MISMA entidad y el MISMO tipo
+      (cobro/pago) que la definitiva; una definitiva no puede ser a su
+      vez provisoria (no hay cadenas).
+    * No toca la tabla legacy 'liquidacion' ni los ítems de ninguna
+      liquidación: las provisorias conservan sus comprobantes/
+      movimientos, que siguen contando como liquidados.
+
+    Tabla nueva, managed=True (python manage.py migrate liquidaciones).
+    Sin FK real en la base (db_constraint=False) para no depender del
+    tipo exacto de la columna legacy liquidacion.id -- mismo criterio que
+    comprobantes.ComprobanteNoRecibido."""
+    id = models.AutoField(primary_key=True)
+    liquidacion = models.OneToOneField(
+        Liquidacion,
+        models.DO_NOTHING,
+        db_column='id_liquidacion',
+        db_constraint=False,
+        related_name='provisoria',
+    )
+    englobada_en = models.ForeignKey(
+        Liquidacion,
+        models.DO_NOTHING,
+        db_column='id_liquidacion_definitiva',
+        db_constraint=False,
+        blank=True,
+        null=True,
+        related_name='provisorias_englobadas',
+    )
+    fecha_marcada = models.DateTimeField(auto_now_add=True)
+    fecha_englobada = models.DateTimeField(blank=True, null=True)
+    usuario = models.CharField(max_length=150, blank=True, default='')
+
+    class Meta:
+        managed = True
+        db_table = 'liquidacion_provisoria'
+
+    def __str__(self):
+        estado = f'englobada en {self.englobada_en_id}' if self.englobada_en_id else 'pendiente'
+        return f'Provisoria {self.liquidacion_id} ({estado})'

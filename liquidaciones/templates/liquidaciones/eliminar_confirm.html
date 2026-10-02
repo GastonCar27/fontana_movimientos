@@ -7,6 +7,21 @@
     ¿Confirma que desea eliminar la liquidación {{ liquidacion.numero }} de fecha {{ liquidacion.fecha }}
     correspondiente a {{ liquidacion.entidad }}? Esta acción no se puede deshacer.
 </p>
+{% with englobadas=liquidacion.liquidaciones_englobadas %}
+{% if englobadas %}
+<div class="alert alert-warning">
+    Esta liquidación engloba {{ englobadas|length }} liquidación(es) provisoria(s)
+    ({% for l in englobadas %}N° {{ l.id }}{% if not forloop.last %}, {% endif %}{% endfor %}).
+    Al eliminarla, esas provisorias <strong>no se borran</strong>: vuelven a quedar como provisorias pendientes.
+</div>
+{% endif %}
+{% endwith %}
+{% if liquidacion.englobada_en %}
+<div class="alert alert-warning">
+    Esta liquidación es provisoria y está englobada en la liquidación N° {{ liquidacion.englobada_en.id }}.
+    Al eliminarla, deja de sumar en el saldo consolidado de esa liquidación.
+</div>
+{% endif %}
 <form method="post">
     {% csrf_token %}
     <button type="submit">Sí, eliminar</button>

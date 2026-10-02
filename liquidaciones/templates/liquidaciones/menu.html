@@ -5,6 +5,8 @@
                href="{% url 'liquidaciones:listado' %}">Listado</a>
             <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'alta' %}active{% endif %}"
                href="{% url 'liquidaciones:alta' %}">Nueva liquidación</a>
+            <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'listado' and request.GET.estado == 'provisorias_pendientes' %}active{% endif %}"
+               href="{% url 'liquidaciones:listado' %}?estado=provisorias_pendientes">Provisorias pendientes</a>
             <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'reporte' %}active{% endif %}"
                href="{% url 'liquidaciones:reporte' %}">Reportes</a>
             <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'diferencias' %}active{% endif %}"

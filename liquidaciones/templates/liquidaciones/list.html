@@ -20,6 +20,14 @@
             <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
         </div>
         <div class="col-auto">
+            <label for="id_estado" class="mb-1 small text-muted">Provisorias</label>
+            <select id="id_estado" name="estado" class="form-select form-select-sm">
+                {% for valor, etiqueta in estados_provisoria %}
+                <option value="{{ valor }}" {% if valor == q_estado %}selected{% endif %}>{{ etiqueta }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
             <a href="{% url 'liquidaciones:listado' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
         </div>
@@ -34,23 +42,46 @@
                     <th>{% sort_th 'fecha' 'Fecha' %}</th>
                     <th>{% sort_th 'entidad' 'Entidad' %}</th>
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
+                    <th>Provisoria / Englobe</th>
                     <th class="text-end">{% sort_th 'debe' 'Debe' %}</th>
                     <th class="text-end">{% sort_th 'haber' 'Haber' %}</th>
                     <th class="text-end">{% sort_th 'diferencia' 'Diferencia' %}</th>
+                    <th class="text-end">{% sort_th 'saldo_consolidado' 'Saldo consolidado' %}</th>
                     <th class="text-center">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for liq in liquidaciones %}
-                <tr>
+                {% with prov=liq.info_provisoria %}
+                <tr class="{% if prov and not prov.englobada_en_id %}table-warning{% elif prov %}table-secondary{% endif %}">
                     <td>{{ liq.id }}</td>
                     <td>{{ liq.numero }}</td>
                     <td>{{ liq.fecha }}</td>
                     <td>{{ liq.entidad }}</td>
                     <td>{% if liq.tipo == 'cobro' %}Cobro{% else %}Pago{% endif %}</td>
+                    <td>
+                        {% if prov and not prov.englobada_en_id %}
+                            <span class="badge bg-warning text-dark">PROVISORIA</span>
+                        {% elif prov %}
+                            <span class="badge bg-secondary">Englobada</span>
+                            <a class="small" href="{% url 'liquidaciones:listado' %}?id={{ prov.englobada_en_id }}">en N° {{ prov.englobada_en_id }}</a>
+                        {% endif %}
+                        {% if liq.cant_englobadas %}
+                            <span class="badge bg-primary">Engloba {{ liq.cant_englobadas }}</span>
+                        {% endif %}
+                    </td>
                     <td class="text-end">{{ liq.debe|separador_miles }}</td>
                     <td class="text-end">{{ liq.haber|separador_miles }}</td>
                     <td class="text-end">{{ liq.diferencia|separador_miles }}</td>
+                    <td class="text-end">
+                        {% if liq.cant_englobadas %}
+                            <strong class="{% if liq.saldo_consolidado_total %}text-danger{% else %}text-success{% endif %}">{{ liq.saldo_consolidado_total|separador_miles }}</strong>
+                        {% elif prov and prov.englobada_en_id %}
+                            <span class="text-muted small">ver N° {{ prov.englobada_en_id }}</span>
+                        {% else %}
+                            {{ liq.saldo_consolidado_total|separador_miles }}
+                        {% endif %}
+                    </td>
                     <td class="text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'liquidaciones:editar' liq.pk %}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger" href="{% url 'liquidaciones:eliminar' liq.pk %}">Eliminar</a>
@@ -68,9 +99,10 @@
                         </div>
                     </td>
                 </tr>
+                {% endwith %}
                 {% empty %}
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-4">No hay liquidaciones cargadas.</td>
+                    <td colspan="11" class="text-center text-muted py-4">No hay liquidaciones cargadas.</td>
                 </tr>
                 {% endfor %}
             </tbody>

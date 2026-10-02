@@ -285,6 +285,20 @@ def _renglones_comprobantes(comprobante_ids, limitar=None):
     return filas, hay_mas
 
 
+ENGLOBADAS_HEADERS = ['N°', 'Fecha', 'Debe', 'Haber', 'Saldo (Debe - Haber)']
+
+
+def _filas_englobadas(liquidacion):
+    """Provisorias englobadas en esta liquidación (02/10/2026): filas
+    (id, fecha, debe, haber, saldo) y saldo total de las englobadas."""
+    filas = []
+    total = Decimal('0')
+    for liq in liquidacion.liquidaciones_englobadas():
+        filas.append((liq.id, liq.fecha, liq.debe or Decimal('0'), liq.haber or Decimal('0'), liq.diferencia))
+        total += liq.diferencia
+    return filas, total
+
+
 # ---------------------------------------------------------------------------
 # PDF
 # ---------------------------------------------------------------------------
@@ -398,6 +412,12 @@ def generar_pdf_liquidacion(liquidacion, completa=False):
 
     fecha_texto = liquidacion.fecha.strftime('%d/%m/%Y') if liquidacion.fecha else ''
     story.append(Paragraph(f'Liquidación N°: {liquidacion.id}      ({fecha_texto})', estilo_titulo))
+    if liquidacion.es_provisoria:
+        englobada_en = liquidacion.englobada_en
+        texto_prov = 'LIQUIDACIÓN PROVISORIA'
+        if englobada_en is not None:
+            texto_prov += f' -- englobada en la liquidación N° {englobada_en.id}'
+        story.append(Paragraph(texto_prov, estilo_titulo))
 
     if entidad:
         cuit_texto = _cuit_con_guiones(entidad.cuit) if entidad.cuit else ''
@@ -434,6 +454,20 @@ def generar_pdf_liquidacion(liquidacion, completa=False):
         if filas_renglones_haber or hay_mas_haber:
             story.append(_tabla_renglones_pdf(filas_renglones_haber, hay_mas_haber))
             story.append(Spacer(0, 10))
+
+    filas_englobadas, saldo_englobadas = _filas_englobadas(liquidacion)
+    if filas_englobadas:
+        story.append(Paragraph('Liquidaciones provisorias englobadas', estilo_cabecera))
+        story.append(_tabla_pdf(ENGLOBADAS_HEADERS, [
+            (f[0], f[1], separador_miles(f[2]), separador_miles(f[3]), f[4]) for f in filas_englobadas
+        ]))
+        story.append(Spacer(0, 5))
+        story.append(Paragraph(f'Saldo de esta liquidación:   {separador_miles(total_debe - total_haber)}', estilo_pie))
+        story.append(Paragraph(f'Saldo de las provisorias englobadas:   {separador_miles(saldo_englobadas)}', estilo_pie))
+        story.append(Paragraph(
+            f'Saldo consolidado:   {separador_miles(total_debe - total_haber + saldo_englobadas)}', estilo_pie,
+        ))
+        story.append(Spacer(0, 10))
 
     numero_en_letras = numero_a_moneda(total_haber)
     story.append(Paragraph(f'Recibí conforme en Pesos:  {numero_en_letras}', estilo_pie_recibo))
@@ -501,6 +535,15 @@ def generar_excel_liquidacion(liquidacion, completa=False):
     ws_resumen.append(['Diferencia', _numero_o_none(total_debe - total_haber)])
     for fila_idx in (5, 6, 7):
         ws_resumen.cell(row=fila_idx, column=2).number_format = FORMATO_MILES_EXCEL
+    filas_englobadas, saldo_englobadas = _filas_englobadas(liquidacion)
+    if liquidacion.es_provisoria:
+        englobada_en = liquidacion.englobada_en
+        ws_resumen.append(['Estado', 'PROVISORIA' + (f' (englobada en N° {englobada_en.id})' if englobada_en else ' (pendiente)')])
+    if filas_englobadas:
+        ws_resumen.append(['Saldo provisorias englobadas', _numero_o_none(saldo_englobadas)])
+        ws_resumen.cell(row=ws_resumen.max_row, column=2).number_format = FORMATO_MILES_EXCEL
+        ws_resumen.append(['Saldo consolidado', _numero_o_none(total_debe - total_haber + saldo_englobadas)])
+        ws_resumen.cell(row=ws_resumen.max_row, column=2).number_format = FORMATO_MILES_EXCEL
     definir_estilo_general(ws_resumen)
     _autoajustar_columnas(ws_resumen)
 
@@ -519,6 +562,16 @@ def generar_excel_liquidacion(liquidacion, completa=False):
     _formatear_columna_numerica(ws_haber, len(HABER_HEADERS))
     definir_estilo_general(ws_haber)
     _autoajustar_columnas(ws_haber)
+
+    if filas_englobadas:
+        ws_englobadas = wb.create_sheet('Englobadas')
+        ws_englobadas.append(ENGLOBADAS_HEADERS)
+        for fila in filas_englobadas:
+            ws_englobadas.append([fila[0], fila[1], _numero_o_none(fila[2]), _numero_o_none(fila[3]), _numero_o_none(fila[4])])
+        for columna in (3, 4, 5):
+            _formatear_columna_numerica(ws_englobadas, columna)
+        definir_estilo_general(ws_englobadas)
+        _autoajustar_columnas(ws_englobadas)
 
     if completa:
         comprobante_ids_debe = list(

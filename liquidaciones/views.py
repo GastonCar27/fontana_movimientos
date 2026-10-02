@@ -10,6 +10,7 @@ from django.db.models.functions import Coalesce, Cast
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
+from django.utils import timezone
 
 from comprobantes.models import Comprobante
 from entidades.models import Entidad
@@ -34,6 +35,7 @@ from .models import (
     LiquidacionRetencion,
     LiquidacionRetencionInym,
     LiquidacionMovimiento,
+    LiquidacionProvisoria,
 )
 
 TIPOS_LIQUIDACION_VALIDOS = {Liquidacion.TIPO_PAGO, Liquidacion.TIPO_COBRO}
@@ -347,7 +349,101 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
 
 def _siguiente_id_liquidacion():
     ultimo = Liquidacion.objects.aggregate(Max('id'))['id__max'] or 0
+    # Si se borró una liquidación por fuera de esta pantalla (admin, otro
+    # sistema) puede haber quedado una marca de provisoria/englobe con su
+    # id: nunca se reutiliza ese id, para que la liquidación nueva no
+    # "herede" una marca ajena (02/10/2026).
+    marcas = LiquidacionProvisoria.objects.aggregate(a=Max('liquidacion_id'), b=Max('englobada_en_id'))
+    ultimo = max(ultimo, marcas['a'] or 0, marcas['b'] or 0)
     return ultimo + 1
+
+
+# ---------------------------------------------------------------------------
+# Liquidaciones provisorias / englobadas (pedido de Gastón, 02/10/2026).
+# Ver LiquidacionProvisoria en models.py y
+# documentacion/liquidaciones_provisorias.docx.
+# ---------------------------------------------------------------------------
+
+def _formato_pesos(valor):
+    from movimientos.templatetags.movimientos_extras import separador_miles
+    return f'$ {separador_miles(valor)}'
+
+
+def _candidatas_para_form(entidad, tipo, liquidacion_actual, englobar_ids):
+    if entidad is None:
+        return []
+    candidatas = list(_candidatas_englobar(entidad, tipo, liquidacion_actual))
+    for liq in candidatas:
+        liq.seleccionada = liq.pk in englobar_ids
+        # Para el JS del form (que usa Haber - Debe como "diferencia").
+        liq.saldo_js = (liq.haber or Decimal('0')) - (liq.debe or Decimal('0'))
+    return candidatas
+
+
+def _candidatas_englobar(entidad, tipo, liquidacion_actual=None):
+    """Provisorias que se pueden englobar en `liquidacion_actual` (o en
+    una liquidación nueva): misma entidad, mismo tipo, todavía pendientes
+    (o ya englobadas en ésta misma), y nunca la propia liquidación."""
+    qs = Liquidacion.objects.filter(
+        entidad=entidad,
+        tipo=tipo,
+        provisoria__isnull=False,
+    ).select_related('provisoria')
+    if liquidacion_actual is not None:
+        qs = qs.exclude(pk=liquidacion_actual.pk).filter(
+            Q(provisoria__englobada_en__isnull=True) | Q(provisoria__englobada_en=liquidacion_actual)
+        )
+    else:
+        qs = qs.filter(provisoria__englobada_en__isnull=True)
+    return qs.order_by('fecha', 'id')
+
+
+def _validar_provisoria_y_englobe(liquidacion, entidad, tipo, es_provisoria, englobar_ids):
+    """Devuelve una lista de errores (vacía si está todo bien)."""
+    errores = []
+    if es_provisoria and englobar_ids:
+        errores.append(
+            'Una liquidación provisoria no puede englobar otras: destildá "Provisoria" '
+            'o sacá las liquidaciones a englobar.'
+        )
+    if liquidacion is not None:
+        info = liquidacion.info_provisoria
+        if info is not None and info.englobada_en_id and not es_provisoria:
+            errores.append(
+                f'Esta liquidación está englobada en la liquidación {info.englobada_en_id}: '
+                'para dejar de marcarla como provisoria, primero sacala de esa liquidación.'
+            )
+    if englobar_ids:
+        validas = set(
+            _candidatas_englobar(entidad, tipo, liquidacion).filter(pk__in=englobar_ids).values_list('pk', flat=True)
+        )
+        invalidas = sorted(set(englobar_ids) - validas)
+        if invalidas:
+            errores.append(
+                'No se pueden englobar estas liquidaciones (no son provisorias pendientes de la '
+                f'misma entidad y tipo, o ya están englobadas en otra): {", ".join(map(str, invalidas))}.'
+            )
+    return errores
+
+
+def _guardar_provisoria_y_englobe(liquidacion, es_provisoria, englobar_ids, usuario=''):
+    """Aplica la marca "provisoria" y el conjunto de englobadas (ya
+    validados con _validar_provisoria_y_englobe)."""
+    info = liquidacion.info_provisoria
+    if es_provisoria and info is None:
+        LiquidacionProvisoria.objects.create(liquidacion=liquidacion, usuario=usuario or '')
+    elif not es_provisoria and info is not None:
+        info.delete()
+    # Las que estaban englobadas acá y se destildaron vuelven a pendientes.
+    LiquidacionProvisoria.objects.filter(englobada_en=liquidacion).exclude(
+        liquidacion_id__in=englobar_ids
+    ).update(englobada_en=None, fecha_englobada=None)
+    if englobar_ids:
+        LiquidacionProvisoria.objects.filter(
+            liquidacion_id__in=englobar_ids, englobada_en__isnull=True
+        ).update(englobada_en=liquidacion, fecha_englobada=timezone.now())
+    # Que no quede cacheado el estado viejo de la relación inversa.
+    liquidacion._state.fields_cache.pop('provisoria', None)
 
 
 # ---------------------------------------------------------------------------
@@ -504,15 +600,59 @@ def item_sin_liquidar_buscar(request):
 # Listado
 # ---------------------------------------------------------------------------
 
+ESTADOS_PROVISORIA = [
+    ('', 'Todas'),
+    ('provisorias_pendientes', 'Provisorias pendientes'),
+    ('provisorias_englobadas', 'Provisorias ya englobadas'),
+    ('definitivas', 'Definitivas (con provisorias englobadas)'),
+    ('normales', 'Sin provisorias (normales)'),
+]
+
+
+def _anotar_englobe(liquidaciones):
+    """Agrega a cada liquidación: cant_englobadas, saldo_englobadas_total y
+    saldo_consolidado_total (diferencia propia + diferencias de las provisorias
+    englobadas en ella), todo en la misma consulta (subqueries)."""
+    cero = Value(Decimal('0'))
+    base = LiquidacionProvisoria.objects.filter(englobada_en=OuterRef('pk')).values('englobada_en')
+    saldo_sub = base.annotate(
+        s=Sum(
+            Coalesce(F('liquidacion__debe'), cero, output_field=DecimalField(max_digits=20, decimal_places=2))
+            - Coalesce(F('liquidacion__haber'), cero, output_field=DecimalField(max_digits=20, decimal_places=2))
+        )
+    ).values('s')[:1]
+    cant_sub = base.annotate(c=Count('id')).values('c')[:1]
+    dec = DecimalField(max_digits=20, decimal_places=2)
+    return liquidaciones.annotate(
+        cant_englobadas=Coalesce(Subquery(cant_sub), Value(0)),
+        saldo_englobadas_total=Coalesce(Subquery(saldo_sub, output_field=dec), cero, output_field=dec),
+    ).annotate(
+        saldo_consolidado_total=Coalesce(F('debe'), cero, output_field=dec)
+        - Coalesce(F('haber'), cero, output_field=dec)
+        + F('saldo_englobadas_total'),
+    )
+
+
 def liquidacion_list(request):
     liquidaciones = (
-        Liquidacion.objects.select_related('entidad')
+        Liquidacion.objects.select_related('entidad', 'provisoria', 'provisoria__englobada_en')
         .order_by('-fecha', '-id')
     )
+    liquidaciones = _anotar_englobe(liquidaciones)
 
     q_entidad = request.GET.get('entidad', '').strip()
     q_id = request.GET.get('id', '').strip()
     q_fecha = request.GET.get('fecha', '').strip()
+    q_estado = request.GET.get('estado', '').strip()
+
+    if q_estado == 'provisorias_pendientes':
+        liquidaciones = liquidaciones.filter(provisoria__isnull=False, provisoria__englobada_en__isnull=True)
+    elif q_estado == 'provisorias_englobadas':
+        liquidaciones = liquidaciones.filter(provisoria__englobada_en__isnull=False)
+    elif q_estado == 'definitivas':
+        liquidaciones = liquidaciones.filter(cant_englobadas__gt=0)
+    elif q_estado == 'normales':
+        liquidaciones = liquidaciones.filter(provisoria__isnull=True, cant_englobadas=0)
 
     if q_entidad:
         liquidaciones = liquidaciones.filter(
@@ -535,6 +675,7 @@ def liquidacion_list(request):
         'debe': 'debe',
         'haber': 'haber',
         'diferencia': F('debe') - F('haber'),
+        'saldo_consolidado': 'saldo_consolidado_total',
     })
 
     return render(request, 'liquidaciones/list.html', {
@@ -542,6 +683,8 @@ def liquidacion_list(request):
         'q_entidad': q_entidad,
         'q_id': q_id,
         'q_fecha': q_fecha,
+        'q_estado': q_estado,
+        'estados_provisoria': ESTADOS_PROVISORIA,
     })
 
 # ---------------------------------------------------------------------------
@@ -568,8 +711,15 @@ def liquidacion_form(request, pk=None):
     # los ítems ya vinculados, que se ofrecieron para la dirección
     # original). Ver Liquidacion.TIPO_CHOICES.
     tipo_liquidacion = liquidacion.tipo if liquidacion else Liquidacion.TIPO_PAGO
+    # Provisoria / englobe (02/10/2026): valores a mostrar en el form.
+    es_provisoria = liquidacion.es_provisoria if liquidacion else False
+    englobar_ids = set(
+        liquidacion.provisorias_englobadas.values_list('liquidacion_id', flat=True)
+    ) if liquidacion else set()
 
     if request.method == 'POST':
+        es_provisoria = request.POST.get('es_provisoria') == '1'
+        englobar_ids = {int(x) for x in request.POST.getlist('englobar') if x.isdigit()}
         fecha = request.POST.get('fecha')
         entidad_id = request.POST.get('entidad')
         entidad = get_object_or_404(Entidad, pk=entidad_id) if entidad_id else None
@@ -620,8 +770,14 @@ def liquidacion_form(request, pk=None):
                     else:
                         a_crear.append((modelo_intermedio, fk_name, item_id, tipo_item))
 
-            if not a_crear:
+            errores_englobe = _validar_provisoria_y_englobe(
+                liquidacion, entidad, tipo_liquidacion, es_provisoria, englobar_ids,
+            )
+            if not a_crear and not englobar_ids:
                 messages.error(request, 'Debe seleccionar al menos un ítem para la liquidación.')
+            elif errores_englobe:
+                for error in errores_englobe:
+                    messages.error(request, error)
             else:
                 if liquidacion is None:
                     liquidacion = Liquidacion(id=_siguiente_id_liquidacion(), tipo=tipo_liquidacion)
@@ -647,7 +803,26 @@ def liquidacion_form(request, pk=None):
                 # Única fuente de verdad para debe/haber: se recalcula desde la DB
                 liquidacion.recalcular_totales()
 
+                _guardar_provisoria_y_englobe(
+                    liquidacion, es_provisoria, englobar_ids,
+                    usuario=getattr(request.user, 'username', '') or '',
+                )
+
                 messages.success(request, f'Liquidación {liquidacion.numero} guardada correctamente.')
+                if es_provisoria:
+                    messages.info(
+                        request,
+                        f'Quedó como PROVISORIA (saldo {_formato_pesos(liquidacion.diferencia)}). '
+                        'Cuando llegue lo que la cierra, englobala en la liquidación definitiva.'
+                    )
+                elif englobar_ids:
+                    saldo = liquidacion.saldo_consolidado
+                    messages.info(
+                        request,
+                        f'Engloba {len(englobar_ids)} liquidación(es) provisoria(s). '
+                        f'Saldo consolidado: {_formato_pesos(saldo)}'
+                        + (' -- quedó cerrado.' if saldo == 0 else '.')
+                    )
                 return redirect(f"{reverse('liquidaciones:listado')}?id={liquidacion.id}")
 
     else:
@@ -703,6 +878,9 @@ def liquidacion_form(request, pk=None):
         'tipo_liquidacion': tipo_liquidacion,
         'tipo_choices': Liquidacion.TIPO_CHOICES,
         'es_edicion': liquidacion is not None,
+        'es_provisoria': es_provisoria,
+        'englobada_en': liquidacion.englobada_en if liquidacion else None,
+        'candidatas_englobar': _candidatas_para_form(entidad, tipo_liquidacion, liquidacion, englobar_ids),
     })
 
 
@@ -714,6 +892,13 @@ def liquidacion_eliminar(request, pk):
     liquidacion = get_object_or_404(Liquidacion, pk=pk)
 
     if request.method == 'POST':
+        # Provisorias (02/10/2026): si era definitiva, las que tenía
+        # englobadas vuelven a quedar pendientes; si era provisoria, se
+        # borra su marca (y deja de contar en la definitiva donde estaba).
+        LiquidacionProvisoria.objects.filter(englobada_en=liquidacion).update(
+            englobada_en=None, fecha_englobada=None,
+        )
+        LiquidacionProvisoria.objects.filter(liquidacion=liquidacion).delete()
         LiquidacionMovimiento.objects.filter(liquidacion=liquidacion).delete()
         LiquidacionComprobante.objects.filter(liquidacion=liquidacion).delete()
         LiquidacionRetencion.objects.filter(liquidacion=liquidacion).delete()
