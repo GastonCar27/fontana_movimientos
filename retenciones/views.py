@@ -438,7 +438,11 @@ def comprobante_buscar_para_retencion(request):
     # todos los que tienen un "4" en algún lugar del texto.
     orden_exacto = Value(1)
     if q:
-        filtro = Q(comprobante_string__icontains=q) | Q(tipo_comprobante__nombre__icontains=q)
+        filtro = (
+            Q(comprobante_string__icontains=q)
+            | Q(tipo_comprobante__nombre__icontains=q)
+            | Q(tipo_comprobante__abreviatura__icontains=q)
+        )
         if q.isdigit():
             filtro |= Q(numero=int(q)) | Q(id=int(q))
             orden_exacto = Case(
@@ -454,9 +458,8 @@ def comprobante_buscar_para_retencion(request):
         .order_by('orden_exacto', '-fecha', '-id')[:30]
     )
 
-    resultados = []
-    for c in comprobantes:
-        resultados.append({
+    def _item(c, aviso=''):
+        return {
             'id': c.id,
             'text': _texto_comprobante(c),
             'tipo_comp_origen': c.tipo_comprobante_id,
@@ -467,7 +470,52 @@ def comprobante_buscar_para_retencion(request):
             # calcula la retención: el neto gravado del comprobante (no el
             # total, que incluye IVA y no es la base imponible).
             'subtotal': str(c.neto_gravado) if c.neto_gravado is not None else '',
-        })
+            'aviso': aviso,
+        }
+
+    comprobantes = list(comprobantes)
+    resultados = [_item(c) for c in comprobantes]
+
+    # --- "Otros posibles" (02/10/2026, Gastón: la NC N° 4 de Establecimiento
+    # Las Marías no aparecía nunca). Si se tipeó algo, además de los
+    # comprobantes de la entidad/dirección elegidas se ofrecen, separados y
+    # con una aclaración, los que coinciden con lo buscado pero quedaron
+    # cargados distinto: con la otra dirección (es_emisor al revés), a nombre
+    # de otra entidad con el mismo CUIT (entidad duplicada), o sin entidad
+    # asignada (cargados desde AFIP sin poder matchear la entidad) pero con
+    # el nombre o CUIT de esta entidad en el texto. Se pueden elegir igual.
+    if q:
+        entidad = Entidad.objects.filter(pk=int(entidad_id)).first()
+        alcance = Q(entidad_emisor_id=int(entidad_id))
+        cuit = (entidad.cuit or '').strip() if entidad else ''
+        if cuit:
+            # Subconsulta (no entidad_emisor__cuit): un JOIN contra 'entidad'
+            # sería INNER y descartaría los comprobantes sin entidad.
+            alcance |= Q(entidad_emisor_id__in=Entidad.objects.filter(cuit=cuit).values('id'))
+            alcance |= Q(entidad_emisor__isnull=True, entidad_nombre__icontains=cuit)
+        if entidad and entidad.nombre:
+            alcance |= Q(entidad_emisor__isnull=True, entidad_nombre__icontains=entidad.nombre.strip()[:25])
+        ya = {c.id for c in comprobantes}
+        otros = (
+            Comprobante.objects.filter(alcance).filter(filtro)
+            .exclude(id__in=ya)
+            # Sin select_related('entidad_emisor'): el FK no es null=True en el
+            # modelo, así que haría INNER JOIN y descartaría justo los
+            # comprobantes sin entidad asignada.
+            .select_related('tipo_comprobante')
+            .annotate(orden_exacto=orden_exacto)
+            .order_by('orden_exacto', '-fecha', '-id')[:15]
+        )
+        for c in otros:
+            if c.entidad_emisor_id is None:
+                aviso = 'sin entidad asignada'
+            elif c.entidad_emisor_id != int(entidad_id):
+                aviso = f'cargado a otra entidad con el mismo CUIT (ID {c.entidad_emisor_id})'
+            elif es_emisor_retencion == '0':
+                aviso = 'cargado como emitido POR la entidad (dirección al revés)'
+            else:
+                aviso = 'cargado como emitido por Fontana (dirección al revés)'
+            resultados.append(_item(c, aviso))
     return JsonResponse({'resultados': resultados})
 
 

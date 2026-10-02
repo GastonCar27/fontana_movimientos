@@ -219,6 +219,16 @@
 .comprobante-resultados div.comprobante-resultado-vacio:hover {
     background: transparent;
 }
+.comprobante-resultados div.comprobante-resultado-separador {
+    border-top: 1px solid #ddd;
+    background: #fff8e1;
+    font-size: 0.8rem;
+}
+.comprobante-resultados .comprobante-resultado-aviso {
+    color: #b45309;
+    font-size: 0.8rem;
+    font-style: italic;
+}
 /* Campos con los datos de la factura elegida (Tipo/Punto de venta/Número/
    Fecha) y el propio cuadro "Buscar factura": una vez que se selecciona una
    factura del buscador quedan bloqueados para que no se puedan tipear
@@ -572,9 +582,27 @@
                     resultados.style.display = 'block';
                     return;
                 }
+                let separadorPuesto = false;
                 data.resultados.forEach(function (item) {
+                    // "Otros posibles" (02/10/2026): coinciden con lo buscado
+                    // pero están cargados con otra dirección, a otra entidad
+                    // con el mismo CUIT o sin entidad -- ver
+                    // comprobante_buscar_para_retencion.
+                    if (item.aviso && !separadorPuesto) {
+                        const sep = document.createElement('div');
+                        sep.className = 'comprobante-resultado-vacio comprobante-resultado-separador';
+                        sep.textContent = 'Otros posibles (cargados distinto, revisalos antes de elegir):';
+                        resultados.appendChild(sep);
+                        separadorPuesto = true;
+                    }
                     const div = document.createElement('div');
                     div.textContent = item.text;
+                    if (item.aviso) {
+                        const nota = document.createElement('span');
+                        nota.className = 'comprobante-resultado-aviso';
+                        nota.textContent = ' — ' + item.aviso;
+                        div.appendChild(nota);
+                    }
                     div.addEventListener('click', function () {
                         input.value = item.text;
 
