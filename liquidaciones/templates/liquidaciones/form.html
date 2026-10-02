@@ -195,13 +195,13 @@
         {% for c in items.comprobantes %}
             <tr data-fecha="{{ c.fecha|date:'Y-m-d' }}"{% if c.preseleccionado %} style="background-color: #fff3cd;" title="Elegido desde el listado de comprobantes"{% endif %}>
                 <td><input type="checkbox" name="comp_selected" value="{{ c.pk }}" class="chk-item"
-                           data-monto="{{ c.monto_mostrar }}" {% if c.seleccionado %}checked{% endif %}></td>
+                           data-monto="{{ c.monto_mostrar }}"{% if c.es_nc %} data-nc="1"{% endif %} {% if c.seleccionado %}checked{% endif %}></td>
                 <td>{{ c.fecha }}</td>
                 <td>{{ c.comprobante_string|default:c.pk }}</td>
                 <td>{{ c.tipo_comprobante|default:"-" }}</td>
                 <td>{{ c.punto_de_venta|default:"-" }}</td>
                 <td>{{ c.numero|default:"-" }}</td>
-                <td>{{ c.monto_mostrar|separador_miles }}</td>
+                <td>{{ c.monto_mostrar|separador_miles }}{% if c.es_nc %} <span class="badge bg-info text-dark" title="Nota de Crédito: en Debe resta, en Haber suma como un pago">NC</span>{% endif %}</td>
                 <td>
                     <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
                         <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
@@ -317,12 +317,12 @@
         {% for c in items.comprobantes_otros %}
             <tr>
                 <td><input type="checkbox" name="comp_selected" value="{{ c.pk }}" class="chk-item"
-                           data-monto="{{ c.monto_mostrar }}" checked></td>
+                           data-monto="{{ c.monto_mostrar }}"{% if c.es_nc %} data-nc="1"{% endif %} checked></td>
                 <td>Comprobante</td>
                 <td>{{ c.entidad_emisor|default:c.entidad_nombre }}</td>
                 <td>{{ c.fecha }}</td>
                 <td>{{ c.tipo_comprobante|default:"" }} {{ c.comprobante_string|default:"" }}</td>
-                <td>{{ c.monto_mostrar|separador_miles }}</td>
+                <td>{{ c.monto_mostrar|separador_miles }}{% if c.es_nc %} <span class="badge bg-info text-dark" title="Nota de Crédito: en Debe resta, en Haber suma como un pago">NC</span>{% endif %}</td>
                 <td>
                     <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
                         <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
@@ -480,7 +480,7 @@ function agregarOtroItem(item) {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-        <td><input type="checkbox" name="${nombreSel}" value="${item.id}" class="chk-item" data-monto="${item.monto}" checked></td>
+        <td><input type="checkbox" name="${nombreSel}" value="${item.id}" class="chk-item" data-monto="${item.monto}"${item.es_nc ? ' data-nc="1"' : ''} checked></td>
         <td>${etiquetaTipo}</td>
         <td>${item.entidad}</td>
         <td>${item.fecha}</td>
@@ -600,9 +600,14 @@ function recalcularTotales() {
 
     document.querySelectorAll('.chk-item:checked').forEach(function (chk) {
         const fila = chk.closest('tr');
-        const monto = parseFloat(chk.dataset.monto) || 0;
+        let monto = parseFloat(chk.dataset.monto) || 0;
         const select = fila.querySelector('.sel-tipo');
         const tipo = select ? select.value : 'debe';
+        // Nota de Crédito: en Debe resta; en Haber suma como un pago
+        // (regla unificada 02/10/2026, igual que el saldo guardado).
+        if (chk.dataset.nc === '1' && tipo === 'debe') {
+            monto = -monto;
+        }
 
         if (tipo === 'debe') {
             totalDebe += monto;

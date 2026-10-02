@@ -36,6 +36,7 @@ from .models import (
     LiquidacionRetencionInym,
     LiquidacionMovimiento,
     LiquidacionProvisoria,
+    es_nota_de_credito,
 )
 
 TIPOS_LIQUIDACION_VALIDOS = {Liquidacion.TIPO_PAGO, Liquidacion.TIPO_COBRO}
@@ -172,6 +173,7 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
         c.monto_mostrar = _monto_item(c)
         c.tipo_actual = comp_tipo.get(c.id)
         c.seleccionado = c.id in comp_tipo
+        c.es_nc = es_nota_de_credito(c.tipo_comprobante.nombre if c.tipo_comprobante_id else '')
 
     # --- Retenciones ---
     # Igual criterio direccional que Comprobante.es_emisor: TIPO_PAGO ->
@@ -336,6 +338,7 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
                 c.monto_mostrar = _monto_item(c)
                 c.tipo_actual = comp_otros_tipo.get(c.id)
                 c.seleccionado = True
+                c.es_nc = es_nota_de_credito(c.tipo_comprobante.nombre if c.tipo_comprobante_id else '')
 
     return {
         'movimientos': movimientos,
@@ -591,6 +594,7 @@ def item_sin_liquidar_buscar(request):
                 c.comprobante_string,
             ])),
             'monto': float(_monto_item(c)),
+            'es_nc': es_nota_de_credito(c.tipo_comprobante.nombre if c.tipo_comprobante_id else ''),
         })
 
     return JsonResponse({'resultados': resultados[:30]})
@@ -1046,10 +1050,8 @@ def liquidacion_diferencias(request):
         """
         Igual que suma_relacionada, pero además:
         - invierte el signo del total cuando el comprobante es una Nota de
-          Crédito: el campo 'total' de Comprobante siempre se guarda en
-          positivo en la base, así que acá se le aplica el signo negativo
-          cuando el nombre del tipo de comprobante contiene "nota de
-          credito".
+          Crédito vinculada en DEBE (en HABER suma en positivo, como un
+          pago -- regla unificada el 02/10/2026, ver liquidaciones/models.py).
         - convierte el total multiplicándolo por el tipo de cambio, si el
           comprobante tiene un registro en comprobante_tipo_de_cambio
           (moneda distinta a pesos). Si no tiene, el factor es 1.
@@ -1070,7 +1072,11 @@ def liquidacion_diferencias(request):
                     # con 4+ decimales y ya no coincide con lo guardado.
                     monto_signado=Cast(
                         Case(
+                            # NC: negativa sólo en DEBE; en HABER suma en
+                            # positivo (regla unificada 02/10/2026, ver
+                            # liquidaciones/models.py).
                             When(
+                                tipo='debe',
                                 comprobante__tipo_comprobante__nombre__icontains='nota de credito',
                                 then=-F('comprobante__total') * factor_cambio,
                             ),

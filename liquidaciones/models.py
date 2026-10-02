@@ -14,6 +14,29 @@ from movimientos_caja.models import MovimientoCaja
 ENTIDAD_PROPIA_ID = 100
 
 
+def es_nota_de_credito(nombre_tipo):
+    """True si el nombre del tipo de comprobante es una Nota de Crédito
+    (con o sin tilde, sin importar mayúsculas). Mismo criterio que el
+    filtro SQL `tipo_comprobante__nombre__icontains='nota de credito'`
+    (la collation de MySQL ignora tildes)."""
+    import unicodedata
+    texto = unicodedata.normalize('NFKD', nombre_tipo or '')
+    texto = ''.join(ch for ch in texto if not unicodedata.combining(ch)).lower()
+    return 'nota de credito' in texto
+
+
+# Regla de signo de las Notas de Crédito en una liquidación (unificada el
+# 02/10/2026, pedido de Gastón: el listado mostraba distinto saldo que la
+# pantalla de edición cuando había una NC en Haber). El 'total' de un
+# Comprobante se guarda siempre en positivo; una NC siempre REDUCE el saldo
+# (Debe - Haber), esté del lado que esté:
+#   * NC en DEBE  -> resta del Debe (se toma en negativo).
+#   * NC en HABER -> suma al Haber (en positivo, como un pago).
+# Antes, recalcular_totales/Diferencias la tomaban en negativo en los DOS
+# lados (en Haber eso la hacía AUMENTAR el saldo), y la pantalla de edición
+# y el PDF/Excel nunca le cambiaban el signo. Ahora todos usan esta regla.
+
+
 class Liquidacion(models.Model):
     # Pago: nosotros le pagamos a la entidad (proveedor) -- comportamiento
     # histórico, el único que existía antes de septiembre de 2026. Cobro:
@@ -56,11 +79,10 @@ class Liquidacion(models.Model):
         #   comprobante_tipo_de_cambio, su monto se multiplica por ese tipo
         #   de cambio antes de sumar. Si no tiene (comprobante en pesos), el
         #   factor es 1 y el monto queda igual.
-        # - Notas de Crédito: el campo 'total' de Comprobante siempre se
-        #   guarda en positivo en la base, así que acá se le aplica el signo
-        #   negativo cuando el nombre del tipo de comprobante contiene
-        #   "nota de credito" (mismo criterio que liquidacion_diferencias,
-        #   para que ambos cálculos den siempre el mismo resultado).
+        # - Notas de Crédito: ver la regla de signo arriba de la clase
+        #   (es_nota_de_credito): en DEBE se toman en negativo, en HABER en
+        #   positivo. Mismo criterio en liquidacion_diferencias, el form
+        #   de alta/edición (JS) y el PDF/Excel.
         factor_cambio = Coalesce(
             F('comprobante__tipo_de_cambio__tipo_de_cambio'),
             Value(Decimal('1')),
@@ -75,6 +97,7 @@ class Liquidacion(models.Model):
             monto_convertido=Cast(
                 Case(
                     When(
+                        tipo='debe',
                         comprobante__tipo_comprobante__nombre__icontains='nota de credito',
                         then=-F('comprobante__total') * factor_cambio,
                     ),

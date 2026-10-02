@@ -160,6 +160,7 @@
                 <div class="dropdown-menu" aria-labelledby="navbarDropdownLiquidaciones">
                     <a class="dropdown-item" href="{% url 'liquidaciones:listado' %}">Listado</a>
                     <a class="dropdown-item" href="{% url 'liquidaciones:alta' %}">Nueva liquidación</a>
+                    <a class="dropdown-item" href="{% url 'liquidaciones:listado' %}?estado=provisorias_pendientes">Provisorias pendientes</a>
                     <a class="dropdown-item" href="{% url 'liquidaciones:reporte' %}">Reportes</a>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-submenu">

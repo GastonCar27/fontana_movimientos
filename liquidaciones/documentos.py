@@ -30,6 +30,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from comprobantes.models import ComprobanteRenglonDetalle
+from liquidaciones.models import es_nota_de_credito
 from movimientos.templatetags.movimientos_extras import separador_miles
 from movimientos_caja.models import MovimientoCajaBancoCuentaEntidad
 from services.numero_a_letras import numero_a_moneda
@@ -166,6 +167,9 @@ def _filas_debe(liquidacion):
     ):
         c = lc.comprobante
         monto = _monto_comprobante(c)
+        # NC en Debe: resta (regla unificada 02/10/2026, ver models.py).
+        if es_nota_de_credito(c.tipo_comprobante.nombre if c.tipo_comprobante_id else ''):
+            monto = -monto
         total += monto
         filas.append([c.id, c.fecha, _texto_comprobante(c), entidad_texto, monto])
 
