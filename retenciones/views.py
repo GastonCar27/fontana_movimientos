@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Case, Count, IntegerField, Max, Q, Sum, Value, When
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
@@ -433,13 +433,26 @@ def comprobante_buscar_para_retencion(request):
         # Sufrida: nosotros le emitimos el comprobante a la entidad (venta).
         comprobantes = comprobantes.filter(es_emisor=0)
 
+    # Coincidencia exacta de número/ID primero (02/10/2026): buscando "4",
+    # el comprobante N° 4 quedaba fuera de los primeros resultados detrás de
+    # todos los que tienen un "4" en algún lugar del texto.
+    orden_exacto = Value(1)
     if q:
         filtro = Q(comprobante_string__icontains=q) | Q(tipo_comprobante__nombre__icontains=q)
         if q.isdigit():
             filtro |= Q(numero=int(q)) | Q(id=int(q))
+            orden_exacto = Case(
+                When(Q(numero=int(q)) | Q(id=int(q)), then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
         comprobantes = comprobantes.filter(filtro)
 
-    comprobantes = comprobantes.select_related('tipo_comprobante').order_by('-fecha', '-id')[:20]
+    comprobantes = (
+        comprobantes.select_related('tipo_comprobante')
+        .annotate(orden_exacto=orden_exacto)
+        .order_by('orden_exacto', '-fecha', '-id')[:30]
+    )
 
     resultados = []
     for c in comprobantes:

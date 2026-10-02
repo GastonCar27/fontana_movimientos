@@ -191,13 +191,14 @@
     background: #f0f0f0;
 }
 .comprobante-resultados {
-    position: absolute;
+    position: fixed; /* ver posicionarResultados: así no lo recorta la tabla */
     top: 100%;
     left: 0;
     right: 0;
     background: #fff;
     border: 1px solid #ccc;
-    max-height: 220px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    max-height: 280px;
     overflow-y: auto;
     z-index: 1000;
     display: none;
@@ -483,18 +484,44 @@
     // termine tapando al botón "+ Agregar renglón" (u otros controles) que
     // están debajo de la tabla -- pasaba sobre todo con el último renglón
     // de la tabla, justo arriba del botón (Gastón, 24/09/2026). ---
+    // Corrección 02/10/2026: el desplegable estaba dentro del contenedor
+    // con scroll de la tabla (.table-responsive), que lo RECORTABA -- sobre
+    // todo al abrirse hacia arriba en los últimos renglones, donde sólo se
+    // veía el primer resultado y el resto "desaparecía" (ej. la NC N° 4 de
+    // Establecimiento Las Marías). Ahora se posiciona fijo respecto de la
+    // ventana (position: fixed), así nunca lo recorta la tabla.
     function posicionarResultados(input, resultados) {
         const rect = input.getBoundingClientRect();
-        const espacioNecesario = 230; // alto máximo del desplegable + margen
+        const espacioNecesario = 300; // alto máximo del desplegable + margen
         const espacioAbajo = window.innerHeight - rect.bottom;
+        resultados.style.position = 'fixed';
+        resultados.style.left = rect.left + 'px';
+        resultados.style.right = 'auto';
+        resultados.style.width = Math.max(rect.width, 460) + 'px';
         if (espacioAbajo < espacioNecesario && rect.top > espacioNecesario) {
             resultados.style.top = 'auto';
-            resultados.style.bottom = '100%';
+            resultados.style.bottom = (window.innerHeight - rect.top) + 'px';
         } else {
-            resultados.style.top = '100%';
+            resultados.style.top = rect.bottom + 'px';
             resultados.style.bottom = 'auto';
         }
     }
+
+    // Como el desplegable queda fijo en la pantalla, si se hace scroll (de
+    // la página o de la tabla) se cierra para que no quede "flotando" lejos
+    // de su renglón.
+    function cerrarDesplegablesComprobante(evento) {
+        // El scroll de la propia lista de resultados no la cierra.
+        if (evento && evento.type === 'scroll' && evento.target && evento.target.classList
+                && evento.target.classList.contains('comprobante-resultados')) {
+            return;
+        }
+        document.querySelectorAll('.comprobante-resultados').forEach(function (r) {
+            r.style.display = 'none';
+        });
+    }
+    window.addEventListener('scroll', cerrarDesplegablesComprobante, true);
+    window.addEventListener('resize', cerrarDesplegablesComprobante);
 
     // --- Buscador de "factura ya cargada" por renglón: según la entidad
     // elegida arriba y la dirección de la retención, ofrece los
@@ -523,6 +550,10 @@
 
         const esEmisorValor = selectDireccion ? selectDireccion.value : '1';
         const q = input.value.trim();
+        // Si se tipea rápido, una respuesta vieja puede llegar después de la
+        // nueva y pisar la lista: sólo se dibuja la respuesta del último pedido.
+        const pedidoId = (fila._ultimoPedidoComprobante || 0) + 1;
+        fila._ultimoPedidoComprobante = pedidoId;
 
         fetch(
             `{% url 'retenciones:comprobante_buscar' %}?entidad=${encodeURIComponent(entidadId)}`
@@ -530,6 +561,7 @@
         )
             .then(resp => resp.json())
             .then(data => {
+                if (fila._ultimoPedidoComprobante !== pedidoId) return;
                 resultados.innerHTML = '';
                 if (data.resultados.length === 0) {
                     const vacio = document.createElement('div');
