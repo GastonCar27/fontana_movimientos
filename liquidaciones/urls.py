@@ -19,6 +19,7 @@ urlpatterns = [
     path('item-sin-liquidar-buscar/', views.item_sin_liquidar_buscar, name='item_sin_liquidar_buscar'),
     path('diferencias/', views.liquidacion_diferencias, name='diferencias'),
     path('<int:pk>/recalcular/', views.liquidacion_recalcular, name='recalcular'),
+    path('detectar-errores/', views.liquidacion_detectar_errores, name='detectar_errores'),
 
     # --- Sin liquidar (listados filtrables por Entidad / fecha desde-hasta) ---
     path('sin-liquidar/comprobantes/', views.sin_liquidar_comprobantes, name='sin_liquidar_comprobantes'),

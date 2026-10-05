@@ -1872,3 +1872,170 @@ def liquidacion_ranking_entidades_pdf(request):
     return _pdf_response(
         'ranking_entidades_liquidaciones', 'Ranking de entidades por monto liquidado', resultado
     )
+
+# ---------------------------------------------------------------------------
+# Detectar posibles errores (pedido de Gastón, 05/10/2026)
+#
+# Lo normal es que cada movimiento de caja, comprobante, retención y
+# retención INYM se liquide UNA sola vez por tipo de liquidación (cobro o
+# pago). Esta pantalla lista los ítems que aparecen en MÁS DE UNA
+# liquidación DEL MISMO TIPO -- probable carga duplicada.
+#
+# No se marca como error que un mismo ítem esté en una de cobro Y en una
+# de pago: es el caso legítimo de un cheque de terceros que entra por una
+# liquidación de cobro y sale por una de pago (ver item_sin_liquidar_buscar).
+# Tampoco genera falsos positivos el englobe de provisorias: englobar no
+# copia ítems a la definitiva (ver LiquidacionProvisoria).
+#
+# Sólo lectura: no modifica nada en la base.
+# ---------------------------------------------------------------------------
+
+def _texto_seguro(funcion):
+    """Ejecuta funcion() y devuelve '' si falla (FK legacy apuntando a una
+    fila inexistente, campo vacío, etc.) -- para que un dato roto no tire
+    abajo toda la pantalla de control."""
+    try:
+        valor = funcion()
+    except Exception:
+        return ''
+    return '' if valor is None else str(valor)
+
+
+def _detectar_duplicados(modelo_intermedio, campo_item):
+    """Devuelve [(item_id, tipo_liquidacion, [vinculos...]), ...] para los
+    ítems que figuran en más de una liquidación distinta del mismo tipo.
+    `campo_item` es el nombre del FK al ítem en la tabla intermedia
+    (p. ej. 'movimiento_caja')."""
+    claves = (
+        modelo_intermedio.objects
+        .values(campo_item, 'liquidacion__tipo')
+        .annotate(cantidad=Count('liquidacion', distinct=True))
+        .filter(cantidad__gt=1)
+        .order_by()
+    )
+    pares = {(c[campo_item], c['liquidacion__tipo']) for c in claves}
+    if not pares:
+        return []
+
+    ids_item = {item_id for item_id, _tipo in pares}
+    # select_related('liquidacion') es seguro (FK no nulo y siempre
+    # existente); la entidad de la liquidación se resuelve aparte para no
+    # arriesgar un INNER JOIN que descarte filas en silencio.
+    vinculos = (
+        modelo_intermedio.objects
+        .filter(**{f'{campo_item}__in': ids_item})
+        .select_related('liquidacion')
+        .order_by('liquidacion__fecha', 'liquidacion_id')
+    )
+    agrupado = {}
+    for v in vinculos:
+        clave = (getattr(v, f'{campo_item}_id'), v.liquidacion.tipo)
+        if clave in pares:
+            agrupado.setdefault(clave, []).append(v)
+    return [(item_id, tipo, lista) for (item_id, tipo), lista in agrupado.items()]
+
+
+def _filas_duplicados(modelo_intermedio, campo_item, modelo_item, describir, entidades):
+    """Arma las filas para el template. `describir(item)` devuelve
+    (descripcion, entidad_texto, fecha, monto)."""
+    duplicados = _detectar_duplicados(modelo_intermedio, campo_item)
+    if not duplicados:
+        return []
+    items = modelo_item.objects.in_bulk({item_id for item_id, _t, _l in duplicados})
+    filas = []
+    for item_id, tipo, vinculos in duplicados:
+        item = items.get(item_id)
+        if item is not None:
+            descripcion, entidad_txt, fecha, monto = describir(item)
+        else:
+            descripcion, entidad_txt, fecha, monto = '(el ítem ya no existe)', '', None, None
+
+        liquidaciones = []
+        vistos = set()
+        for v in vinculos:
+            liq = v.liquidacion
+            if liq.id in vistos:
+                # El mismo ítem cargado dos veces en la MISMA liquidación:
+                # se muestra una sola vez, pero con aviso.
+                for l in liquidaciones:
+                    if l.id == liq.id:
+                        l.repetido_en_misma = True
+                continue
+            vistos.add(liq.id)
+            entidad = entidades.get(liq.entidad_id)
+            liquidaciones.append(SimpleNamespace(
+                id=liq.id,
+                numero=liq.numero,
+                fecha=liq.fecha,
+                entidad=str(entidad) if entidad else f'Entidad {liq.entidad_id}',
+                lado=(v.tipo or '').capitalize() or '-',
+                repetido_en_misma=False,
+            ))
+        filas.append(SimpleNamespace(
+            item_id=item_id,
+            tipo=tipo,
+            tipo_texto='Cobro' if tipo == Liquidacion.TIPO_COBRO else 'Pago',
+            descripcion=descripcion,
+            entidad=entidad_txt,
+            fecha=fecha,
+            monto=monto,
+            liquidaciones=liquidaciones,
+        ))
+    filas.sort(key=lambda f: (f.fecha or datetime.date.min, f.item_id), reverse=True)
+    return filas
+
+
+def liquidacion_detectar_errores(request):
+    # Entidades en un solo diccionario (liquidaciones + comprobantes), para
+    # no depender de JOINs con FKs legacy que pueden tener NULL.
+    entidades = Entidad.objects.in_bulk()
+
+    def desc_movimiento(m):
+        tipo = _texto_seguro(lambda: m.tipo)
+        numero = _texto_seguro(lambda: m.numero)
+        descripcion = ' '.join(p for p in [tipo, f'N° {numero}' if numero else ''] if p) or 'Movimiento de caja'
+        emisor = _texto_seguro(lambda: m.emisor)
+        receptor = _texto_seguro(lambda: m.receptor)
+        entidad_txt = f'{emisor} → {receptor}' if emisor or receptor else ''
+        return descripcion, entidad_txt, m.emision, m.monto
+
+    def desc_comprobante(c):
+        tipo = _texto_seguro(lambda: c.tipo_comprobante)
+        if c.punto_de_venta is not None and c.numero is not None:
+            nro = f'{c.punto_de_venta:05d}-{c.numero:08d}'
+        else:
+            nro = _texto_seguro(lambda: c.numero)
+        entidad = entidades.get(c.entidad_emisor_id)
+        entidad_txt = str(entidad) if entidad else (c.entidad_nombre or 'Sin entidad')
+        return f'{tipo} {nro}'.strip(), entidad_txt, c.fecha, c.total
+
+    def desc_retencion(r):
+        impuesto = _texto_seguro(lambda: r.id_impuesto)
+        nro = f'{r.año}-{r.numero}' if r.año is not None and r.numero is not None else ''
+        descripcion = ' '.join(p for p in [impuesto, nro] if p) or 'Retención'
+        entidad = entidades.get(r.entidad_id)
+        entidad_txt = str(entidad) if entidad else (r.entidad_nombre or '')
+        return descripcion, entidad_txt, r.fecha, r.total
+
+    def desc_retencion_inym(ri):
+        emisor = _texto_seguro(lambda: ri.operador_emisor)
+        retenido = _texto_seguro(lambda: ri.operador_retenido)
+        entidad_txt = f'{emisor} → {retenido}' if emisor or retenido else ''
+        kgs = f'{ri.kgs} kgs' if ri.kgs is not None else ''
+        return ' '.join(p for p in ['Retención INYM', kgs] if p), entidad_txt, ri.fecha, ri.total
+
+    secciones = [
+        SimpleNamespace(clave='movimientos', titulo='Movimientos de caja', filas=_filas_duplicados(
+            LiquidacionMovimiento, 'movimiento_caja', MovimientoCaja, desc_movimiento, entidades)),
+        SimpleNamespace(clave='comprobantes', titulo='Comprobantes', filas=_filas_duplicados(
+            LiquidacionComprobante, 'comprobante', Comprobante, desc_comprobante, entidades)),
+        SimpleNamespace(clave='retenciones', titulo='Retenciones', filas=_filas_duplicados(
+            LiquidacionRetencion, 'retencion', Retencion, desc_retencion, entidades)),
+        SimpleNamespace(clave='retenciones_inym', titulo='Retenciones INYM', filas=_filas_duplicados(
+            LiquidacionRetencionInym, 'retencion_inym', RetencionInym, desc_retencion_inym, entidades)),
+    ]
+
+    return render(request, 'liquidaciones/detectar_errores.html', {
+        'secciones': secciones,
+        'total_problemas': sum(len(s.filas) for s in secciones),
+    })

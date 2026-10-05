@@ -13,6 +13,13 @@
                href="{% url 'liquidaciones:diferencias' %}">Diferencias</a>
         </div>
         <div>
+            <span class="text-muted small text-uppercase fw-semibold me-2">Control</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'detectar_errores' %}active{% endif %}"
+                   href="{% url 'liquidaciones:detectar_errores' %}">Detectar posibles errores</a>
+            </div>
+        </div>
+        <div>
             <span class="text-muted small text-uppercase fw-semibold me-2">Sin liquidar</span>
             <div class="btn-group btn-group-sm" role="group">
                 <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'sin_liquidar_comprobantes' %}active{% endif %}"

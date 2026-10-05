@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "liquidaciones/menu.html" %}
+
+    <h4 class="mb-1">Detectar posibles errores</h4>
+    <p class="text-muted small mb-3">
+        Ítems que figuran en <strong>más de una liquidación del mismo tipo</strong> (cobro o pago).
+        Lo normal es que cada uno se liquide una sola vez. Un mismo ítem en una liquidación de cobro
+        <em>y</em> en una de pago (ej. un cheque de terceros recibido y después entregado) no se marca.
+    </p>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        {% for s in secciones %}
+        <a href="#{{ s.clave }}" class="btn btn-sm {% if s.filas %}btn-danger{% else %}btn-outline-success{% endif %}">
+            {{ s.titulo }}: {{ s.filas|length }}
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if not total_problemas %}
+    <div class="alert alert-success">No se encontraron ítems liquidados más de una vez en liquidaciones del mismo tipo.</div>
+    {% endif %}
+
+    {% for s in secciones %}
+    <h5 id="{{ s.clave }}" class="mt-4">{{ s.titulo }}
+        <span class="badge {% if s.filas %}bg-danger{% else %}bg-success{% endif %}">{{ s.filas|length }}</span>
+    </h5>
+    {% if s.filas %}
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Tipo liq.</th>
+                    <th>Descripción</th>
+                    <th>Entidad</th>
+                    <th>Fecha</th>
+                    <th class="text-end">Monto</th>
+                    <th>Liquidaciones en las que figura</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in s.filas %}
+                <tr>
+                    <td>{{ f.item_id }}</td>
+                    <td><span class="badge {% if f.tipo == 'cobro' %}bg-info text-dark{% else %}bg-secondary{% endif %}">{{ f.tipo_texto }}</span></td>
+                    <td>{{ f.descripcion }}</td>
+                    <td>{{ f.entidad|default:"-" }}</td>
+                    <td class="text-nowrap">{{ f.fecha|default:"-" }}</td>
+                    <td class="text-end text-nowrap">{{ f.monto|separador_miles }}</td>
+                    <td>
+                        <ul class="list-unstyled mb-0 small">
+                        {% for l in f.liquidaciones %}
+                            <li>
+                                <a href="{% url 'liquidaciones:listado' %}?id={{ l.id }}">Liq. {{ l.id }}</a>{% if l.numero %} (N° {{ l.numero }}){% endif %}
+                                · {{ l.fecha|default:"sin fecha" }} · {{ l.entidad }} · {{ l.lado }}
+                                <a class="ms-1" href="{% url 'liquidaciones:editar' l.id %}">Editar</a>
+                                {% if l.repetido_en_misma %}<span class="badge bg-warning text-dark ms-1">repetido dentro de esta liquidación</span>{% endif %}
+                            </li>
+                        {% endfor %}
+                        </ul>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted small">Sin duplicados.</p>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}
