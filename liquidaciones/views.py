@@ -982,10 +982,10 @@ def liquidacion_reporte(request):
             ]
             for liq in liquidaciones
         ]
-        filas.append(['', '', 'Totales', float(totales['total_debe']), float(totales['total_haber'])])
         return exportar_reporte(formato, 'reporte_liquidaciones', 'Reporte de liquidaciones', {
             'columnas': ['Número', 'Fecha', 'Entidad', 'Debe', 'Haber'],
             'filas': filas,
+            'fila_total': ['', '', 'Totales', float(totales['total_debe']), float(totales['total_haber'])],
             'columnas_numericas': {3, 4},
             'anchos': [0.8, 1.0, 3.0, 1.2, 1.2],
         })

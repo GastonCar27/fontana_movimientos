@@ -1204,10 +1204,10 @@ def comprobante_reporte(request):
             ]
             for c in comprobantes
         ]
-        filas.append(['', '', '', '', 'Total', float(totales['total']), '', ''])
         return exportar_reporte(formato, 'reporte_comprobantes', 'Reporte de comprobantes', {
             'columnas': ['ID', 'Fecha', 'Emisor', 'Tipo', 'Número', 'Total', 'Moneda', 'Renglones'],
             'filas': filas,
+            'fila_total': ['', '', '', '', 'Total', float(totales['total']), '', ''],
             'columnas_numericas': {5},
             'anchos': [0.6, 0.9, 2.4, 1.6, 1.2, 1.1, 0.8, 0.8],
         })
@@ -1846,10 +1846,10 @@ def comprobante_renglon_reporte(request):
             ]
             for r in renglones
         ]
-        filas.append(['', '', '', 'Total', float(totales['total'])])
         return exportar_reporte(formato, 'reporte_renglones_comprobantes', 'Reporte de renglones de comprobantes', {
             'columnas': ['ID', 'Comprobante', 'Fecha', 'Producto', 'Total'],
             'filas': filas,
+            'fila_total': ['', '', '', 'Total', float(totales['total'])],
             'columnas_numericas': {4},
             'anchos': [0.7, 1.0, 1.0, 3.0, 1.2],
         })

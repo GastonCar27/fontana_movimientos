@@ -16,6 +16,8 @@ copiar el mismo código de openpyxl/reportlab por tercera vez.
                          montos/números (se formatean con separador de miles)
     anchos:             (solo para PDF) lista de anchos relativos de columna,
                          mismo largo que 'columnas'; si se omite, todas iguales
+    fila_total:         (opcional) fila de totales que va al pie, en negrita
+                         (en Excel y en PDF); mismo largo que 'columnas'
 
 Para reportes que exportan desde la MISMA URL de la pantalla (pedido de
 Gastón, 05/10/2026: "que todos los reportes den la opción de PDF o Excel"),
@@ -61,7 +63,14 @@ def excel_response(nombre_archivo, resultado):
     fila_encabezado = ws.max_row
     for fila in filas:
         ws.append(fila)
+    fila_total = resultado.get('fila_total')
+    if fila_total:
+        ws.append(fila_total)
     definir_estilo_general(ws)
+    if fila_total:
+        from openpyxl.styles import Font
+        for celda in ws[ws.max_row]:
+            celda.font = Font(bold=True)
 
     for indice in columnas_numericas:
         letra_columna = get_column_letter(indice + 1)
@@ -137,6 +146,13 @@ def pdf_response(nombre_archivo, titulo, resultado):
             Paragraph(formatear_valor(indice, valor), estilo_celda)
             for indice, valor in enumerate(fila)
         ])
+    fila_total = resultado.get('fila_total')
+    if fila_total:
+        estilo_total = ParagraphStyle('total_reporte', parent=estilo_celda, fontName='Helvetica-Bold')
+        datos.append([
+            Paragraph(formatear_valor(indice, valor), estilo_total)
+            for indice, valor in enumerate(fila_total)
+        ])
 
     total_relativo = sum(anchos_relativos) or 1
     col_widths = [ancho_disponible * (peso / total_relativo) for peso in anchos_relativos]
@@ -150,7 +166,7 @@ def pdf_response(nombre_archivo, titulo, resultado):
         ('RIGHTPADDING', (0, 0), (-1, -1), 3),
         ('TOPPADDING', (0, 0), (-1, -1), 2),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-    ]))
+    ] + ([('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e9ecef'))] if fila_total else [])))
     elementos.append(tabla)
     doc.build(elementos)
     return response

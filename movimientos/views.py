@@ -15,7 +15,8 @@ from django.views.generic import DetailView, UpdateView
 from .models import Movimiento
 from comprobantes.models import ComprobanteRenglon
 from django.db import IntegrityError, transaction
-from django.db.models import Q, Sum, Count, DecimalField, Value, Exists, OuterRef
+from django.db.models import Q, F, Sum, Count, DecimalField, Value, Exists, OuterRef
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from decimal import Decimal
@@ -1536,6 +1537,17 @@ def movimiento_reporte(request):
     totales = movimientos.aggregate(
         total_cantidad=Coalesce(Sum('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=12, decimal_places=2)),
     )
+    # Kg en origen (enviados) y en destino (confirmados) del remito que
+    # generó el movimiento, sumados SOLO en los que difieren -- pedido de
+    # Gastón (05/10/2026). Ver _kg_origen_destino_movimiento.
+    totales.update(_movimientos_con_diferencia_kg(movimientos).aggregate(
+        total_kg_origen=Coalesce(Sum('renglon_remito__kilogramos_enviados'), Value(Decimal('0')),
+                                 output_field=DecimalField(max_digits=14, decimal_places=2)),
+        total_kg_destino=Coalesce(Sum('renglon_remito__kilogramos_confirmados'), Value(Decimal('0')),
+                                  output_field=DecimalField(max_digits=14, decimal_places=2)),
+    ))
+    totales['total_kg_diferencia'] = totales['total_kg_destino'] - totales['total_kg_origen']
+    movimientos = movimientos.select_related('renglon_remito')
 
     movimientos = aplicar_orden_queryset(request, movimientos, {
         'id': 'id_movimiento',
@@ -1547,36 +1559,77 @@ def movimiento_reporte(request):
         'receptor': 'entidad_receptor__nombre',
     })
 
+    def _num(valor):
+        return float(valor) if valor is not None else None
+
     formato = formato_exportacion(request)
     if formato:
-        filas = [
-            [
+        filas = []
+        for m in movimientos:
+            kg_origen, kg_destino = _kg_origen_destino_movimiento(m)
+            filas.append([
                 m.id_movimiento,
                 m.fecha,
                 str(m.producto) if m.producto_id else '',
                 m.numero or '',
                 str(m.entidad_emisor) if m.entidad_emisor_id else '',
                 str(m.entidad_receptor) if m.entidad_receptor_id else '',
-                float(m.total) if m.total is not None else None,
-            ]
-            for m in movimientos
-        ]
-        filas.append(['', '', '', '', '', 'Total', float(totales['total_cantidad'])])
+                _num(kg_origen),
+                _num(kg_destino),
+                _num(kg_destino - kg_origen) if kg_origen is not None else None,
+                _num(m.total),
+            ])
         return exportar_reporte(formato, 'reporte_movimientos', 'Reporte de movimientos de producto', {
-            'columnas': ['ID', 'Fecha', 'Producto', 'Número', 'Emisor', 'Receptor', 'Total'],
+            'columnas': ['ID', 'Fecha', 'Producto', 'Número', 'Emisor', 'Receptor',
+                         'Kg origen', 'Kg destino', 'Diferencia Kg', 'Total'],
             'filas': filas,
-            'columnas_numericas': {6},
-            'anchos': [0.6, 0.9, 2.2, 1.0, 2.2, 2.2, 1.1],
+            'fila_total': ['', '', '', '', '', 'Total',
+                           _num(totales['total_kg_origen']), _num(totales['total_kg_destino']),
+                           _num(totales['total_kg_diferencia']), _num(totales['total_cantidad'])],
+            'columnas_numericas': {6, 7, 8, 9},
+            'anchos': [0.5, 0.8, 2.0, 0.8, 2.0, 2.0, 0.9, 0.9, 0.9, 1.0],
         })
+
+    movimientos = list(movimientos[:500])
+    for m in movimientos:
+        m.kg_origen, m.kg_destino = _kg_origen_destino_movimiento(m)
+        m.kg_diferencia = (m.kg_destino - m.kg_origen) if m.kg_origen is not None else None
 
     return render(request, 'movimientos/movimiento_gestion_reporte.html', {
         'form': form,
-        'movimientos': movimientos[:500],
+        'movimientos': movimientos,
         'totales': totales,
         'entidad_emisor_texto': texto_entidad_buscador(entidad_emisor),
         'entidad_receptor_texto': texto_entidad_buscador(entidad_receptor),
         'producto_texto': str(producto) if producto else '',
     })
+
+
+def _movimientos_con_diferencia_kg(movimientos):
+    """Movimientos generados por un renglón de remito cuyo peso confirmado
+    en destino está cargado y es distinto del enviado desde origen."""
+    return (
+        movimientos
+        .filter(renglon_remito__kilogramos_confirmados__isnull=False)
+        .exclude(renglon_remito__kilogramos_confirmados=F('renglon_remito__kilogramos_enviados'))
+    )
+
+
+def _kg_origen_destino_movimiento(movimiento):
+    """(kg_origen, kg_destino) del renglón de remito que generó el
+    movimiento -- RemitoRenglon.kilogramos_enviados / kilogramos_confirmados
+    -- SOLO cuando el confirmado está cargado y difiere del enviado. En
+    cualquier otro caso (sin remito, sin confirmar o iguales) (None, None),
+    y el reporte deja esas columnas vacías."""
+    try:
+        renglon = movimiento.renglon_remito
+    except ObjectDoesNotExist:
+        return None, None
+    if renglon is None or renglon.kilogramos_confirmados is None:
+        return None, None
+    if renglon.kilogramos_confirmados == renglon.kilogramos_enviados:
+        return None, None
+    return renglon.kilogramos_enviados, renglon.kilogramos_confirmados
 
 
 # --- Ranking de productores (por total entregado, filtrando por fecha y producto) ---
