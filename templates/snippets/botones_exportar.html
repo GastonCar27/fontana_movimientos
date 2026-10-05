@@ -1,0 +1,14 @@
+{% comment %}
+Botones "Exportar a Excel" / "Exportar a PDF" para cualquier reporte que
+exporte desde su misma URL (ver services/reportes.py::formato_exportacion).
+Conservan los filtros y el orden actuales y agregan ?exportar=excel|pdf.
+Uso: {% include "snippets/botones_exportar.html" %}
+{% endcomment %}
+<div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-sm btn-outline-success" href="?{% if request.GET %}{{ request.GET.urlencode }}&amp;{% endif %}exportar=excel">
+        Exportar a Excel
+    </a>
+    <a class="btn btn-sm btn-outline-danger" href="?{% if request.GET %}{{ request.GET.urlencode }}&amp;{% endif %}exportar=pdf">
+        Exportar a PDF
+    </a>
+</div>

@@ -16,6 +16,7 @@ from comprobantes.models import Comprobante
 from entidades.models import Entidad
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
+from services.reportes import formato_exportacion, exportar_reporte
 from movimientos_caja.models import MovimientoCaja
 from retenciones.models import Retencion
 from retenciones_inym.models import RetencionInym, subquery_no_aplicado
@@ -968,6 +969,26 @@ def liquidacion_reporte(request):
         'debe': 'debe',
         'haber': 'haber',
     })
+
+    formato = formato_exportacion(request)
+    if formato:
+        filas = [
+            [
+                liq.numero,
+                liq.fecha,
+                str(liq.entidad) if liq.entidad_id else '',
+                float(liq.debe) if liq.debe is not None else None,
+                float(liq.haber) if liq.haber is not None else None,
+            ]
+            for liq in liquidaciones
+        ]
+        filas.append(['', '', 'Totales', float(totales['total_debe']), float(totales['total_haber'])])
+        return exportar_reporte(formato, 'reporte_liquidaciones', 'Reporte de liquidaciones', {
+            'columnas': ['Número', 'Fecha', 'Entidad', 'Debe', 'Haber'],
+            'filas': filas,
+            'columnas_numericas': {3, 4},
+            'anchos': [0.8, 1.0, 3.0, 1.2, 1.2],
+        })
 
     return render(request, 'liquidaciones/reporte.html', {
         'form': form,

@@ -13,7 +13,7 @@ from . import forms
 from services import gestorexcel
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_queryset, aplicar_orden_lista
-from services.reportes import excel_response, pdf_response
+from services.reportes import excel_response, pdf_response, formato_exportacion, exportar_reporte
 from services.permisos import requiere_grupo
 from django.db.models import Sum, Count, Max, Q, F, Case, When, DecimalField, CharField, Value, Exists, OuterRef
 from django.db.models.functions import Coalesce, Cast
@@ -1189,6 +1189,29 @@ def comprobante_reporte(request):
         'renglones': 'cantidad_renglones',
     })
 
+    formato = formato_exportacion(request)
+    if formato:
+        filas = [
+            [
+                c.id,
+                c.fecha,
+                str(c.entidad_emisor) if c.entidad_emisor_id else '',
+                str(c.tipo_comprobante) if c.tipo_comprobante_id else '',
+                c.numero,
+                float(c.total) if c.total is not None else None,
+                str(c.moneda) if c.moneda is not None else '',
+                c.cantidad_renglones,
+            ]
+            for c in comprobantes
+        ]
+        filas.append(['', '', '', '', 'Total', float(totales['total']), '', ''])
+        return exportar_reporte(formato, 'reporte_comprobantes', 'Reporte de comprobantes', {
+            'columnas': ['ID', 'Fecha', 'Emisor', 'Tipo', 'Número', 'Total', 'Moneda', 'Renglones'],
+            'filas': filas,
+            'columnas_numericas': {5},
+            'anchos': [0.6, 0.9, 2.4, 1.6, 1.2, 1.1, 0.8, 0.8],
+        })
+
     return render(request, 'comprobantes/comprobante_reporte.html', {
         'form': form,
         'comprobantes': comprobantes[:500],
@@ -1810,6 +1833,26 @@ def comprobante_renglon_reporte(request):
         'producto': 'producto__nombre',
         'total': 'total',
     })
+
+    formato = formato_exportacion(request)
+    if formato:
+        filas = [
+            [
+                r.id,
+                r.comprobante_id,
+                r.comprobante.fecha if r.comprobante_id else None,
+                str(r.producto) if r.producto_id else '',
+                float(r.total) if r.total is not None else None,
+            ]
+            for r in renglones
+        ]
+        filas.append(['', '', '', 'Total', float(totales['total'])])
+        return exportar_reporte(formato, 'reporte_renglones_comprobantes', 'Reporte de renglones de comprobantes', {
+            'columnas': ['ID', 'Comprobante', 'Fecha', 'Producto', 'Total'],
+            'filas': filas,
+            'columnas_numericas': {4},
+            'anchos': [0.7, 1.0, 1.0, 3.0, 1.2],
+        })
 
     return render(request, 'comprobantes/comprobante_renglon_reporte.html', {
         'form': form,

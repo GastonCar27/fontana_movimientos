@@ -4,7 +4,10 @@
 <div class="col">
     {% include "comprobantes/menu.html" %}
 
-    <h4 class="mb-3">Reporte de comprobantes</h4>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Reporte de comprobantes</h4>
+        {% include "snippets/botones_exportar.html" %}
+    </div>
 
     <div class="card shadow-sm mb-4">
         <div class="card-body">

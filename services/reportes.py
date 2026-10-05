@@ -16,7 +16,31 @@ copiar el mismo código de openpyxl/reportlab por tercera vez.
                          montos/números (se formatean con separador de miles)
     anchos:             (solo para PDF) lista de anchos relativos de columna,
                          mismo largo que 'columnas'; si se omite, todas iguales
+
+Para reportes que exportan desde la MISMA URL de la pantalla (pedido de
+Gastón, 05/10/2026: "que todos los reportes den la opción de PDF o Excel"),
+la vista llama a formato_exportacion(request) y, si devuelve 'excel' o
+'pdf', responde con exportar_reporte(...) en vez de renderizar el HTML. Los
+botones salen del snippet templates/snippets/botones_exportar.html, que
+reusa los filtros y el orden actuales de la URL y agrega ?exportar=...
 """
+
+import datetime
+
+FORMATOS_EXPORTACION = ('excel', 'pdf')
+
+
+def formato_exportacion(request):
+    """Devuelve 'excel' / 'pdf' si la URL trae ?exportar=excel|pdf, o None."""
+    formato = (request.GET.get('exportar') or '').strip().lower()
+    return formato if formato in FORMATOS_EXPORTACION else None
+
+
+def exportar_reporte(formato, nombre_archivo, titulo, resultado):
+    """Atajo: responde Excel o PDF según 'formato' ('excel' / 'pdf')."""
+    if formato == 'pdf':
+        return pdf_response(nombre_archivo, titulo, resultado)
+    return excel_response(nombre_archivo, resultado)
 
 
 def excel_response(nombre_archivo, resultado):
@@ -44,6 +68,12 @@ def excel_response(nombre_archivo, resultado):
         for celda in ws[letra_columna]:
             if celda.row > fila_encabezado:
                 celda.number_format = '#,##0.00'
+
+    # Fechas: formato dd/mm/aaaa (si no, Excel muestra el número de serie).
+    for fila_celdas in ws.iter_rows(min_row=fila_encabezado + 1):
+        for celda in fila_celdas:
+            if isinstance(celda.value, (datetime.date, datetime.datetime)):
+                celda.number_format = 'DD/MM/YYYY'
 
     for columna in ws.columns:
         letra = columna[0].column_letter
@@ -96,6 +126,8 @@ def pdf_response(nombre_archivo, titulo, resultado):
             return ''
         if indice in columnas_numericas:
             return separador_miles(valor)
+        if isinstance(valor, (datetime.date, datetime.datetime)):
+            return valor.strftime('%d/%m/%Y')
         return str(valor)
 
     fila_encabezado = [Paragraph(str(col), estilo_encabezado) for col in columnas]

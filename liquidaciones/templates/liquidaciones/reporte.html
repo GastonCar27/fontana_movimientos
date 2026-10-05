@@ -4,7 +4,10 @@
 <div class="col">
     {% include "liquidaciones/menu.html" %}
 
-    <h4 class="mb-3">Reporte de liquidaciones</h4>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Reporte de liquidaciones</h4>
+        {% include "snippets/botones_exportar.html" %}
+    </div>
 
     <div class="card shadow-sm mb-4">
         <div class="card-body">

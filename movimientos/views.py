@@ -24,7 +24,7 @@ import json
 
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_queryset, aplicar_orden_lista
-from services.reportes import excel_response, pdf_response
+from services.reportes import excel_response, pdf_response, formato_exportacion, exportar_reporte
 from services.permisos import requiere_grupo
 def recepcion(request):
     return render(request,'movimientos/movimiento.html',{
@@ -1546,6 +1546,28 @@ def movimiento_reporte(request):
         'emisor': 'entidad_emisor__nombre',
         'receptor': 'entidad_receptor__nombre',
     })
+
+    formato = formato_exportacion(request)
+    if formato:
+        filas = [
+            [
+                m.id_movimiento,
+                m.fecha,
+                str(m.producto) if m.producto_id else '',
+                m.numero or '',
+                str(m.entidad_emisor) if m.entidad_emisor_id else '',
+                str(m.entidad_receptor) if m.entidad_receptor_id else '',
+                float(m.total) if m.total is not None else None,
+            ]
+            for m in movimientos
+        ]
+        filas.append(['', '', '', '', '', 'Total', float(totales['total_cantidad'])])
+        return exportar_reporte(formato, 'reporte_movimientos', 'Reporte de movimientos de producto', {
+            'columnas': ['ID', 'Fecha', 'Producto', 'Número', 'Emisor', 'Receptor', 'Total'],
+            'filas': filas,
+            'columnas_numericas': {6},
+            'anchos': [0.6, 0.9, 2.2, 1.0, 2.2, 2.2, 1.1],
+        })
 
     return render(request, 'movimientos/movimiento_gestion_reporte.html', {
         'form': form,
