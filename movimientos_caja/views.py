@@ -14,6 +14,7 @@ from entidades.models import Entidad
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
+from services.reportes import formato_exportacion, exportar_reporte
 
 from .forms import (
     AsignarLibroMovimientoForm,
@@ -416,6 +417,126 @@ def movimiento_caja_eliminar(request, pk):
 # admin de Django, mostrando primero los movimientos que todavía no tienen
 # libro u hoja asignados (o que tienen -1 cargado).
 # ---------------------------------------------------------------------------
+
+def movimiento_caja_libro_reporte(request):
+    """Listado en libro (pedido de Gastón, 05/10/2026): se elige una
+    cuenta de banco (caja) y uno de sus libros, y se listan los movimientos
+    cargados en ese libro en el orden del libro (hoja, renglón; los que
+    todavía no tienen hoja/renglón al final, por emisión) con: fecha de
+    emisión, fecha de diferido, número, emisor, receptor, monto,
+    efectivización y el saldo corrido del libro.
+
+    Saldo del libro = saldo_inicial del libro + suma de los montos en el
+    orden del listado, cada uno con su signo tal como está guardado (misma
+    convención que el estado de caja: negativo = a favor nuestro, positivo
+    = le debemos al banco). Exporta a Excel / PDF con ?exportar=excel|pdf.
+    """
+    q_caja = request.GET.get('caja', '').strip()
+    q_libro = request.GET.get('libro', '').strip()
+
+    caja = Caja.objects.filter(pk=int(q_caja)).first() if q_caja.isdigit() else None
+    libro = None
+    if caja and q_libro.isdigit():
+        libro = LibroCaja.objects.filter(pk=int(q_libro), caja=caja).first()
+
+    filas = []
+    saldo_inicial = None
+    saldo_final = None
+    total_monto = Decimal('0')
+    if libro:
+        movimientos = (
+            MovimientoCaja.objects.filter(asiento_libro__libro=libro)
+            .select_related('receptor', 'rel_numero', 'asiento_libro', 'movimientocajadiferido',
+                            'emisor_relacion__id_entidad')
+            .annotate(
+                sin_ubicacion=Case(
+                    When(asiento_libro__hoja__isnull=True, then=Value(1)),
+                    When(asiento_libro__hoja=-1, then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by('sin_ubicacion', 'asiento_libro__hoja', 'asiento_libro__renglon', 'emision', 'id')
+        )
+        entidad_propia = Entidad.objects.filter(pk=ENTIDAD_PROPIA_ID).first()
+        saldo_inicial = libro.saldo_inicial if libro.saldo_inicial is not None else Decimal('0')
+        saldo = saldo_inicial
+        for m in movimientos:
+            monto = m.monto or Decimal('0')
+            saldo += monto
+            total_monto += monto
+            try:
+                diferido = m.movimientocajadiferido.diferido
+            except MovimientoCajaDiferido.DoesNotExist:
+                diferido = None
+            try:
+                emisor = m.emisor_relacion.id_entidad or entidad_propia
+            except MovimientoCajaEmisor.DoesNotExist:
+                emisor = entidad_propia
+            asiento = m.asiento_libro
+            filas.append({
+                'id': m.id,
+                'hoja': asiento.hoja if asiento.hoja not in (None, -1) else None,
+                'renglon': asiento.renglon if asiento.renglon not in (None, -1) else None,
+                'emision': m.emision,
+                'diferido': diferido,
+                'numero': m.numero,
+                'emisor': emisor,
+                'receptor': m.receptor,
+                'monto': m.monto,
+                'efectivizacion': m.efectivizacion,
+                'saldo': saldo,
+            })
+        saldo_final = saldo
+
+    formato = formato_exportacion(request)
+    if formato and libro:
+        def _num(v):
+            return float(v) if v is not None else None
+        filas_export = [['', '', '', '', '', '', '', 'Saldo inicial del libro', '', '', _num(saldo_inicial)]]
+        for f in filas:
+            filas_export.append([
+                f['id'],
+                f['hoja'] if f['hoja'] is not None else '',
+                f['renglon'] if f['renglon'] is not None else '',
+                f['emision'],
+                f['diferido'],
+                f['numero'] if f['numero'] is not None else '',
+                str(f['emisor']) if f['emisor'] else '',
+                str(f['receptor']) if f['receptor'] else '',
+                _num(f['monto']),
+                f['efectivizacion'],
+                _num(f['saldo']),
+            ])
+        return exportar_reporte(
+            formato,
+            f'libro_{libro.id}',
+            f'Listado en libro -- {caja.nombre} / {libro.nombre}',
+            {
+                'columnas': ['ID', 'Hoja', 'Renglón', 'Fecha emisión', 'Fecha diferido', 'Número', 'Emisor',
+                             'Receptor', 'Monto', 'Efectivización', 'Saldo del libro'],
+                'filas': filas_export,
+                'fila_total': ['', '', '', '', '', '', '', 'Total / saldo final', _num(total_monto), '',
+                               _num(saldo_final)],
+                'columnas_numericas': {8, 10},
+                'anchos': [0.6, 0.5, 0.6, 0.9, 0.9, 0.8, 2.0, 2.0, 1.1, 0.9, 1.2],
+            },
+        )
+
+    return render(request, 'movimientos_caja/movimiento_caja_libro_reporte.html', {
+        'cajas': Caja.objects.all().order_by('nombre'),
+        'libros': LibroCaja.objects.select_related('caja').order_by('nombre'),
+        'q_caja': q_caja,
+        'q_libro': q_libro,
+        'caja': caja,
+        'libro': libro,
+        'filas': filas,
+        'saldo_inicial': saldo_inicial,
+        'saldo_final': saldo_final,
+        'total_monto': total_monto,
+        'busco': bool(q_caja or q_libro),
+    })
+
 
 def movimiento_caja_libro_listado(request):
     """Listado de movimientos de caja pensado para asignarles (o corregirles)

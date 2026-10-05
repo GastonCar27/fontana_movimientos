@@ -39,6 +39,8 @@ urlpatterns = [
     ),
     path('<int:pk>/editar/', views.movimiento_caja_form, name='movimiento_caja_editar'),
     path('<int:pk>/eliminar/', views.movimiento_caja_eliminar, name='movimiento_caja_eliminar'),
+    # --- Listado en libro (movimientos de un libro con saldo corrido) ---
+    path('libro/listado/', views.movimiento_caja_libro_reporte, name='movimiento_caja_libro_listado'),
     # --- Modificar en libro (asignar/editar libro, hoja y renglón) ---
     path('libro/', views.movimiento_caja_libro_listado, name='movimiento_caja_libro_modificar'),
     path('libro/<int:pk>/editar/', views.movimiento_caja_libro_editar, name='movimiento_caja_libro_editar'),

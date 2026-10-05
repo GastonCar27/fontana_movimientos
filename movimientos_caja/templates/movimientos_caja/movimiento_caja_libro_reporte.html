@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "movimientos_caja/menu.html" %}
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Listado en libro</h4>
+        {% if libro %}
+        {% include "snippets/botones_exportar.html" %}
+        {% endif %}
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-4 col-lg-3">
+                    <label for="id_caja" class="form-label">Banco (cuenta)</label>
+                    <select id="id_caja" name="caja" class="form-select form-select-sm" required>
+                        <option value="">Elegir...</option>
+                        {% for c in cajas %}
+                        <option value="{{ c.id }}" {% if q_caja == c.id|stringformat:"s" %}selected{% endif %}>{{ c.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-3">
+                    <label for="id_libro" class="form-label">Libro</label>
+                    <select id="id_libro" name="libro" class="form-select form-select-sm" required>
+                        <option value="">Elegir...</option>
+                        {% for l in libros %}
+                        <option value="{{ l.id }}" data-caja="{{ l.caja_id }}" {% if q_libro == l.id|stringformat:"s" %}selected{% endif %}>{{ l.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <button type="submit" class="btn btn-sm btn-primary px-3">Listar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if libro %}
+    <p class="text-muted small mb-2">
+        {{ caja.nombre }} / {{ libro.nombre }} — {{ filas|length }} movimiento{{ filas|length|pluralize }}.
+        Orden del libro (hoja y renglón); los que no tienen hoja asignada van al final.
+    </p>
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Hoja</th>
+                    <th>Renglón</th>
+                    <th>Fecha emisión</th>
+                    <th>Fecha diferido</th>
+                    <th>Número</th>
+                    <th>Emisor</th>
+                    <th>Receptor</th>
+                    <th class="text-end">Monto</th>
+                    <th>Efectivización</th>
+                    <th class="text-end">Saldo del libro</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="table-light fst-italic">
+                    <td colspan="10" class="text-end">Saldo inicial del libro</td>
+                    <td class="text-end">{{ saldo_inicial|separador_miles }}</td>
+                </tr>
+                {% for f in filas %}
+                <tr>
+                    <td>{{ f.id }}</td>
+                    <td>{{ f.hoja|default_if_none:"S/A" }}</td>
+                    <td>{{ f.renglon|default_if_none:"S/A" }}</td>
+                    <td>{{ f.emision|date:"d/m/Y"|default:"-" }}</td>
+                    <td>{{ f.diferido|date:"d/m/Y"|default:"" }}</td>
+                    <td>{{ f.numero|default_if_none:"" }}</td>
+                    <td>{{ f.emisor|default:"" }}</td>
+                    <td>{{ f.receptor|default:"" }}</td>
+                    <td class="text-end">{{ f.monto|separador_miles }}</td>
+                    <td>{{ f.efectivizacion|date:"d/m/Y"|default:"" }}</td>
+                    <td class="text-end">{{ f.saldo|separador_miles }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="11" class="text-center text-muted py-4">El libro no tiene movimientos cargados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td colspan="8" class="text-end">Total / saldo final</td>
+                    <td class="text-end">{{ total_monto|separador_miles }}</td>
+                    <td></td>
+                    <td class="text-end">{{ saldo_final|separador_miles }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% elif busco %}
+    <div class="alert alert-warning">Elegí un banco y un libro de ese banco.</div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var cajaSelect = document.getElementById('id_caja');
+    var libroSelect = document.getElementById('id_libro');
+    if (!cajaSelect || !libroSelect) return;
+
+    function filtrarLibrosPorCaja() {
+        var cajaId = cajaSelect.value;
+        Array.from(libroSelect.options).forEach(function (opt) {
+            if (!opt.value) return;
+            var coincide = !cajaId || opt.dataset.caja === cajaId;
+            opt.hidden = !coincide;
+            if (!coincide && opt.selected) opt.selected = false;
+        });
+    }
+
+    cajaSelect.addEventListener('change', filtrarLibrosPorCaja);
+    filtrarLibrosPorCaja();
+});
+</script>
+{% endblock %}
