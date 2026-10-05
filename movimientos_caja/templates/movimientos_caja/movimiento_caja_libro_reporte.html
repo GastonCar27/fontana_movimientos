@@ -25,10 +25,10 @@
                 </div>
                 <div class="col-6 col-md-4 col-lg-3">
                     <label for="id_libro" class="form-label">Libro</label>
-                    <select id="id_libro" name="libro" class="form-select form-select-sm" required>
+                    <select id="id_libro" name="libro" class="form-select form-select-sm">
                         <option value="">Elegir...</option>
                         {% for l in libros %}
-                        <option value="{{ l.id }}" data-caja="{{ l.caja_id }}" {% if q_libro == l.id|stringformat:"s" %}selected{% endif %}>{{ l.nombre }}</option>
+                        <option value="{{ l.id }}" data-caja="{{ l.caja_id }}"{% if l.id in ids_ultimo_libro %} data-ultimo="1"{% endif %} {% if q_libro == l.id|stringformat:"s" %}selected{% endif %}>{{ l.nombre }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -107,18 +107,22 @@ document.addEventListener('DOMContentLoaded', function () {
     var libroSelect = document.getElementById('id_libro');
     if (!cajaSelect || !libroSelect) return;
 
-    function filtrarLibrosPorCaja() {
+    function filtrarLibrosPorCaja(elegirUltimo) {
         var cajaId = cajaSelect.value;
+        var ultimo = null;
         Array.from(libroSelect.options).forEach(function (opt) {
             if (!opt.value) return;
             var coincide = !cajaId || opt.dataset.caja === cajaId;
             opt.hidden = !coincide;
             if (!coincide && opt.selected) opt.selected = false;
+            if (coincide && cajaId && opt.dataset.ultimo === '1') ultimo = opt.value;
         });
+        // Al elegir un banco, queda seleccionado su último libro (el vigente).
+        if (elegirUltimo && ultimo !== null) libroSelect.value = ultimo;
     }
 
-    cajaSelect.addEventListener('change', filtrarLibrosPorCaja);
-    filtrarLibrosPorCaja();
+    cajaSelect.addEventListener('change', function () { filtrarLibrosPorCaja(true); });
+    filtrarLibrosPorCaja(false);
 });
 </script>
 {% endblock %}

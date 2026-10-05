@@ -54,6 +54,15 @@ class LibroCaja(models.Model):
     # de emisión del movimiento más viejo cargado en cada uno; puede quedar
     # en null si ese libro no tiene ningún movimiento cargado.
     fecha_creacion = models.DateField(blank=True, null=True, auto_now_add=True)
+    # Cantidad de renglones por hoja de ESTE libro (pedido de Gastón,
+    # 05/10/2026): en el alta encadenada de movimientos, al llegar a este
+    # renglón el siguiente pasa a renglón 1 de la hoja siguiente. Opcional:
+    # si queda vacío se usa el tope de siempre (25, ver
+    # movimientos_caja.views.RENGLON_MAXIMO_POR_HOJA).
+    cantidad_renglones = models.PositiveIntegerField(
+        'Cantidad de renglones por hoja', blank=True, null=True,
+        help_text='Opcional. Si se deja vacío se usan 25 renglones por hoja.',
+    )
 
     class Meta:
         managed = False

@@ -38,9 +38,11 @@ from .models import (
     MovimientoCajaNumero,
 )
 
-# Tope de renglones por hoja del libro de caja: al llegar al 25, el
-# siguiente movimiento de un alta encadenada pasa a renglón 1 de la hoja
-# siguiente (ver _proximo_renglon_y_hoja).
+# Tope de renglones por hoja del libro de caja POR DEFECTO: al llegar a ese
+# renglón, el siguiente movimiento de un alta encadenada pasa a renglón 1 de
+# la hoja siguiente (ver _proximo_renglon_y_hoja). Desde el 05/10/2026 cada
+# libro puede tener su propia cantidad (LibroCaja.cantidad_renglones); este
+# 25 sólo se usa si el libro no la tiene cargada.
 RENGLON_MAXIMO_POR_HOJA = 25
 
 
@@ -59,15 +61,24 @@ def _url_next_segura(request, next_url):
 # Alta / Modificación (misma vista, pk=None para alta)
 # ---------------------------------------------------------------------------
 
-def _proximo_renglon_y_hoja(ultimo_renglon, ultima_hoja):
+def _renglones_por_hoja(libro):
+    """Renglones por hoja del libro (LibroCaja.cantidad_renglones), o 25
+    (RENGLON_MAXIMO_POR_HOJA) si no tiene cargada la cantidad."""
+    if libro is not None and libro.cantidad_renglones:
+        return libro.cantidad_renglones
+    return RENGLON_MAXIMO_POR_HOJA
+
+
+def _proximo_renglon_y_hoja(ultimo_renglon, ultima_hoja, renglones_por_hoja=RENGLON_MAXIMO_POR_HOJA):
     """Dado el renglón/hoja del movimiento recién guardado en un alta, calcula
     los valores a precargar para el próximo: el renglón +1 manteniendo la
-    misma hoja, salvo que el renglón ya guardado haya llegado al tope
-    (RENGLON_MAXIMO_POR_HOJA = 25), en cuyo caso el próximo pasa a ser
+    misma hoja, salvo que el renglón ya guardado haya llegado al tope de
+    renglones de la hoja (la cantidad_renglones del libro, o 25 si no la
+    tiene -- ver _renglones_por_hoja), en cuyo caso el próximo pasa a ser
     renglón 1 de la hoja siguiente (+1)."""
     if ultimo_renglon is None:
         return None, ultima_hoja
-    if ultimo_renglon >= RENGLON_MAXIMO_POR_HOJA:
+    if ultimo_renglon >= renglones_por_hoja:
         proxima_hoja = (ultima_hoja + 1) if ultima_hoja is not None else None
         return 1, proxima_hoja
     return ultimo_renglon + 1, ultima_hoja
@@ -195,7 +206,9 @@ def movimiento_caja_form(request, pk=None):
             messages.success(request, f'Movimiento de caja {nuevo.id} guardado correctamente.')
 
             if es_alta:
-                proximo_renglon, proxima_hoja = _proximo_renglon_y_hoja(renglon, hoja)
+                proximo_renglon, proxima_hoja = _proximo_renglon_y_hoja(
+                    renglon, hoja, _renglones_por_hoja(libro),
+                )
                 proximo_numero = (numero + 1) if numero is not None else None
                 request.session['movimiento_caja_prefill'] = {
                     'caja': nuevo.caja_id,
@@ -438,6 +451,20 @@ def movimiento_caja_libro_reporte(request):
     libro = None
     if caja and q_libro.isdigit():
         libro = LibroCaja.objects.filter(pk=int(q_libro), caja=caja).first()
+    if caja and libro is None:
+        # Sin libro elegido (o uno que no es de ese banco): por defecto el
+        # último libro del banco (el vigente, ver _ultimo_libro_de_caja).
+        libro = _ultimo_libro_de_caja(caja)
+        q_libro = str(libro.id) if libro else ''
+
+    # Último libro de cada banco, para que la pantalla lo elija sola al
+    # cambiar de banco en el combo (ver data-ultimo en el template).
+    cajas = list(Caja.objects.all().order_by('nombre'))
+    ids_ultimo_libro = set()
+    for c in cajas:
+        ultimo = _ultimo_libro_de_caja(c)
+        if ultimo:
+            ids_ultimo_libro.add(ultimo.id)
 
     filas = []
     saldo_inicial = None
@@ -524,7 +551,8 @@ def movimiento_caja_libro_reporte(request):
         )
 
     return render(request, 'movimientos_caja/movimiento_caja_libro_reporte.html', {
-        'cajas': Caja.objects.all().order_by('nombre'),
+        'cajas': cajas,
+        'ids_ultimo_libro': ids_ultimo_libro,
         'libros': LibroCaja.objects.select_related('caja').order_by('nombre'),
         'q_caja': q_caja,
         'q_libro': q_libro,
