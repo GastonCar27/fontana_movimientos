@@ -1,3 +1,4 @@
+import datetime
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -107,6 +108,9 @@ def movimiento_caja_form(request, pk=None):
     """
     movimiento = get_object_or_404(MovimientoCaja, pk=pk) if pk else None
     es_alta = movimiento is None
+    # Para volver, tras modificar, a la pantalla desde donde se entró (por
+    # ejemplo "Listado en libro", con sus filtros) -- ver _url_next_segura.
+    next_url = _url_next_segura(request, request.POST.get('next') or request.GET.get('next'))
 
     receptor_id = None
     if request.method == 'POST':
@@ -220,7 +224,7 @@ def movimiento_caja_form(request, pk=None):
                 }
                 return redirect('movimientos_caja:movimiento_caja_alta')
 
-            return redirect('movimientos_caja:movimiento_caja_modificar')
+            return redirect(next_url or 'movimientos_caja:movimiento_caja_modificar')
     else:
         prefill = request.session.pop('movimiento_caja_prefill', None) if es_alta else None
 
@@ -277,6 +281,7 @@ def movimiento_caja_form(request, pk=None):
         'form_rel': form_rel,
         'movimiento': movimiento,
         'libros': LibroCaja.objects.select_related('caja').order_by('nombre'),
+        'next': next_url or '',
     })
 
 
@@ -447,6 +452,20 @@ def movimiento_caja_libro_reporte(request):
     q_caja = request.GET.get('caja', '').strip()
     q_libro = request.GET.get('libro', '').strip()
 
+    def _fecha_get(nombre):
+        valor = request.GET.get(nombre, '').strip()
+        try:
+            return datetime.date.fromisoformat(valor) if valor else None
+        except ValueError:
+            return None
+
+    emision_desde = _fecha_get('emision_desde')
+    emision_hasta = _fecha_get('emision_hasta')
+    diferido_desde = _fecha_get('diferido_desde')
+    diferido_hasta = _fecha_get('diferido_hasta')
+    sin_efectivizar = request.GET.get('sin_efectivizar') == '1'
+    hay_filtros = bool(emision_desde or emision_hasta or diferido_desde or diferido_hasta or sin_efectivizar)
+
     caja = Caja.objects.filter(pk=int(q_caja)).first() if q_caja.isdigit() else None
     libro = None
     if caja and q_libro.isdigit():
@@ -516,6 +535,28 @@ def movimiento_caja_libro_reporte(request):
             })
         saldo_final = saldo
 
+        # Filtros (05/10/2026). Se aplican DESPUÉS de calcular el saldo
+        # corrido sobre TODO el libro: así la columna "Saldo del libro" de
+        # cada fila sigue siendo el saldo real del libro en ese renglón,
+        # aunque se oculten otros movimientos. El total de montos al pie
+        # suma sólo las filas que quedan visibles.
+        def _pasa(f):
+            if emision_desde and (f['emision'] is None or f['emision'] < emision_desde):
+                return False
+            if emision_hasta and (f['emision'] is None or f['emision'] > emision_hasta):
+                return False
+            if diferido_desde and (f['diferido'] is None or f['diferido'] < diferido_desde):
+                return False
+            if diferido_hasta and (f['diferido'] is None or f['diferido'] > diferido_hasta):
+                return False
+            if sin_efectivizar and f['efectivizacion'] is not None:
+                return False
+            return True
+
+        if hay_filtros:
+            filas = [f for f in filas if _pasa(f)]
+            total_monto = sum((f['monto'] or Decimal('0') for f in filas), Decimal('0'))
+
     formato = formato_exportacion(request)
     if formato and libro:
         def _num(v):
@@ -563,6 +604,12 @@ def movimiento_caja_libro_reporte(request):
         'saldo_final': saldo_final,
         'total_monto': total_monto,
         'busco': bool(q_caja or q_libro),
+        'emision_desde': request.GET.get('emision_desde', ''),
+        'emision_hasta': request.GET.get('emision_hasta', ''),
+        'diferido_desde': request.GET.get('diferido_desde', ''),
+        'diferido_hasta': request.GET.get('diferido_hasta', ''),
+        'sin_efectivizar': sin_efectivizar,
+        'hay_filtros': hay_filtros,
     })
 
 

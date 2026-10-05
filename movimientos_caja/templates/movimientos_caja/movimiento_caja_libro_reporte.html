@@ -32,8 +32,34 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-12 col-md-3">
+                <div class="w-100 d-none d-lg-block"></div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label for="id_emision_desde" class="form-label">Emisión desde</label>
+                    <input type="date" id="id_emision_desde" name="emision_desde" value="{{ emision_desde }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label for="id_emision_hasta" class="form-label">Emisión hasta</label>
+                    <input type="date" id="id_emision_hasta" name="emision_hasta" value="{{ emision_hasta }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label for="id_diferido_desde" class="form-label">Diferido desde</label>
+                    <input type="date" id="id_diferido_desde" name="diferido_desde" value="{{ diferido_desde }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label for="id_diferido_hasta" class="form-label">Diferido hasta</label>
+                    <input type="date" id="id_diferido_hasta" name="diferido_hasta" value="{{ diferido_hasta }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    <div class="form-check mb-1">
+                        <input type="checkbox" class="form-check-input" id="id_sin_efectivizar" name="sin_efectivizar" value="1" {% if sin_efectivizar %}checked{% endif %}>
+                        <label class="form-check-label" for="id_sin_efectivizar">Sin efectivizar</label>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3 col-lg-2 d-flex gap-2">
                     <button type="submit" class="btn btn-sm btn-primary px-3">Listar</button>
+                    {% if hay_filtros %}
+                    <a href="?caja={{ q_caja }}&amp;libro={{ q_libro }}" class="btn btn-sm btn-outline-secondary">Limpiar filtros</a>
+                    {% endif %}
                 </div>
             </form>
         </div>
@@ -43,6 +69,7 @@
     <p class="text-muted small mb-2">
         {{ caja.nombre }} / {{ libro.nombre }} — {{ filas|length }} movimiento{{ filas|length|pluralize }}.
         Orden del libro (hoja y renglón); los que no tienen hoja asignada van al final.
+        {% if hay_filtros %}Con filtros: el saldo de cada fila sigue siendo el saldo real del libro en ese renglón; el total de montos suma sólo lo listado.{% endif %}
     </p>
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle mb-2">
@@ -59,12 +86,14 @@
                     <th class="text-end">Monto</th>
                     <th>Efectivización</th>
                     <th class="text-end">Saldo del libro</th>
+                    <th class="text-center">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <tr class="table-light fst-italic">
                     <td colspan="10" class="text-end">Saldo inicial del libro</td>
                     <td class="text-end">{{ saldo_inicial|separador_miles }}</td>
+                    <td></td>
                 </tr>
                 {% for f in filas %}
                 <tr>
@@ -79,10 +108,13 @@
                     <td class="text-end">{{ f.monto|separador_miles }}</td>
                     <td>{{ f.efectivizacion|date:"d/m/Y"|default:"" }}</td>
                     <td class="text-end">{{ f.saldo|separador_miles }}</td>
+                    <td class="text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'movimientos_caja:movimiento_caja_editar' f.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                    </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">El libro no tiene movimientos cargados.</td>
+                    <td colspan="12" class="text-center text-muted py-4">{% if hay_filtros %}Ningún movimiento del libro cumple los filtros.{% else %}El libro no tiene movimientos cargados.{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -92,6 +124,7 @@
                     <td class="text-end">{{ total_monto|separador_miles }}</td>
                     <td></td>
                     <td class="text-end">{{ saldo_final|separador_miles }}</td>
+                    <td></td>
                 </tr>
             </tfoot>
         </table>

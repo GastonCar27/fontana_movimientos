@@ -8,6 +8,7 @@
 
     <form method="post" class="row gy-3">
         {% csrf_token %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 
         <h6 class="text-muted mt-2 mb-0">Datos del movimiento</h6>
 
@@ -110,7 +111,7 @@
 
         <div class="col-12">
             <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
-            <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+            <a href="{% if next %}{{ next }}{% else %}{% url 'movimientos_caja:movimiento_caja_modificar' %}{% endif %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
         </div>
     </form>
 </div>
