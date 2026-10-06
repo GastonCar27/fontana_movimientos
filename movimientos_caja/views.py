@@ -315,34 +315,32 @@ def movimiento_caja_entidad_cuentas_bancarias(request, entidad_id):
 def movimiento_caja_listado(request):
     """Listado/búsqueda de movimientos de caja; es la puerta de entrada de 'Modificación'.
 
+    Desde el 06/10/2026 usa los MISMOS filtros que el reporte de movimientos
+    de caja (_movimientos_reporte_filtrados: cuenta, tipo, concepto, receptor,
+    emisor, fechas de emisión / diferido / efectivización y sin efectivizar),
+    más los filtros rápidos que ya tenía esta pantalla: texto libre de
+    entidad (receptor o emisor, por nombre o CUIT), ID, número y monto.
+
     Trae junto con cada movimiento sus liquidaciones asociadas
     (liquidacion_movimiento -> liquidacion) con prefetch_related, para
     poder mostrar en la columna "Liquidación" si el movimiento ya está
     liquidado y con qué id, sin pegarle a la base una vez por fila.
     """
-    movimientos = (
-        MovimientoCaja.objects.select_related(
-            'caja', 'tipo', 'receptor', 'rel_numero', 'emisor_relacion__id_entidad', 'movimientocajadiferido',
-        )
-        .prefetch_related('liquidaciones__liquidacion')
-        .order_by('-emision', '-id')
-    )
+    form, movimientos, filtros_activos = _movimientos_reporte_filtrados(request)
 
-    q_receptor = request.GET.get('receptor', '').strip()
+    q_entidad = request.GET.get('entidad', '').strip()
     q_id = request.GET.get('id', '').strip()
-    q_fecha = request.GET.get('fecha', '').strip()
-    q_caja = request.GET.get('caja', '').strip()
+    q_fecha = request.GET.get('fecha', '').strip()  # compatibilidad con links viejos (fecha exacta)
     q_numero = request.GET.get('numero', '').strip()
     q_monto = request.GET.get('monto', '').strip()
 
-    if q_receptor:
+    if q_entidad:
         # Busca tanto en el receptor como en el emisor (si tiene uno cargado
-        # explícitamente): antes sólo miraba el receptor, así que un
-        # movimiento donde la entidad buscada es la emisora no aparecía.
+        # explícitamente).
         movimientos = movimientos.filter(
-            Q(receptor__nombre__icontains=q_receptor) | Q(receptor__cuit__icontains=q_receptor)
-            | Q(emisor_relacion__id_entidad__nombre__icontains=q_receptor)
-            | Q(emisor_relacion__id_entidad__cuit__icontains=q_receptor)
+            Q(receptor__nombre__icontains=q_entidad) | Q(receptor__cuit__icontains=q_entidad)
+            | Q(emisor_relacion__id_entidad__nombre__icontains=q_entidad)
+            | Q(emisor_relacion__id_entidad__cuit__icontains=q_entidad)
         )
     if q_id:
         if q_id.isdigit():
@@ -351,8 +349,6 @@ def movimiento_caja_listado(request):
             movimientos = movimientos.none()
     if q_fecha:
         movimientos = movimientos.filter(emision=q_fecha)
-    if q_caja.isdigit():
-        movimientos = movimientos.filter(caja_id=int(q_caja))
     if q_numero:
         if q_numero.isdigit():
             movimientos = movimientos.filter(rel_numero__numero=int(q_numero))
@@ -366,24 +362,29 @@ def movimiento_caja_listado(request):
         else:
             movimientos = movimientos.filter(monto=monto_valor)
 
-    movimientos = aplicar_orden_queryset(request, movimientos, {
-        'id': 'id',
-        'caja': 'caja__nombre',
-        'tipo': 'tipo__nombre',
-        'emision': 'emision',
-        'numero': 'rel_numero__numero',
-        'monto': 'monto',
-        'emisor': 'emisor_relacion__id_entidad__nombre',
-        'receptor': 'receptor__nombre',
-        'efectivizacion': 'efectivizacion',
-    })
+    filtros_activos = bool(filtros_activos or q_entidad or q_id or q_fecha or q_numero or q_monto)
+
+    totales = movimientos.aggregate(
+        total_monto=Coalesce(Sum('monto'), Value(Decimal('0')), output_field=DecimalField(max_digits=20, decimal_places=2)),
+    )
+    cantidad_total = movimientos.count()
+    movimientos = aplicar_orden_queryset(request, movimientos, CAMPOS_ORDEN_REPORTE_MC)
+
+    receptor_id = form['receptor'].value()
+    receptor_texto = texto_entidad_buscador(Entidad.objects.filter(pk=receptor_id).first()) if receptor_id else ''
+    emisor_id = form['emisor'].value()
+    emisor_texto = texto_entidad_buscador(Entidad.objects.filter(pk=emisor_id).first()) if emisor_id else ''
 
     return render(request, 'movimientos_caja/movimiento_caja_listado.html', {
-        'movimientos': movimientos[:200],
-        'q_receptor': q_receptor,
+        'form': form,
+        'movimientos': movimientos[:500],
+        'cantidad_total': cantidad_total,
+        'totales': totales,
+        'filtros_activos': filtros_activos,
+        'receptor_texto': receptor_texto,
+        'emisor_texto': emisor_texto,
+        'q_entidad': q_entidad,
         'q_id': q_id,
-        'q_fecha': q_fecha,
-        'q_caja': q_caja,
         'q_numero': q_numero,
         'q_monto': q_monto,
     })

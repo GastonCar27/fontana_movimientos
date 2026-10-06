@@ -4,34 +4,120 @@
 <div class="col">
     {% include "movimientos_caja/menu.html" %}
 
-    <h4 class="mb-3">Movimientos de caja</h4>
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+        <h4 class="mb-0">Movimientos de caja</h4>
+        {% if cantidad_total %}
+        <span class="badge bg-secondary-subtle text-secondary-emphasis border">
+            {{ cantidad_total }} movimiento{{ cantidad_total|pluralize }}
+        </span>
+        {% endif %}
+    </div>
 
-    <form method="get" class="row gx-2 gy-2 align-items-end mb-3">
-        <div class="col-auto">
-            <label for="id_receptor" class="mb-1 small text-muted">Entidad (receptor o emisor)</label>
-            <input type="text" id="id_receptor" name="receptor" class="form-control form-control-sm" value="{{ q_receptor }}" placeholder="Nombre o CUIT">
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row gx-3 gy-3 align-items-end">
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.caja.label_tag }}
+                    {{ form.caja }}
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.tipo.label_tag }}
+                    {{ form.tipo }}
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.concepto.label_tag }}
+                    {{ form.concepto }}
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.receptor.label_tag }}
+                    <div class="buscador-wrapper">
+                        <input type="text" id="receptor-buscador" autocomplete="off" class="form-control form-control-sm"
+                               placeholder="Buscar por nombre o CUIT..." value="{{ receptor_texto }}">
+                        {{ form.receptor }}
+                        <div id="receptor-resultados" class="buscador-resultados"></div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    {{ form.emisor.label_tag }}
+                    <div class="buscador-wrapper">
+                        <input type="text" id="emisor-buscador" autocomplete="off" class="form-control form-control-sm"
+                               placeholder="Buscar por nombre o CUIT..." value="{{ emisor_texto }}">
+                        {{ form.emisor }}
+                        <div id="emisor-resultados" class="buscador-resultados"></div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label for="id_entidad_texto">Entidad (receptor o emisor):</label>
+                    <input type="text" id="id_entidad_texto" name="entidad" class="form-control form-control-sm" value="{{ q_entidad }}" placeholder="Texto: nombre o CUIT">
+                </div>
+
+                <div class="w-100 d-none d-lg-block"></div>
+
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha_desde.label_tag }}
+                    {{ form.fecha_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.fecha_hasta.label_tag }}
+                    {{ form.fecha_hasta }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.diferido_desde.label_tag }}
+                    {{ form.diferido_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.diferido_hasta.label_tag }}
+                    {{ form.diferido_hasta }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.efectivizacion_desde.label_tag }}
+                    {{ form.efectivizacion_desde }}
+                </div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    {{ form.efectivizacion_hasta.label_tag }}
+                    {{ form.efectivizacion_hasta }}
+                </div>
+
+                <div class="w-100 d-none d-lg-block"></div>
+
+                <div class="col-4 col-md-3 col-lg-2">
+                    <label for="id_id">ID:</label>
+                    <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" placeholder="ID de movimiento" inputmode="numeric">
+                </div>
+                <div class="col-4 col-md-3 col-lg-2">
+                    <label for="id_numero">Número:</label>
+                    <input type="text" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}" placeholder="Número" inputmode="numeric">
+                </div>
+                <div class="col-4 col-md-3 col-lg-2">
+                    <label for="id_monto">Monto:</label>
+                    <input type="text" id="id_monto" name="monto" class="form-control form-control-sm" value="{{ q_monto }}" placeholder="Ej: 1500,50" inputmode="decimal">
+                </div>
+
+                <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top">
+                    <div class="form-check">
+                        {{ form.sin_efectivizar }}
+                        <label class="form-check-label" for="{{ form.sin_efectivizar.id_for_label }}">
+                            {{ form.sin_efectivizar.label }}
+                        </label>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm px-3">Buscar</button>
+                        {% if filtros_activos %}
+                        <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="btn btn-outline-secondary btn-sm px-3">Limpiar filtros</a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if form.non_field_errors %}
+                <div class="col-12">
+                    {% for error in form.non_field_errors %}
+                    <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </form>
         </div>
-        <div class="col-auto">
-            <label for="id_id" class="mb-1 small text-muted">ID</label>
-            <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" placeholder="ID de movimiento">
-        </div>
-        <div class="col-auto">
-            <label for="id_fecha" class="mb-1 small text-muted">Fecha de emisión</label>
-            <input type="date" id="id_fecha" name="fecha" class="form-control form-control-sm" value="{{ q_fecha }}">
-        </div>
-        <div class="col-auto">
-            <label for="id_numero" class="mb-1 small text-muted">Número</label>
-            <input type="text" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}" placeholder="Número de movimiento" inputmode="numeric">
-        </div>
-        <div class="col-auto">
-            <label for="id_monto" class="mb-1 small text-muted">Monto</label>
-            <input type="text" id="id_monto" name="monto" class="form-control form-control-sm" value="{{ q_monto }}" placeholder="Ej: 1500,50" inputmode="decimal">
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-sm btn-primary">Buscar</button>
-            <a href="{% url 'movimientos_caja:movimiento_caja_modificar' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
-        </div>
-    </form>
+    </div>
 
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle">
@@ -40,6 +126,7 @@
                     <th>{% sort_th 'id' 'ID' %}</th>
                     <th>{% sort_th 'caja' 'Caja' %}</th>
                     <th>{% sort_th 'tipo' 'Tipo' %}</th>
+                    <th>{% sort_th 'concepto' 'Concepto' %}</th>
                     <th>{% sort_th 'emision' 'Emisión' %}</th>
                     <th>{% sort_th 'numero' 'Número' %}</th>
                     <th>{% sort_th 'emisor' 'Emisor' %}</th>
@@ -56,6 +143,7 @@
                     <td>{{ m.id }}</td>
                     <td>{{ m.caja }}</td>
                     <td>{{ m.tipo }}</td>
+                    <td>{{ m.concepto|default:"-" }}</td>
                     <td>
                         {{ m.emision }}
                         {% if m.movimientocajadiferido.diferido %}
@@ -75,17 +163,39 @@
                         {% endfor %}
                     </td>
                     <td class="text-center">
-                        <a class="btn btn-sm btn-outline-primary" href="{% url 'movimientos_caja:movimiento_caja_editar' m.pk %}">Editar</a>
-                        <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_eliminar' m.pk %}">Eliminar</a>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'movimientos_caja:movimiento_caja_editar' m.pk %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                        <a class="btn btn-sm btn-outline-danger" href="{% url 'movimientos_caja:movimiento_caja_eliminar' m.pk %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">No hay movimientos de caja cargados.</td>
+                    <td colspan="12" class="text-center text-muted py-4">{% if filtros_activos %}No hay movimientos para los filtros aplicados.{% else %}No hay movimientos de caja cargados.{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td colspan="8" class="text-end">Total</td>
+                    <td class="text-end">{{ totales.total_monto|separador_miles }}</td>
+                    <td colspan="3"></td>
+                </tr>
+            </tfoot>
         </table>
     </div>
+
+    {% if cantidad_total > 500 %}
+    <p class="text-muted small">
+        Mostrando los primeros 500 de {{ cantidad_total }} movimientos. Ajustá los filtros para acotar la búsqueda.
+    </p>
+    {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    inicializarBuscador('receptor-buscador', '{{ form.receptor.id_for_label }}', 'receptor-resultados',
+        '{% url "entidades:entidad_buscar" %}');
+    inicializarBuscador('emisor-buscador', '{{ form.emisor.id_for_label }}', 'emisor-resultados',
+        '{% url "entidades:entidad_buscar" %}');
+});
+</script>
 {% endblock %}
