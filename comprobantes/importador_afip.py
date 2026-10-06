@@ -47,7 +47,10 @@ from entidades.models import Entidad
 
 from .models import Comprobante, ComprobanteTipo, ComprobanteTipoDeCambio
 
-AGREGADO_DESDE = 'AFIP importador'  # comprobante.agregado_desde (máx. 45)
+# 'AFIP importador 2': versión corregida (07/10/2026) que busca el tipo por
+# código AFIP. Los cargados por la versión anterior quedaron con
+# 'AFIP importador' y los repara el comando reparar_importacion_afip.
+AGREGADO_DESDE = 'AFIP importador 2'  # comprobante.agregado_desde (máx. 45)
 ENTIDAD_PROPIA_ID = getattr(settings, 'ENTIDAD_PROPIA_ID', 100)
 
 ACCION_CREAR = 'crear'
@@ -216,6 +219,18 @@ def _moneda(valor):
     return texto[:4]
 
 
+# Códigos viejos de AFIP (CSV hasta mediados de 2025) y los nuevos (ISO): en la
+# base conviven "DOL" y "USD", "060" y "EUR". Se consideran la misma moneda al
+# comparar con un comprobante ya cargado (no se pisa ni se informa diferencia).
+MONEDAS_EQUIVALENTES = {'DOL': 'USD', '060': 'EUR'}
+
+
+def misma_moneda(a, b):
+    a = MONEDAS_EQUIVALENTES.get(str(a or '').strip().upper(), str(a or '').strip().upper())
+    b = MONEDAS_EQUIVALENTES.get(str(b or '').strip().upper(), str(b or '').strip().upper())
+    return a == b
+
+
 def leer_filas(archivo, nombre):
     """Lee el archivo y devuelve (filas, columnas_encontradas). Cada fila es
     un dict con los valores ya convertidos, o con 'errores'."""
@@ -288,6 +303,31 @@ def _vacio(campo, valor):
     return False
 
 
+def tipos_por_codigo_afip():
+    """{código AFIP: ComprobanteTipo}. En la tabla de tipos el ID NO siempre
+    es el código AFIP (ej. ID 7 = Factura B, código 6; ID 6 = Recibo C, código
+    15), así que se busca por la columna id_afip. Si dos tipos tienen el mismo
+    código se prefiere el que además tiene ID = código; si no, el de ID menor.
+    Un tipo sin id_afip sólo se usa por su ID si ningún otro reclama ese código."""
+    por_codigo, sin_codigo = {}, {}
+    for t in ComprobanteTipo.objects.all().order_by('id'):
+        d = re.sub(r'\D', '', str(t.id_afip or ''))
+        if d:
+            cod = int(d)
+            actual = por_codigo.get(cod)
+            if actual is None or (t.id == cod and actual.id != cod):
+                por_codigo[cod] = t
+        else:
+            sin_codigo[t.id] = t
+    for tid, t in sin_codigo.items():
+        por_codigo.setdefault(tid, t)
+    return por_codigo
+
+
+def _cuit_valido(d):
+    return bool(d) and len(d) == 11 and bool(d.strip('0'))
+
+
 def _str(valor):
     if valor is None:
         return None
@@ -355,20 +395,24 @@ def analizar(filas, mapa, sentido='auto', fecha_desde=None, fecha_hasta=None, no
         sentido_archivo = sentido
 
     tipos = {t.id: t for t in ComprobanteTipo.objects.all()}
+    por_codigo = tipos_por_codigo_afip()
 
-    # Entidades por CUIT (normalizado)
+    # Entidades por CUIT (normalizado). Las que tienen el CUIT vacío, en 0 o
+    # con un número que no es un CUIT (ej. el DNI cargado en el campo CUIT)
+    # se tratan como "sin CUIT": se buscan por nombre y por DNI.
     por_cuit = {}
-    for e in Entidad.objects.exclude(cuit__isnull=True).exclude(cuit=''):
-        d = _solo_digitos(e.cuit)
-        if d:
-            por_cuit.setdefault(d, []).append(e)
-    # Entidades SIN CUIT cargado, por nombre (para no crear otra igual:
-    # caso típico, una entidad cargada a mano sin CUIT).
     sin_cuit_por_nombre = {}
-    for e in Entidad.objects.filter(Q(cuit__isnull=True) | Q(cuit='')):
+    dni_en_campo_cuit = {}
+    for e in Entidad.objects.all():
+        d = _solo_digitos(e.cuit)
+        if _cuit_valido(d):
+            por_cuit.setdefault(d, []).append(e)
+            continue
         clave = _nombre_clave(e.nombre)
         if clave:
             sin_cuit_por_nombre.setdefault(clave, []).append(e)
+        if d and d.strip("0") and 4 <= len(d) <= 8:
+            dni_en_campo_cuit.setdefault(int(d), []).append(e)
 
     # Clientes identificados sólo con DNI (Factura B): por documento_nro, o
     # por CUIT/CUIL que contenga ese DNI.
@@ -376,6 +420,10 @@ def analizar(filas, mapa, sentido='auto', fecha_desde=None, fecha_hasta=None, no
     for e in Entidad.objects.exclude(documento_nro__isnull=True):
         if e.documento_nro:
             por_dni.setdefault(int(e.documento_nro), []).append(e)
+    for dni, ents in dni_en_campo_cuit.items():
+        for e in ents:
+            if e not in por_dni.setdefault(dni, []):
+                por_dni[dni].append(e)
     for d, ents in por_cuit.items():
         if len(d) == 11 and d[:2] in ('20', '23', '24', '27'):
             for e in ents:
@@ -442,9 +490,11 @@ def analizar(filas, mapa, sentido='auto', fecha_desde=None, fecha_hasta=None, no
         if f.get('total') is not None and f['total'] < 0:
             r['avisos'].append('importe negativo en el archivo: se toma en positivo')
 
-        tipo = tipos.get(r['tipo_codigo'])
+        tipo = por_codigo.get(r['tipo_codigo'])
+        r['tipo_id'] = tipo.id if tipo else None
         if tipo is None:
-            r['errores'].append(f'tipo de comprobante "{r["tipo_texto"]}" no existe en Tipos de comprobante')
+            r['errores'].append(f'no hay ningún Tipo de comprobante con código AFIP {r["tipo_codigo"]} '
+                                f'("{r["tipo_texto"]}"): cargarlo (o completarle el código AFIP) y volver a importar')
         r['tipo_nombre'] = str(tipo) if tipo else r['tipo_texto']
 
         # Entidad: consumidor final / DNI / CUIT
@@ -457,6 +507,13 @@ def analizar(filas, mapa, sentido='auto', fecha_desde=None, fecha_hasta=None, no
         if clase_doc == 'cf' and not candidatas:
             r['crear_entidad'] = True
             r['entidad_texto'] = 'NUEVA: CONSUMIDOR FINAL'
+        elif clase_doc == 'dni' and not candidatas and len(sin_cuit_por_nombre.get(_nombre_clave(nombre), [])) == 1:
+            ent = sin_cuit_por_nombre[_nombre_clave(nombre)][0]
+            candidatas = [ent]
+            r['entidad_id'] = ent.id
+            r['entidad_texto'] = f'{ent.id} - {ent.nombre}'
+            r['completar_dni'] = True
+            r['avisos'].append(f'entidad encontrada por nombre (no tenía el DNI cargado): se le carga el DNI {int(cuit)}')
         elif clase_doc == 'dni' and not candidatas:
             r['crear_entidad'] = True
             r['entidad_texto'] = f'NUEVA: {nombre} (DNI {int(cuit)})'
@@ -505,8 +562,21 @@ def analizar(filas, mapa, sentido='auto', fecha_desde=None, fecha_hasta=None, no
                 or (c.entidad_emisor_id is None and nombre_l and (c.entidad_nombre or '').strip().lower() == nombre_l))
             and (c.punto_de_venta in (None, 0) or c.punto_de_venta == r['pv'])
         ]
-        mismo_tipo = [c for c in existentes if c.tipo_comprobante_id == r['tipo_codigo']]
-        otro_tipo = [c for c in existentes if c.tipo_comprobante_id != r['tipo_codigo']]
+        if not existentes:
+            # Última red contra duplicados: mismo número, punto de venta, fecha
+            # y total aunque esté cargado con otra entidad (ej. una entidad
+            # vieja con otro nombre o sin documento).
+            existentes = [
+                c for c in existentes_por_numero.get(r['numero'], [])
+                if (c.punto_de_venta in (None, 0) or c.punto_de_venta == r['pv'])
+                and _str(c.fecha) == r['fecha'] and c.total is not None and r['total'] is not None
+                and abs(Decimal(str(c.total)) - Decimal(r['total'])) < Decimal('0.01')
+            ]
+            for c in existentes:
+                r['avisos'].append(f'ya hay un comprobante igual (id {c.id}) cargado con otra entidad '
+                                   f'({c.entidad_emisor_id} - {c.entidad_nombre or ""}): no se duplica')
+        mismo_tipo = [c for c in existentes if c.tipo_comprobante_id == r['tipo_id']]
+        otro_tipo = [c for c in existentes if c.tipo_comprobante_id != r['tipo_id']]
         for c in existentes:
             if c.es_emisor != es_emisor:
                 r['avisos'].append(
@@ -602,12 +672,13 @@ def aplicar(analisis, acciones, crear_entidades=True):
 
     from liquidaciones.models import LiquidacionComprobante
 
-    tipos = {t.id: t for t in ComprobanteTipo.objects.all()}
+    por_codigo = tipos_por_codigo_afip()
     siguiente_id = (Comprobante.objects.aggregate(Max('id'))['id__max'] or 0) + 1
     entidades_creadas = {}
     por_cuit = {}
     for e in Entidad.objects.exclude(cuit__isnull=True).exclude(cuit='').order_by('id'):
-        por_cuit.setdefault(_solo_digitos(e.cuit), e.id)
+        if _cuit_valido(_solo_digitos(e.cuit)):
+            por_cuit.setdefault(_solo_digitos(e.cuit), e.id)
     detalle = {'creados': [], 'actualizados': [], 'omitidos': [], 'diferencias': [], 'entidades_creadas': []}
 
     # Comprobantes ya existentes (re-chequeo de duplicados exactos al guardar,
@@ -626,7 +697,11 @@ def aplicar(analisis, acciones, crear_entidades=True):
             detalle['omitidos'].append({'linea': r['linea'], 'numero': r['numero'], 'nombre': r['nombre'],
                                         'motivo': r['motivo'] if accion == r['accion'] else 'omitido a mano'})
             continue
-        tipo = tipos.get(r['tipo_codigo'])
+        tipo = por_codigo.get(r['tipo_codigo'])
+        if tipo is None:
+            detalle['omitidos'].append({'linea': r['linea'], 'numero': r['numero'], 'nombre': r['nombre'],
+                                        'motivo': f'no hay Tipo de comprobante con código AFIP {r["tipo_codigo"]}'})
+            continue
 
         # Entidad
         entidad_id = r['entidad_id']
@@ -645,8 +720,13 @@ def aplicar(analisis, acciones, crear_entidades=True):
             entidad_id = entidades_creadas[clave_ent] = nueva.id
             detalle['entidades_creadas'].append(f'{nueva.id} - {nueva.nombre} (DNI {dni})')
         if entidad_id and r.get('completar_cuit') and r['cuit']:
-            if Entidad.objects.filter(pk=entidad_id).filter(Q(cuit__isnull=True) | Q(cuit='')).update(cuit=r['cuit']):
+            ent = Entidad.objects.filter(pk=entidad_id).first()
+            if ent and not _cuit_valido(_solo_digitos(ent.cuit)):
+                Entidad.objects.filter(pk=entidad_id).update(cuit=r['cuit'])
                 detalle['entidades_creadas'].append(f'{entidad_id} - se le cargó el CUIT {r["cuit"]} (ya existía)')
+        if entidad_id and r.get('completar_dni') and clave_ent.startswith('dni:'):
+            if Entidad.objects.filter(pk=entidad_id, documento_nro__isnull=True).update(documento_nro=int(clave_ent[4:])):
+                detalle['entidades_creadas'].append(f'{entidad_id} - se le cargó el DNI {int(clave_ent[4:])} (ya existía)')
         if entidad_id is None and r['cuit'] and clave_ent.startswith('cuit:'):
             if r['cuit'] in entidades_creadas:
                 entidad_id = entidades_creadas[r['cuit']]
@@ -663,7 +743,7 @@ def aplicar(analisis, acciones, crear_entidades=True):
 
         if accion == ACCION_CREAR:
             # Re-chequeo por si cambió algo entre la vista previa y el guardado.
-            llave = (entidad_id, r['tipo_codigo'], r['pv'], r['numero'])
+            llave = (entidad_id, tipo.id, r['pv'], r['numero'])
             ya = ya_cargados.get(llave) if entidad_id else None
             if ya:
                 detalle['omitidos'].append({'linea': r['linea'], 'numero': r['numero'], 'nombre': r['nombre'],
@@ -672,7 +752,7 @@ def aplicar(analisis, acciones, crear_entidades=True):
             c = Comprobante(
                 id=siguiente_id,
                 entidad_emisor_id=entidad_id,
-                tipo_comprobante_id=r['tipo_codigo'],
+                tipo_comprobante_id=tipo.id,
                 numero=r['numero'],
                 es_emisor=r['es_emisor'],
                 agregado_desde=AGREGADO_DESDE,
@@ -696,8 +776,8 @@ def aplicar(analisis, acciones, crear_entidades=True):
                                             'motivo': f'el comprobante {r["existente_id"]} ya no existe'})
                 continue
             cambios = {}
-            if r['tipo_codigo'] and c.tipo_comprobante_id != r['tipo_codigo']:
-                cambios['tipo_comprobante_id'] = r['tipo_codigo']
+            if c.tipo_comprobante_id != tipo.id:
+                cambios['tipo_comprobante_id'] = tipo.id
             nuevo_string = _comprobante_string(tipo, r['pv'] or c.punto_de_venta, r['numero'])
             if c.comprobante_string != nuevo_string:
                 cambios['comprobante_string'] = nuevo_string
@@ -709,6 +789,8 @@ def aplicar(analisis, acciones, crear_entidades=True):
                 if _vacio(campo, actual) and not _vacio(campo, nuevo):
                     cambios[campo] = nuevo
                 elif not _vacio(campo, actual) and not _vacio(campo, nuevo) and actual != nuevo:
+                    if campo == 'moneda' and misma_moneda(actual, nuevo):
+                        continue
                     try:
                         igual = abs(Decimal(str(actual)) - Decimal(str(nuevo))) < Decimal('0.01')
                     except (InvalidOperation, ValueError, TypeError):
