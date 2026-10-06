@@ -201,6 +201,12 @@ class ComprobanteReporteForm(forms.Form):
         # el JS del buscador.
         widget=forms.HiddenInput(),
     )
+    # Agregado 2026-10-07 (pedido de Gastón): "1654506" o "12-9" (pv-número).
+    numero = forms.CharField(
+        required=False,
+        label='Número',
+        widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ej. 1654506 o 12-9'}),
+    )
     fecha_desde = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
@@ -406,6 +412,12 @@ class ComprobanteRenglonReporteForm(forms.Form):
         # comprobante_renglon_reporte.html); el campo queda oculto y lo
         # completa el JS del buscador (productos:buscar).
         widget=forms.HiddenInput(),
+    )
+    # Agregado 2026-10-07 (pedido de Gastón): "1654506" o "12-9" (pv-número).
+    numero = forms.CharField(
+        required=False,
+        label='Número de comprobante',
+        widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ej. 1654506 o 12-9'}),
     )
     fecha_desde = forms.DateField(
         required=False,

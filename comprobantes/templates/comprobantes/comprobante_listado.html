@@ -23,6 +23,10 @@
             <input type="text" id="id_id" name="id" class="form-control form-control-sm" value="{{ q_id }}" placeholder="ID de comprobante">
         </div>
         <div class="col-auto">
+            <label for="id_numero" class="mb-1 small text-muted">Número</label>
+            <input type="text" id="id_numero" name="numero" class="form-control form-control-sm" value="{{ q_numero }}" placeholder="Ej. 1654506 o 12-9" style="max-width: 11rem;">
+        </div>
+        <div class="col-auto">
             <label for="id_fecha_desde" class="mb-1 small text-muted">Fecha desde</label>
             <input type="date" id="id_fecha_desde" name="fecha_desde" class="form-control form-control-sm" value="{{ q_fecha_desde|default:q_fecha }}">
         </div>

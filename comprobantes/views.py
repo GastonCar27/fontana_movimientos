@@ -1,3 +1,4 @@
+import re
 from django.shortcuts import render, redirect, get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib import messages
@@ -488,14 +489,39 @@ def comprobante_form(request, pk=None):
     })
 
 
+def filtrar_por_numero(queryset, texto, prefijo=''):
+    """Filtro por número de comprobante (pedido de Gastón, 07/10/2026).
+    Acepta "1654506" (sólo el número) o "12-9" / "00012-00000009" (punto de
+    venta - número). Encuentra también los tiques cargados como rango
+    (numero ... numero_hasta). 'prefijo' sirve para filtrar desde otra
+    tabla (ej. 'comprobante__' en los renglones)."""
+    texto = (texto or '').strip()
+    if not texto:
+        return queryset
+    partes = [p for p in re.split(r'[-/\s]+', texto) if p]
+    if not partes or not all(p.isdigit() for p in partes) or len(partes) > 2:
+        return queryset.none()
+    numero = int(partes[-1])
+    cond = Q(**{f'{prefijo}numero': numero}) | Q(**{f'{prefijo}numero__lte': numero, f'{prefijo}numero_hasta__gte': numero})
+    queryset = queryset.filter(cond)
+    if len(partes) == 2:
+        queryset = queryset.filter(**{f'{prefijo}punto_de_venta': int(partes[0])})
+    return queryset
+
+
 def comprobante_listado(request):
     """Listado/búsqueda de comprobantes; es la puerta de entrada de 'Modificar'."""
     comprobantes = (
-        Comprobante.objects.select_related('entidad_emisor', 'tipo_comprobante', 'no_recibido')
+        # entidad_emisor con prefetch (no select_related): con select_related
+        # Django hace INNER JOIN y se pierden los comprobantes sin entidad.
+        Comprobante.objects.select_related('tipo_comprobante', 'no_recibido')
+        .prefetch_related('entidad_emisor')
         .order_by('-fecha', '-id')
     )
 
     q_entidad = request.GET.get('entidad', '').strip()
+    # Agregado 2026-10-07 (pedido de Gastón): número de comprobante.
+    q_numero = request.GET.get('numero', '').strip()
     q_id = request.GET.get('id', '').strip()
     q_fecha = request.GET.get('fecha', '').strip()  # fecha exacta (links viejos)
     # Agregado 2026-09-30 (pedido de Gastón): rango de fechas.
@@ -539,6 +565,8 @@ def comprobante_listado(request):
             comprobantes = comprobantes.filter(id=int(q_id))
         else:
             comprobantes = comprobantes.none()
+    if q_numero:
+        comprobantes = filtrar_por_numero(comprobantes, q_numero)
     if q_fecha:
         comprobantes = comprobantes.filter(fecha=q_fecha)
     if q_fecha_desde:
@@ -644,6 +672,7 @@ def comprobante_listado(request):
         'q_entidad': q_entidad,
         'q_entidad_id': q_entidad_id,
         'q_id': q_id,
+        'q_numero': q_numero,
         'q_fecha': q_fecha,
         'q_fecha_desde': q_fecha_desde,
         'q_fecha_hasta': q_fecha_hasta,
@@ -1142,7 +1171,8 @@ def comprobante_exportar_pdf(request, pk):
 def comprobante_reporte(request):
     form = forms.ComprobanteReporteForm(request.GET or None)
     comprobantes = (
-        Comprobante.objects.select_related('entidad_emisor', 'tipo_comprobante')
+        Comprobante.objects.select_related('tipo_comprobante')
+        .prefetch_related('entidad_emisor')
         .order_by('-fecha', '-id')
     )
 
@@ -1155,6 +1185,7 @@ def comprobante_reporte(request):
         fecha_desde = form.cleaned_data.get('fecha_desde')
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
         sin_renglones = form.cleaned_data.get('sin_renglones')
+        comprobantes = filtrar_por_numero(comprobantes, form.cleaned_data.get('numero'))
         if not form.cleaned_data.get('incluir_no_recibidos'):
             comprobantes = comprobantes.filter(no_recibido__isnull=True)
         if entidad:
@@ -1817,6 +1848,7 @@ def comprobante_renglon_reporte(request):
         fecha_hasta = form.cleaned_data.get('fecha_hasta')
         if producto:
             renglones = renglones.filter(producto=producto)
+        renglones = filtrar_por_numero(renglones, form.cleaned_data.get('numero'), 'comprobante__')
         if fecha_desde:
             renglones = renglones.filter(comprobante__fecha__gte=fecha_desde)
         if fecha_hasta:
