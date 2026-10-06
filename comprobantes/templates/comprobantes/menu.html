@@ -9,6 +9,8 @@
                    href="{% url 'comprobantes:comprobante_modificar' %}">Modificar</a>
                 <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'comprobante_reportes' %}active{% endif %}"
                    href="{% url 'comprobantes:comprobante_reportes' %}">Reportes</a>
+                <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'comprobante_importar_afip' %}active{% endif %}"
+                   href="{% url 'comprobantes:comprobante_importar_afip' %}">Importar AFIP</a>
             </div>
         </div>
         <div>

@@ -118,6 +118,14 @@ class Comprobante(models.Model):
     detalle = models.CharField(max_length=345, blank=True, null=True)
     numero_hasta = models.IntegerField(blank=True, null=True)
     codigo_autorizacion = models.FloatField(blank=True, null=True)
+    # Fecha y hora en que se cargó el comprobante en el sistema (pedido de
+    # Gastón, 06/10/2026). Columna nueva (migración 0005): los comprobantes
+    # que ya existían quedan en NULL. Desde Django se completa sola
+    # (auto_now_add, en UTC como el resto de las fechas-hora del proyecto);
+    # además la columna tiene DEFAULT UTC_TIMESTAMP() en MySQL, para que
+    # también quede cargada si se inserta desde otro programa (ej. la app de
+    # escritorio).
+    fecha_agregado = models.DateTimeField('Fecha de carga', blank=True, null=True, auto_now_add=True)
     
 
     class Meta:

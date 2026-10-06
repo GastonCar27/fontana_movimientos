@@ -38,6 +38,13 @@ Uso:
     python manage.py asignar_destinatario_banco_macro --aplicar             # aplica
     python manage.py asignar_destinatario_banco_macro --entidad 1234        # entidad Banco Macro a mano
     python manage.py asignar_destinatario_banco_macro --caja 2              # cuenta Macro a mano
+
+Otros bancos (06/10/2026): con --banco se aplican las MISMAS reglas a otra
+cuenta, ej. el Banco Nación:
+    python manage.py asignar_destinatario_banco_macro --banco nacion
+    python manage.py asignar_destinatario_banco_macro --banco nacion --aplicar
+La cuenta se busca por nombre (contiene el texto) y la entidad por nombre
+(contiene "banco" y el texto); si hay más de una, usar --caja / --entidad.
 """
 import re
 import unicodedata
@@ -99,44 +106,47 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
+        parser.add_argument('--banco', default='macro',
+                            help='Texto para encontrar la cuenta y la entidad del banco (default: macro; ej. nacion).')
         parser.add_argument('--caja', type=int, help='ID de la cuenta (bancocuenta) del Banco Macro, si no se encuentra sola.')
         parser.add_argument('--entidad', type=int, help='ID de la ENTIDAD Banco Macro a cargar como receptor, si no se encuentra sola.')
         parser.add_argument('--aplicar', action='store_true', help='Guarda los cambios. Sin esta opción sólo muestra el informe.')
 
-    def _caja_macro(self, caja_id):
+    def _caja_macro(self, caja_id, banco):
         if caja_id:
             caja = Caja.objects.filter(pk=caja_id).first()
             if not caja:
                 raise CommandError(f'No existe la cuenta (caja) id {caja_id}.')
             return caja
-        cajas = list(Caja.objects.filter(nombre__icontains='macro'))
+        cajas = list(Caja.objects.filter(nombre__icontains=banco))
         if len(cajas) != 1:
             lista = '\n'.join(f'  {c.id} - {c.nombre}' for c in cajas) or '  (ninguna)'
             raise CommandError(
-                f'No pude identificar UNA sola cuenta del Banco Macro ({len(cajas)} encontradas):\n{lista}\n'
+                f'No pude identificar UNA sola cuenta "{banco}" ({len(cajas)} encontradas):\n{lista}\n'
                 'Indicala con --caja <id>.'
             )
         return cajas[0]
 
-    def _entidad_macro(self, entidad_id):
+    def _entidad_macro(self, entidad_id, banco):
         if entidad_id:
             entidad = Entidad.objects.filter(pk=entidad_id).first()
             if not entidad:
                 raise CommandError(f'No existe la entidad id {entidad_id}.')
             return entidad
-        candidatas = list(Entidad.objects.filter(nombre__icontains='macro').order_by('id'))
+        candidatas = list(Entidad.objects.filter(nombre__icontains=banco).filter(nombre__icontains='banco').order_by('id'))
         if len(candidatas) != 1:
             lista = '\n'.join(f'  {e.id} - {e.nombre} (CUIT {e.cuit or "-"})' for e in candidatas) or '  (ninguna)'
             raise CommandError(
-                f'No pude identificar UNA sola entidad "Banco Macro" ({len(candidatas)} encontradas):\n{lista}\n'
+                f'No pude identificar UNA sola entidad banco "{banco}" ({len(candidatas)} encontradas):\n{lista}\n'
                 'Indicala con --entidad <id>.'
             )
         return candidatas[0]
 
     def handle(self, *args, **options):
         aplicar = options['aplicar']
-        caja = self._caja_macro(options.get('caja'))
-        entidad = self._entidad_macro(options.get('entidad'))
+        banco = (options.get('banco') or 'macro').strip()
+        caja = self._caja_macro(options.get('caja'), banco)
+        entidad = self._entidad_macro(options.get('entidad'), banco)
         todos_conceptos = list(MovimientoCajaConceptoTipo.objects.all())
 
         buscados = {_normalizar(c) for c in CONCEPTOS}

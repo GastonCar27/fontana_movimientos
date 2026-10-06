@@ -23,6 +23,9 @@ urlpatterns=[
     path('<int:pk>/exportar/excel/', views.comprobante_exportar_excel, name='comprobante_exportar_excel'),
     path('<int:pk>/exportar/pdf/', views.comprobante_exportar_pdf, name='comprobante_exportar_pdf'),
     path('entidad-buscar/', views.comprobante_entidad_buscar, name='entidad_buscar'),
+    # --- Importar desde AFIP/ARCA ("Mis Comprobantes"), 06/10/2026 ---
+    path('importar-afip/', views.comprobante_importar_afip, name='comprobante_importar_afip'),
+    path('importar-afip/resultado/excel/', views.comprobante_importar_afip_excel, name='comprobante_importar_afip_excel'),
 
     # --- Alta / Modificar / Reportes de ComprobanteRenglon ---
     path('renglon/alta/', views.comprobante_renglon_form, name='comprobante_renglon_alta'),

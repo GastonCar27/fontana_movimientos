@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% load movimientos_extras %}
+{% block content %}
+<div class="col">
+    {% include "comprobantes/menu.html" %}
+
+    <h4 class="mb-2">Importar comprobantes desde AFIP / ARCA</h4>
+    <p class="text-muted small mb-3">
+        Subí el archivo de <strong>"Mis Comprobantes"</strong> (recibidos o emitidos, en CSV o Excel). Primero vas a ver
+        una <strong>vista previa</strong> de lo que se va a hacer con cada comprobante; no se guarda nada hasta que confirmes.
+        Los que ya están cargados no se duplican: se reconocen por CUIT + punto de venta + número, aunque se hayan
+        cargado a mano con otro tipo (en ese caso se corrige el tipo y se completan los datos que falten).
+    </p>
+
+    {% if not analisis %}
+    <form method="post" enctype="multipart/form-data" class="card shadow-sm mb-4">
+        {% csrf_token %}
+        <input type="hidden" name="paso" value="analizar">
+        <div class="card-body row gx-3 gy-3 align-items-end">
+            <div class="col-12 col-md-5">
+                <label class="form-label">{{ form.archivo.label }}</label>
+                {{ form.archivo }}
+                {% if form.archivo.errors %}<div class="text-danger small">{{ form.archivo.errors|join:", " }}</div>{% endif %}
+            </div>
+            <div class="col-12 col-md-7">
+                <label class="form-label">{{ form.sentido.label }}</label>
+                {{ form.sentido }}
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label">{{ form.fecha_desde.label }}</label>
+                {{ form.fecha_desde }}
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label">{{ form.fecha_hasta.label }}</label>
+                {{ form.fecha_hasta }}
+                {% if form.fecha_hasta.errors %}<div class="text-danger small">{{ form.fecha_hasta.errors|join:", " }}</div>{% endif %}
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="form-check">
+                    {{ form.crear_entidades }}
+                    <label class="form-check-label" for="{{ form.crear_entidades.id_for_label }}">{{ form.crear_entidades.label }}</label>
+                </div>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary btn-sm px-3">Ver vista previa</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+
+    {% if analisis %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <h5 class="card-title mb-2">Vista previa — {{ analisis.archivo }}</h5>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <span class="badge bg-secondary">{{ analisis.resumen.total }} filas</span>
+                <span class="badge bg-success">{{ analisis.resumen.crear }} a crear</span>
+                <span class="badge bg-primary">{{ analisis.resumen.actualizar }} a actualizar</span>
+                <span class="badge bg-light text-dark border">{{ analisis.resumen.omitir }} se omiten</span>
+                {% if analisis.resumen.errores %}<span class="badge bg-danger">{{ analisis.resumen.errores }} con error</span>{% endif %}
+                {% if analisis.resumen.entidades_nuevas %}<span class="badge bg-warning text-dark">{{ analisis.resumen.entidades_nuevas }} entidades nuevas{% if not analisis.crear_entidades %} (NO se crean: quedan sin entidad){% endif %}</span>{% endif %}
+            </div>
+            <p class="small text-muted mb-0">
+                Sentido: <strong>{% if analisis.sentido == 'recibidos' %}recibidos (se liquidan en PAGO){% elif analisis.sentido == 'emitidos' %}emitidos por Fontana (se liquidan en COBRO){% else %}se decide fila por fila según el CUIT de Fontana{% endif %}</strong>.
+                Podés cambiar la acción de cada fila antes de confirmar.
+                {% if filas_ocultas %}<br>Se muestran las filas con error, todas las que se actualizan y hasta 300 de las que se crean / omiten; las otras <strong>{{ filas_ocultas }}</strong> se procesan con la acción sugerida.{% endif %}
+                Las ventas sin cliente identificado (tiques, consumidor final) van a la entidad <strong>CONSUMIDOR FINAL</strong>; los clientes con DNI se buscan por documento.
+            </p>
+        </div>
+    </div>
+
+    <form method="post" id="form-confirmar">
+        {% csrf_token %}
+        <input type="hidden" name="paso" value="confirmar">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="ver-omitidos">
+                <label class="form-check-label small" for="ver-omitidos">Mostrar también las filas que se omiten</label>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'comprobantes:comprobante_importar_afip' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+                <button type="submit" class="btn btn-success btn-sm px-3">Confirmar importación</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Línea</th><th>Fecha</th><th>Tipo</th><th>PV - Número</th><th>Contraparte (archivo)</th>
+                        <th>Entidad en el sistema</th><th>Quién lo emitió</th><th class="text-end">Total</th>
+                        <th>Acción</th><th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in filas_mostrar %}
+                    <tr class="fila-afip {% if r.errores %}table-danger{% elif r.accion == 'crear' %}table-success{% elif r.accion == 'actualizar' %}table-primary{% endif %}"
+                        data-accion="{{ r.accion }}" {% if r.accion == 'omitir' %}style="display:none"{% endif %}>
+                        <td>{{ r.linea }}</td>
+                        <td>{{ r.fecha|default:"" }}</td>
+                        <td>{{ r.tipo_nombre }}</td>
+                        <td>{{ r.pv|default:"" }} - {{ r.numero|default:"" }}{% if r.numero_hasta and r.numero_hasta != r.numero %} al {{ r.numero_hasta }}{% endif %}</td>
+                        <td>{{ r.nombre }}<br><span class="text-muted">{{ r.cuit }}</span></td>
+                        <td>{{ r.entidad_texto }}</td>
+                        <td>{% if r.es_emisor == 0 %}Fontana (cobro){% else %}La entidad (pago){% endif %}</td>
+                        <td class="text-end">{{ r.total|separador_miles }}{% if r.moneda and r.moneda != 'PES' %} {{ r.moneda }}{% endif %}</td>
+                        <td>
+                            {% if r.errores %}
+                            <span class="badge bg-danger">Error</span>
+                            {% else %}
+                            <select name="accion_{{ r.linea }}" data-sugerida="{{ r.accion }}" class="form-select form-select-sm sel-accion" style="min-width:9rem">
+                                {% if not r.existente_id %}<option value="crear" {% if r.accion == 'crear' %}selected{% endif %}>Crear</option>{% endif %}
+                                {% if r.existente_id %}<option value="actualizar" {% if r.accion == 'actualizar' %}selected{% endif %}>Actualizar el {{ r.existente_id }}</option>
+                                <option value="crear" {% if r.accion == 'crear' %}selected{% endif %}>Crear igual (duplicar)</option>{% endif %}
+                                <option value="omitir" {% if r.accion == 'omitir' %}selected{% endif %}>Omitir</option>
+                            </select>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ r.motivo }}
+                            {% for a in r.avisos %}<div class="text-warning-emphasis">⚠ {{ a }}</div>{% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="10" class="text-center text-muted py-4">El archivo no tiene filas en el rango elegido.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mb-4">
+            <a href="{% url 'comprobantes:comprobante_importar_afip' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+            <button type="submit" class="btn btn-success btn-sm px-3">Confirmar importación</button>
+        </div>
+    </form>
+    {% endif %}
+
+    {% if resultado %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="card-title mb-0">Resultado de la importación</h5>
+                <a class="btn btn-sm btn-outline-success" href="{% url 'comprobantes:comprobante_importar_afip_excel' %}">Descargar detalle en Excel</a>
+            </div>
+            <ul class="mt-2">
+                <li>Comprobantes nuevos: <strong>{{ resultado.creados|length }}</strong></li>
+                <li>Comprobantes actualizados: <strong>{{ resultado.actualizados|length }}</strong></li>
+                <li>Omitidos: <strong>{{ resultado.omitidos|length }}</strong></li>
+                {% if resultado.entidades_creadas %}<li>Entidades creadas: <strong>{{ resultado.entidades_creadas|length }}</strong> — {{ resultado.entidades_creadas|join:"; " }}</li>{% endif %}
+            </ul>
+            {% if resultado.diferencias %}
+            <h6 class="text-warning-emphasis">Datos distintos que NO se pisaron ({{ resultado.diferencias|length }})</h6>
+            <div class="table-responsive">
+                <table class="table table-sm small">
+                    <thead><tr><th>Comprobante</th><th>Campo</th><th>Guardado</th><th>AFIP</th></tr></thead>
+                    <tbody>
+                        {% for d in resultado.diferencias %}
+                        <tr><td><a href="{% url 'comprobantes:comprobante_editar' d.id %}">{{ d.id }}</a></td><td>{{ d.campo }}</td><td>{{ d.guardado }}</td><td>{{ d.afip }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% if resultado.actualizados %}
+            <h6>Actualizados</h6>
+            <ul class="small">{% for a in resultado.actualizados %}<li><a href="{% url 'comprobantes:comprobante_editar' a.id %}">{{ a.id }}</a>: {{ a.campos|join:", " }}</li>{% endfor %}</ul>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Sólo se envían las filas cuya acción se cambió a mano (las demás usan la
+    // sugerida, que ya está guardada en la sesión): un archivo de un año trae
+    // más de mil filas y Django rechaza formularios con tantos campos.
+    var formConf = document.getElementById('form-confirmar');
+    if (formConf) {
+        formConf.addEventListener('submit', function () {
+            formConf.querySelectorAll('select.sel-accion').forEach(function (sel) {
+                if (sel.value === sel.dataset.sugerida) sel.disabled = true;
+            });
+        });
+    }
+    var ver = document.getElementById('ver-omitidos');
+    if (!ver) return;
+    function refrescar() {
+        document.querySelectorAll('tr.fila-afip').forEach(function (tr) {
+            var sel = tr.querySelector('select');
+            var accion = sel ? sel.value : tr.dataset.accion;
+            tr.style.display = (ver.checked || accion !== 'omitir') ? '' : 'none';
+        });
+    }
+    ver.addEventListener('change', refrescar);
+});
+</script>
+{% endblock %}

@@ -14,5 +14,7 @@
            href="{% url 'movimientos_caja:movimiento_caja_libro_modificar' %}">Modificar en libro</a>
         <a class="btn btn-outline-secondary {% if request.resolver_match.url_name == 'movimiento_caja_cheques_recibidos_sin_pago' %}active{% endif %}"
            href="{% url 'movimientos_caja:movimiento_caja_cheques_recibidos_sin_pago' %}">Cheques recibidos sin pago</a>
+        <a class="btn btn-outline-secondary" title="Cuenta + concepto -> destinatario automático"
+           href="{% url 'admin:movimientos_caja_regladestinatarioconcepto_changelist' %}">Reglas de destinatario</a>
     </div>
 </nav>

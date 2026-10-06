@@ -118,6 +118,78 @@ class ComprobanteForm(forms.ModelForm):
             'entidad_emisor': forms.HiddenInput(),
         }
 
+    # 06/10/2026: el campo 'entidad_emisor' es en realidad LA entidad del
+    # comprobante (proveedor o cliente), sea quien sea el que lo emitió; quién
+    # lo emitió lo dice 'es_emisor'. Con las etiquetas viejas ("Entidad
+    # emisora" + "Es emisor: Sí/No") era fácil ver "Entidad emisora: X" y no
+    # notar que "Es emisor" estaba en No (= lo emitió Fontana, y entonces el
+    # comprobante se ofrece para COBRO y no para PAGO). Sólo cambian las
+    # etiquetas: los valores guardados siguen siendo 1 / 0.
+    ES_EMISOR_CHOICES = [
+        (1, 'La entidad -- Fontana lo RECIBE (compra / gasto, se liquida en PAGO)'),
+        (0, 'Fontana -- se lo EMITIMOS a la entidad (venta, se liquida en COBRO)'),
+    ]
+
+    # 06/10/2026: control de duplicados al cargar/editar a mano (ver clean).
+    confirmar_posible_duplicado = forms.BooleanField(
+        required=False,
+        label='Confirmo que NO es un duplicado (es otro comprobante distinto con el mismo número)',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        campo = self.fields['es_emisor']
+        campo.label = '¿Quién emitió el comprobante?'
+        campo.choices = self.ES_EMISOR_CHOICES
+        self.mostrar_confirmar_duplicado = False
+
+    def clean(self):
+        """Control de duplicados (06/10/2026, a raíz de los de Electricidad
+        de Misiones):
+          - mismo comprobante exacto (entidad + tipo + punto de venta +
+            número) -> no se puede guardar;
+          - misma entidad + número con OTRO tipo, o con el punto de venta
+            vacío en alguno de los dos -> se avisa y hay que tildar
+            "Confirmo que NO es un duplicado" para guardar igual.
+        Al editar, sólo se controla si se cambió alguno de esos datos (para
+        no trabar la edición de comprobantes viejos)."""
+        cleaned_data = super().clean()
+        entidad = cleaned_data.get('entidad_emisor')
+        numero = cleaned_data.get('numero')
+        pv = cleaned_data.get('punto_de_venta')
+        tipo = cleaned_data.get('tipo_comprobante')
+        claves = {'entidad_emisor', 'numero', 'punto_de_venta', 'tipo_comprobante'}
+        if self.instance.pk and not (claves & set(self.changed_data)):
+            return cleaned_data
+        if not entidad or not numero:
+            return cleaned_data
+        qs = Comprobante.objects.filter(entidad_emisor=entidad, numero=numero)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if pv:
+            qs = qs.filter(Q(punto_de_venta=pv) | Q(punto_de_venta__isnull=True) | Q(punto_de_venta=0))
+        existentes = list(qs.select_related('tipo_comprobante')[:10])
+        if not existentes:
+            return cleaned_data
+        exactos = [c for c in existentes
+                   if tipo and c.tipo_comprobante_id == tipo.id and pv and c.punto_de_venta == pv]
+        if exactos:
+            raise forms.ValidationError(
+                f'Ese comprobante ya está cargado (comprobante {exactos[0].id}: misma entidad, tipo, '
+                f'punto de venta y número).'
+            )
+        if not cleaned_data.get('confirmar_posible_duplicado'):
+            self.mostrar_confirmar_duplicado = True
+            detalle = ', '.join(
+                f'{c.id} ({c.tipo_comprobante or "sin tipo"}, pv {c.punto_de_venta or "vacío"}, {c.fecha})'
+                for c in existentes
+            )
+            raise forms.ValidationError(
+                f'Posible duplicado: esta entidad ya tiene cargado el número {numero} en: {detalle}. '
+                'Si es otro comprobante distinto, tildá "Confirmo que NO es un duplicado" y guardá de nuevo.'
+            )
+        return cleaned_data
+
 
 class ComprobanteReporteForm(forms.Form):
     entidad = forms.ModelChoiceField(
@@ -350,3 +422,40 @@ class ComprobanteRenglonReporteForm(forms.Form):
         label='Incluir no recibidos',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+
+
+class ImportarAfipForm(forms.Form):
+    """Subida del archivo "Mis Comprobantes" de AFIP/ARCA (06/10/2026)."""
+    SENTIDO_CHOICES = [
+        ('auto', 'Detectar solo (según las columnas del archivo)'),
+        ('recibidos', 'Comprobantes RECIBIDOS (compras / gastos: se liquidan en PAGO)'),
+        ('emitidos', 'Comprobantes EMITIDOS por Fontana (ventas: se liquidan en COBRO)'),
+    ]
+    archivo = forms.FileField(
+        label='Archivo de AFIP (CSV o Excel)',
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control form-control-sm', 'accept': '.csv,.txt,.xlsx,.xls'}),
+    )
+    sentido = forms.ChoiceField(
+        label='Tipo de archivo', choices=SENTIDO_CHOICES, initial='auto',
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}),
+    )
+    fecha_desde = forms.DateField(
+        required=False, label='Fecha desde',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    fecha_hasta = forms.DateField(
+        required=False, label='Fecha hasta',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
+    )
+    crear_entidades = forms.BooleanField(
+        required=False, initial=True,
+        label='Crear las entidades que no existen (con el nombre y CUIT del archivo)',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        desde, hasta = cleaned_data.get('fecha_desde'), cleaned_data.get('fecha_hasta')
+        if desde and hasta and desde > hasta:
+            self.add_error('fecha_hasta', '"Fecha hasta" no puede ser anterior a "Fecha desde".')
+        return cleaned_data

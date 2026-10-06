@@ -1860,3 +1860,105 @@ def comprobante_renglon_reporte(request):
         'totales': totales,
         'producto_texto': str(producto) if producto else '',
     })
+
+
+# ---------------------------------------------------------------------------
+# Importar comprobantes desde AFIP/ARCA ("Mis Comprobantes"), 06/10/2026.
+# Ver importador_afip.py: primero se arma una vista previa (no guarda nada);
+# al confirmar se crean/actualizan los comprobantes. El análisis queda en la
+# sesión entre los dos pasos, para no tener que volver a subir el archivo.
+# ---------------------------------------------------------------------------
+
+def comprobante_importar_afip(request):
+    from . import importador_afip as imp
+
+    analisis = None
+    resultado = None
+    form = forms.ImportarAfipForm(request.POST or None, request.FILES or None)
+
+    if request.method == 'POST' and request.POST.get('paso') == 'confirmar':
+        datos = request.session.get('afip_import_analisis')
+        if not datos:
+            messages.error(request, 'La vista previa expiró: volvé a subir el archivo.')
+            return redirect('comprobantes:comprobante_importar_afip')
+        acciones = {
+            clave[len('accion_'):]: valor for clave, valor in request.POST.items() if clave.startswith('accion_')
+        }
+        resultado = imp.aplicar(datos, acciones, crear_entidades=datos.get('crear_entidades', True))
+        request.session.pop('afip_import_analisis', None)
+        request.session['afip_import_resultado'] = resultado
+        messages.success(
+            request,
+            f"Importación terminada: {len(resultado['creados'])} comprobante(s) nuevo(s), "
+            f"{len(resultado['actualizados'])} actualizado(s), {len(resultado['omitidos'])} omitido(s)."
+            + (f" Se crearon {len(resultado['entidades_creadas'])} entidad(es)." if resultado['entidades_creadas'] else ''),
+        )
+        if resultado['diferencias']:
+            messages.warning(request, f"Hay {len(resultado['diferencias'])} dato(s) distinto(s) entre lo cargado y "
+                                      "AFIP que NO se pisaron: revisalos abajo.")
+        form = forms.ImportarAfipForm()
+    elif request.method == 'POST':
+        if form.is_valid():
+            archivo = form.cleaned_data['archivo']
+            try:
+                filas, mapa = imp.leer_filas(archivo, archivo.name)
+                analisis = imp.analizar(
+                    filas, mapa, sentido=form.cleaned_data['sentido'],
+                    fecha_desde=form.cleaned_data.get('fecha_desde'),
+                    fecha_hasta=form.cleaned_data.get('fecha_hasta'),
+                    nombre_archivo=archivo.name,
+                )
+            except imp.ErrorImportacion as exc:
+                form.add_error('archivo', str(exc))
+            else:
+                analisis['crear_entidades'] = bool(form.cleaned_data.get('crear_entidades'))
+                analisis['archivo'] = archivo.name
+                request.session['afip_import_analisis'] = analisis
+    else:
+        request.session.pop('afip_import_analisis', None)
+
+    # En pantalla se muestran todas las filas con error o "actualizar" y hasta
+    # 300 de cada una de las demás acciones (un archivo de emitidos trae
+    # miles de tiques); las que no se muestran usan la acción sugerida.
+    filas_mostrar, filas_ocultas = [], 0
+    if analisis:
+        tope = {imp.ACCION_CREAR: 300, imp.ACCION_OMITIR: 300}
+        for r in analisis['filas']:
+            if r['errores'] or r['accion'] == imp.ACCION_ACTUALIZAR or tope.get(r['accion'], 0) > 0:
+                if not r['errores'] and r['accion'] in tope:
+                    tope[r['accion']] -= 1
+                filas_mostrar.append(r)
+            else:
+                filas_ocultas += 1
+
+    return render(request, 'comprobantes/comprobante_importar_afip.html', {
+        'form': form,
+        'analisis': analisis,
+        'resultado': resultado,
+        'filas_mostrar': filas_mostrar,
+        'filas_ocultas': filas_ocultas,
+    })
+
+
+def comprobante_importar_afip_excel(request):
+    """Excel con el detalle de la última importación (creados, actualizados,
+    omitidos y diferencias)."""
+    resultado = request.session.get('afip_import_resultado')
+    if not resultado:
+        messages.info(request, 'No hay una importación reciente para exportar.')
+        return redirect('comprobantes:comprobante_importar_afip')
+    filas = []
+    for c in resultado['creados']:
+        filas.append(['Creado', c['id'], c['linea'], c['texto'], '', ''])
+    for a in resultado['actualizados']:
+        filas.append(['Actualizado', a['id'], a['linea'], ', '.join(a['campos']), '', ''])
+    for d in resultado['diferencias']:
+        filas.append(['Diferencia (no se pisó)', d['id'], '', d['campo'], d['guardado'], d['afip']])
+    for o in resultado['omitidos']:
+        filas.append(['Omitido', '', o['linea'], f"{o['numero']} - {o['nombre']}", o['motivo'], ''])
+    for e in resultado['entidades_creadas']:
+        filas.append(['Entidad creada', '', '', e, '', ''])
+    return excel_response('importacion_afip', {
+        'columnas': ['Resultado', 'Comprobante', 'Línea del archivo', 'Detalle', 'Valor guardado / motivo', 'Valor AFIP'],
+        'filas': filas,
+    })

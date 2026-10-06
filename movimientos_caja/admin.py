@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import Caja, LibroCaja, LibroMovim, MovimientoCaja,MovimientoCajaEmisor,MovimientoCajaConcepto,MovimientoCajaNumero,MovimientoCajaDiferido
+from .models import ReglaDestinatarioConcepto
 from django import forms
 from liquidaciones.admin_filters import SinLiquidacionFilterBase
 #para buscar entidad
@@ -217,3 +218,13 @@ class MovimientoCajaAdmin(admin.ModelAdmin):
 
     class Media:
         js = ('js/filtrar_libros_por_caja.js',)
+
+
+@admin.register(ReglaDestinatarioConcepto)
+class ReglaDestinatarioConceptoAdmin(admin.ModelAdmin):
+    """Reglas "cuenta + concepto -> destinatario" (06/10/2026, ver reglas.py)."""
+    list_display = ('caja', 'concepto', 'entidad', 'monto_maximo', 'activa')
+    list_editable = ('monto_maximo', 'activa')
+    list_filter = ('caja', 'activa')
+    raw_id_fields = ('entidad',)
+    ordering = ('caja', 'concepto')

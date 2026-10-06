@@ -431,3 +431,44 @@ class MovimientoCajaConcepto(models.Model):
 
 
 
+
+
+class ReglaDestinatarioConcepto(models.Model):
+    """Regla "cuenta + concepto -> destinatario" (pedido de Gastón, 06/10/2026).
+
+    Al guardar un movimiento de caja SIN destinatario (receptor), con monto
+    positivo y emitido por Fontana, si su cuenta y concepto tienen una regla
+    activa se le carga solo el destinatario de la regla (ej. Banco Macro +
+    "Mantenimiento cuenta" -> BANCO MACRO S.A.). Además, el IVA (21%) y la
+    percepción de IVA (3%) de ese gasto, cargados el mismo día en la misma
+    cuenta, reciben el mismo destinatario (ver movimientos_caja/reglas.py).
+
+    'monto_maximo' es opcional: la regla sólo se aplica si el monto es MENOR
+    a ese valor (caso "Comercio exterior" < $100.000).
+
+    Tabla nueva (managed=True). Los FK no crean restricción en la base
+    (db_constraint=False) porque apuntan a tablas heredadas.
+    """
+    id = models.AutoField(primary_key=True)
+    caja = models.ForeignKey(Caja, models.DO_NOTHING, db_constraint=False, related_name='reglas_destinatario',
+                             verbose_name='Cuenta (banco / caja)')
+    concepto = models.ForeignKey(MovimientoCajaConceptoTipo, models.DO_NOTHING, db_constraint=False,
+                                 related_name='reglas_destinatario', verbose_name='Concepto')
+    entidad = models.ForeignKey(Entidad, models.DO_NOTHING, db_constraint=False,
+                                related_name='reglas_destinatario_caja', verbose_name='Destinatario')
+    monto_maximo = models.DecimalField(
+        'Sólo si el monto es menor a', max_digits=20, decimal_places=2, blank=True, null=True,
+        help_text='Opcional. Ej.: Comercio exterior sólo si es menor a 100.000.',
+    )
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'movimiento_caja_regla_destinatario'
+        verbose_name = 'regla de destinatario por concepto'
+        verbose_name_plural = 'reglas de destinatario por concepto'
+        constraints = [
+            models.UniqueConstraint(fields=['caja', 'concepto'], name='regla_destinatario_unica_caja_concepto'),
+        ]
+
+    def __str__(self):
+        return f'{self.caja} + {self.concepto} -> {self.entidad}'

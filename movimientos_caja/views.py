@@ -208,6 +208,10 @@ def movimiento_caja_form(request, pk=None):
                 MovimientoCajaBancoCuentaEntidad.objects.filter(id=nuevo).delete()
 
             messages.success(request, f'Movimiento de caja {nuevo.id} guardado correctamente.')
+            # Reglas "cuenta + concepto -> destinatario" (06/10/2026, ver reglas.py).
+            from .reglas import aplicar_reglas_destinatario
+            for texto in aplicar_reglas_destinatario(nuevo):
+                messages.info(request, texto)
 
             if es_alta:
                 proximo_renglon, proxima_hoja = _proximo_renglon_y_hoja(

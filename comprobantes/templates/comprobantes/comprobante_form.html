@@ -7,8 +7,20 @@
 <form method="post">
     {% csrf_token %}
 
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">{% for e in form.non_field_errors %}<div>{{ e }}</div>{% endfor %}</div>
+    {% endif %}
+    {% if form.mostrar_confirmar_duplicado %}
+    <div class="alert alert-warning">
+        <div class="form-check">
+            {{ form.confirmar_posible_duplicado }}
+            <label class="form-check-label" for="{{ form.confirmar_posible_duplicado.id_for_label }}">{{ form.confirmar_posible_duplicado.label }}</label>
+        </div>
+    </div>
+    {% endif %}
+
     <p>
-        <label>Entidad emisora:</label><br>
+        <label>Entidad (proveedor o cliente):</label><br>
         <div class="entidad-buscador-wrapper">
             <input type="text" id="entidad-buscador" autocomplete="off"
                    placeholder="Buscar por nombre, CUIT o ID..."
@@ -22,7 +34,7 @@
     </p>
 
     {% for field in form %}
-        {% if field.name != 'entidad_emisor' %}
+        {% if field.name != 'entidad_emisor' and field.name != 'confirmar_posible_duplicado' %}
         <p>
             {{ field.label_tag }}<br>
             {{ field }}
