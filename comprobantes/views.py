@@ -1907,7 +1907,7 @@ def comprobante_renglon_reporte(request):
         # Link de cada producto al mismo reporte, sin agrupar y filtrado por
         # ese producto (conserva fechas, número, no recibidos).
         base = request.GET.copy()
-        for clave in ('agrupar_producto', 'orden', 'dir', 'formato', 'producto'):
+        for clave in ('agrupar_producto', 'orden', 'dir', 'exportar', 'producto'):
             base.pop(clave, None)
         for g in grupos:
             g['porcentaje'] = (g['total_producto'] * 100 / total_general) if total_general else None
