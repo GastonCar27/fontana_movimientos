@@ -441,6 +441,13 @@ class ComprobanteRenglonReporteForm(forms.Form):
         label='Incluir no recibidos',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+    # Agregado 2026-10-07 (pedido de Gastón): una fila por producto con la
+    # cantidad de renglones/comprobantes y el total, en vez de renglón por renglón.
+    agrupar_producto = forms.BooleanField(
+        required=False,
+        label='Agrupar por producto',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
 
 class ImportarAfipForm(forms.Form):

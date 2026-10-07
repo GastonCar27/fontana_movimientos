@@ -1882,6 +1882,63 @@ def comprobante_renglon_reporte(request):
         total=Coalesce(Sum('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=20, decimal_places=2)),
     )
 
+    # Agrupado por producto (07/10/2026, pedido de Gastón): una fila por
+    # producto con cuántos renglones y comprobantes tiene y su total, con los
+    # mismos filtros de arriba. Por defecto, de mayor a menor total.
+    if form.is_valid() and form.cleaned_data.get('agrupar_producto'):
+        grupos = (
+            renglones.order_by()
+            .values('producto_id', 'producto__nombre')
+            .annotate(
+                cantidad_renglones=Count('id'),
+                cantidad_comprobantes=Count('comprobante_id', distinct=True),
+                total_producto=Coalesce(Sum('total'), Value(Decimal('0')),
+                                        output_field=DecimalField(max_digits=20, decimal_places=2)),
+            )
+        )
+        grupos = aplicar_orden_queryset(request, grupos, {
+            'producto': 'producto__nombre',
+            'renglones': 'cantidad_renglones',
+            'comprobantes': 'cantidad_comprobantes',
+            'total': 'total_producto',
+        }, default='-total_producto')
+        grupos = list(grupos)
+        total_general = totales['total'] or Decimal('0')
+        # Link de cada producto al mismo reporte, sin agrupar y filtrado por
+        # ese producto (conserva fechas, número, no recibidos).
+        base = request.GET.copy()
+        for clave in ('agrupar_producto', 'orden', 'dir', 'formato', 'producto'):
+            base.pop(clave, None)
+        for g in grupos:
+            g['porcentaje'] = (g['total_producto'] * 100 / total_general) if total_general else None
+            q = base.copy()
+            q['producto'] = g['producto_id']
+            g['url_detalle'] = '?' + q.urlencode()
+
+        formato = formato_exportacion(request)
+        if formato:
+            filas = [
+                [g['producto_id'], g['producto__nombre'] or '', g['cantidad_renglones'], g['cantidad_comprobantes'],
+                 float(g['total_producto']), float(g['porcentaje']) if g['porcentaje'] is not None else None]
+                for g in grupos
+            ]
+            return exportar_reporte(formato, 'reporte_renglones_por_producto', 'Renglones de comprobantes por producto', {
+                'columnas': ['ID producto', 'Producto', 'Renglones', 'Comprobantes', 'Total', '% del total'],
+                'filas': filas,
+                'fila_total': ['', 'Total', sum(g['cantidad_renglones'] for g in grupos), '',
+                               float(total_general), 100.0 if total_general else None],
+                'columnas_numericas': {4, 5},
+                'anchos': [0.8, 3.0, 0.9, 1.0, 1.3, 0.9],
+            })
+
+        return render(request, 'comprobantes/comprobante_renglon_reporte.html', {
+            'form': form,
+            'agrupado': True,
+            'grupos': grupos,
+            'totales': totales,
+            'producto_texto': str(producto) if producto else '',
+        })
+
     renglones = aplicar_orden_queryset(request, renglones, {
         'id': 'id',
         'comprobante': 'comprobante_id',
