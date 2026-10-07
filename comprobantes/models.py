@@ -132,6 +132,19 @@ class Comprobante(models.Model):
         managed = False
         db_table = 'comprobante'
 
+    @property
+    def numero_completo(self):
+        """Punto de venta + número, ej. '1009-00000554' (mismo formato que el
+        PDF del comprobante). Pedido de Gastón, 07/10/2026: en los listados se
+        mostraba sólo el número y comprobantes distintos de un mismo emisor
+        (mismo número en otro punto de venta, ej. Banco Macro 4003-554 y
+        1009-554) parecían duplicados."""
+        if self.numero is None:
+            return ''
+        if self.punto_de_venta:
+            return f'{self.punto_de_venta:04d}-{self.numero:08d}'
+        return str(self.numero)
+
 
 class ComprobanteTipoDeCambio(models.Model):
     """

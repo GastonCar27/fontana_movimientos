@@ -73,7 +73,7 @@
                     <td>{{ c.fecha }}</td>
                     <td>{{ c.entidad_emisor }}</td>
                     <td>{{ c.tipo_comprobante }}</td>
-                    <td>{{ c.numero }}</td>
+                    <td class="text-nowrap">{{ c.numero_completo|default:"-" }}</td>
                     <td class="text-end">{{ c.total|separador_miles }}</td>
                     <td>{{ c.moneda }}</td>
                     <td class="text-center">

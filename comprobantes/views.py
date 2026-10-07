@@ -1231,7 +1231,7 @@ def comprobante_reporte(request):
                 c.fecha,
                 str(c.entidad_emisor) if c.entidad_emisor_id else '',
                 str(c.tipo_comprobante) if c.tipo_comprobante_id else '',
-                c.numero,
+                c.numero_completo,
                 float(c.total) if c.total is not None else None,
                 str(c.moneda) if c.moneda is not None else '',
                 c.cantidad_renglones,
