@@ -980,6 +980,65 @@ def liquidacion_reporte(request):
         total_haber=Coalesce(Sum('haber'), Decimal('0'), output_field=DecimalField()),
     )
 
+    # Agrupado por entidad (07/10/2026, pedido de Gastón): una fila por
+    # entidad con cuántas liquidaciones tiene, la suma de Debe y Haber y la
+    # diferencia (Haber - Debe, misma convención que el alta de liquidación).
+    if form.is_valid() and form.cleaned_data.get('agrupar_entidad'):
+        grupos = (
+            liquidaciones.order_by()
+            .values('entidad_id', 'entidad__nombre', 'entidad__cuit')
+            .annotate(
+                cantidad=Count('id'),
+                suma_debe=Coalesce(Sum('debe'), Decimal('0'), output_field=DecimalField()),
+                suma_haber=Coalesce(Sum('haber'), Decimal('0'), output_field=DecimalField()),
+                ultima_fecha=Max('fecha'),
+            )
+            .annotate(diferencia=F('suma_haber') - F('suma_debe'))
+        )
+        grupos = list(aplicar_orden_queryset(request, grupos, {
+            'entidad': 'entidad__nombre',
+            'cantidad': 'cantidad',
+            'debe': 'suma_debe',
+            'haber': 'suma_haber',
+            'diferencia': 'diferencia',
+            'fecha': 'ultima_fecha',
+        }, default='-suma_debe'))
+        # Link de cada entidad al mismo reporte, sin agrupar y filtrado por
+        # esa entidad (conserva las fechas).
+        base = request.GET.copy()
+        for clave in ('agrupar_entidad', 'orden', 'dir', 'exportar', 'entidad'):
+            base.pop(clave, None)
+        for g in grupos:
+            q = base.copy()
+            q['entidad'] = g['entidad_id']
+            g['url_detalle'] = '?' + q.urlencode()
+        diferencia_total = totales['total_haber'] - totales['total_debe']
+
+        formato = formato_exportacion(request)
+        if formato:
+            filas = [
+                [g['entidad_id'], g['entidad__nombre'] or '', g['entidad__cuit'] or '', g['cantidad'], g['ultima_fecha'],
+                 float(g['suma_debe']), float(g['suma_haber']), float(g['diferencia'])]
+                for g in grupos
+            ]
+            return exportar_reporte(formato, 'reporte_liquidaciones_por_entidad', 'Liquidaciones por entidad', {
+                'columnas': ['ID', 'Entidad', 'CUIT', 'Liquidaciones', 'Última', 'Debe', 'Haber', 'Diferencia'],
+                'filas': filas,
+                'fila_total': ['', 'Totales', '', sum(g['cantidad'] for g in grupos), '',
+                               float(totales['total_debe']), float(totales['total_haber']), float(diferencia_total)],
+                'columnas_numericas': {5, 6, 7},
+                'anchos': [0.6, 2.6, 1.1, 0.9, 0.9, 1.2, 1.2, 1.2],
+            })
+
+        return render(request, 'liquidaciones/reporte.html', {
+            'form': form,
+            'agrupado': True,
+            'grupos': grupos,
+            'totales': totales,
+            'diferencia_total': diferencia_total,
+            'entidad_texto': entidad_texto,
+        })
+
     liquidaciones = aplicar_orden_queryset(request, liquidaciones, {
         'numero': 'numero',
         'fecha': 'fecha',

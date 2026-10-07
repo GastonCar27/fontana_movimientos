@@ -40,6 +40,13 @@ class LiquidacionReporteForm(forms.Form):
         required=False,
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
     )
+    # 07/10/2026 (pedido de Gastón): una fila por entidad con la cantidad de
+    # liquidaciones y la suma de Debe / Haber.
+    agrupar_entidad = forms.BooleanField(
+        required=False,
+        label='Agrupar por entidad',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
 
 class RankingEntidadesForm(forms.Form):

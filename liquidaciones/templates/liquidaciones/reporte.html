@@ -29,6 +29,12 @@
                     {{ form.fecha_hasta.label_tag }}
                     {{ form.fecha_hasta }}
                 </div>
+                <div class="col-12 col-md-3 form-check ms-1">
+                    {{ form.agrupar_entidad }}
+                    <label class="form-check-label" for="{{ form.agrupar_entidad.id_for_label }}" title="Una fila por entidad con la cantidad de liquidaciones y la suma de Debe / Haber">
+                        {{ form.agrupar_entidad.label }}
+                    </label>
+                </div>
                 <div class="col-12 col-md-2">
                     <button type="submit" class="btn btn-sm btn-primary px-3">Filtrar</button>
                 </div>
@@ -36,6 +42,47 @@
         </div>
     </div>
 
+    {% if agrupado %}
+    <div class="table-responsive">
+        <table class="table table-striped table-sm table-hover align-middle mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>{% sort_th 'entidad' 'Entidad' %}</th>
+                    <th class="text-end">{% sort_th 'cantidad' 'Liquidaciones' %}</th>
+                    <th>{% sort_th 'fecha' 'Última' %}</th>
+                    <th class="text-end">{% sort_th 'debe' 'Debe' %}</th>
+                    <th class="text-end">{% sort_th 'haber' 'Haber' %}</th>
+                    <th class="text-end">{% sort_th 'diferencia' 'Diferencia (Haber − Debe)' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in grupos %}
+                <tr>
+                    <td><a href="{{ g.url_detalle }}" title="Ver las liquidaciones de esta entidad">{{ g.entidad_id }} - {{ g.entidad__nombre|default:"(sin nombre)" }}</a></td>
+                    <td class="text-end">{{ g.cantidad }}</td>
+                    <td>{{ g.ultima_fecha|default:"—" }}</td>
+                    <td class="text-end">{{ g.suma_debe|separador_miles }}</td>
+                    <td class="text-end">{{ g.suma_haber|separador_miles }}</td>
+                    <td class="text-end {% if g.diferencia < 0 %}text-danger{% elif g.diferencia > 0 %}text-success{% endif %}">{{ g.diferencia|separador_miles }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">No hay resultados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td>Totales ({{ grupos|length }} entidad{{ grupos|length|pluralize:"es" }})</td>
+                    <td colspan="2"></td>
+                    <td class="text-end">{{ totales.total_debe|separador_miles }}</td>
+                    <td class="text-end">{{ totales.total_haber|separador_miles }}</td>
+                    <td class="text-end">{{ diferencia_total|separador_miles }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% else %}
     <div class="table-responsive">
         <table class="table table-striped table-sm table-hover align-middle mb-2">
             <thead class="table-light">
@@ -71,6 +118,7 @@
             </tfoot>
         </table>
     </div>
+    {% endif %}
 </div>
 
 <script>
