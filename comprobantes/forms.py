@@ -201,7 +201,7 @@ class ComprobanteReporteForm(forms.Form):
         # el JS del buscador.
         widget=forms.HiddenInput(),
     )
-    # Agregado 2026-10-07 (pedido de Gastón): "1654506" o "12-9" (pv-número).
+    # Agregado 2026-10-06 (pedido de Gastón): "1654506" o "12-9" (pv-número).
     numero = forms.CharField(
         required=False,
         label='Número',
@@ -413,7 +413,7 @@ class ComprobanteRenglonReporteForm(forms.Form):
         # completa el JS del buscador (productos:buscar).
         widget=forms.HiddenInput(),
     )
-    # Agregado 2026-10-07 (pedido de Gastón): "1654506" o "12-9" (pv-número).
+    # Agregado 2026-10-06 (pedido de Gastón): "1654506" o "12-9" (pv-número).
     numero = forms.CharField(
         required=False,
         label='Número de comprobante',

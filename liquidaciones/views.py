@@ -158,11 +158,27 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
     # --- Comprobantes ---
     comp_excl = excluidos(LiquidacionComprobante, 'comprobante_id')
     comp_tipo = tipo_actual(LiquidacionComprobante, 'comprobante_id')
+    # Facturas que FONTANA le emitió a la entidad (es_emisor=0) y que se
+    # descuentan en un PAGO a esa entidad (ej. honorarios nuestros que bajan
+    # la deuda con la Cooperativa) -- pedido de Gastón, 06/10/2026:
+    #   * en una liquidación de PAGO se ofrecen también (por defecto en
+    #     Haber), salvo que ya estén cobradas en una liquidación de COBRO;
+    #   * si ya se usaron en un PAGO, ya no están pendientes de cobro: no
+    #     se ofrecen en una liquidación de COBRO.
+    ids_ventas_en_pago = LiquidacionComprobante.objects.filter(
+        liquidacion__tipo=Liquidacion.TIPO_PAGO, comprobante__es_emisor=0)
+    ids_ventas_en_cobro = LiquidacionComprobante.objects.filter(
+        liquidacion__tipo=Liquidacion.TIPO_COBRO, comprobante__es_emisor=0)
+    if liquidacion_actual:
+        ids_ventas_en_pago = ids_ventas_en_pago.exclude(liquidacion=liquidacion_actual)
+        ids_ventas_en_cobro = ids_ventas_en_cobro.exclude(liquidacion=liquidacion_actual)
     if tipo == Liquidacion.TIPO_COBRO:
-        comprobantes_qs = Comprobante.objects.filter(entidad_emisor=entidad, es_emisor=0)
+        comprobantes_qs = Comprobante.objects.filter(entidad_emisor=entidad, es_emisor=0).exclude(
+            id__in=ids_ventas_en_pago.values_list('comprobante_id', flat=True))
     else:
         comprobantes_qs = Comprobante.objects.filter(entidad_emisor=entidad).filter(
             Q(es_emisor=1) | Q(es_emisor__isnull=True)
+            | (Q(es_emisor=0) & ~Q(id__in=ids_ventas_en_cobro.values_list('comprobante_id', flat=True)))
         )
     comprobantes = list(
         comprobantes_qs
@@ -178,6 +194,8 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
         c.tipo_actual = comp_tipo.get(c.id)
         c.seleccionado = c.id in comp_tipo
         c.es_nc = es_nota_de_credito(c.tipo_comprobante.nombre if c.tipo_comprobante_id else '')
+        # Factura emitida por Fontana ofrecida en un PAGO: va por defecto en Haber.
+        c.emitida_por_fontana = tipo == Liquidacion.TIPO_PAGO and c.es_emisor == 0
 
     # --- Retenciones ---
     # Igual criterio direccional que Comprobante.es_emisor: TIPO_PAGO ->
@@ -325,9 +343,9 @@ def _armar_items(entidad, tipo=Liquidacion.TIPO_PAGO, liquidacion_actual=None):
         if tipo == Liquidacion.TIPO_COBRO:
             es_de_esta_entidad_comp = Q(comprobante__entidad_emisor=entidad, comprobante__es_emisor=0)
         else:
-            es_de_esta_entidad_comp = Q(comprobante__entidad_emisor=entidad) & (
-                Q(comprobante__es_emisor=1) | Q(comprobante__es_emisor__isnull=True)
-            )
+            # En PAGO también son "de esta entidad" las facturas que Fontana
+            # le emitió (se ofrecen arriba, ver ids_ventas_en_cobro).
+            es_de_esta_entidad_comp = Q(comprobante__entidad_emisor=entidad)
         comp_otros_tipo = dict(
             LiquidacionComprobante.objects.filter(liquidacion=liquidacion_actual)
             .exclude(es_de_esta_entidad_comp)
@@ -945,6 +963,12 @@ def liquidacion_reporte(request):
     liquidaciones = Liquidacion.objects.select_related('entidad').order_by('-fecha')
     entidad_texto = ''
 
+    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
+    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
+    # Fontana es la emisora y el receptor es Consumidor Final.
+    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
+    if not incluir_cf:
+        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -1223,6 +1247,18 @@ def _entidad_propia():
 
 # --- Comprobantes -----------------------------------------------------------
 
+def _q_receptor_consumidor_final():
+    """Comprobante cuya contraparte es Consumidor Final. Con es_emisor=0
+    (Fontana emisora) la contraparte -- la receptora -- es entidad_emisor.
+    Se reconoce por la condición de IVA de la entidad, por su nombre o por
+    el nombre que vino en el propio comprobante (importado de AFIP/ARCA)."""
+    return (
+        Q(entidad_emisor__iva__icontains='consumidor')
+        | Q(entidad_emisor__nombre__icontains='consumidor final')
+        | Q(entidad_nombre__icontains='consumidor final')
+    )
+
+
 def _comprobantes_sin_liquidar(request):
     form = ComprobantesSinLiquidarFiltroForm(request.GET or None)
     comprobantes = (
@@ -1231,6 +1267,12 @@ def _comprobantes_sin_liquidar(request):
         .select_related('entidad_emisor', 'tipo_comprobante')
         .order_by('-fecha', '-id')
     )
+    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
+    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
+    # Fontana es la emisora y el receptor es Consumidor Final.
+    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
+    if not incluir_cf:
+        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -1389,6 +1431,12 @@ def _retenciones_sin_liquidar(request):
         .select_related('entidad', 'id_regimen', 'id_impuesto')
         .order_by('-fecha', '-id')
     )
+    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
+    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
+    # Fontana es la emisora y el receptor es Consumidor Final.
+    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
+    if not incluir_cf:
+        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -1481,6 +1529,12 @@ def _retenciones_inym_sin_liquidar(request):
         .prefetch_related('no_aplicaciones__certificado')
         .order_by('-fecha', '-id')
     )
+    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
+    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
+    # Fontana es la emisora y el receptor es Consumidor Final.
+    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
+    if not incluir_cf:
+        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')

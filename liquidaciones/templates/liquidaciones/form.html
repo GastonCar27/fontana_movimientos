@@ -201,11 +201,11 @@
                 <td>{{ c.tipo_comprobante|default:"-" }}</td>
                 <td>{{ c.punto_de_venta|default:"-" }}</td>
                 <td>{{ c.numero|default:"-" }}</td>
-                <td>{{ c.monto_mostrar|separador_miles }}{% if c.es_nc %} <span class="badge bg-info text-dark" title="Nota de Crédito: en Debe resta, en Haber suma como un pago">NC</span>{% endif %}</td>
+                <td>{{ c.monto_mostrar|separador_miles }}{% if c.es_nc %} <span class="badge bg-info text-dark" title="Nota de Crédito: en Debe resta, en Haber suma como un pago">NC</span>{% endif %}{% if c.emitida_por_fontana %} <span class="badge bg-secondary" title="Factura que Fontana le emitió a esta entidad (ej. honorarios): en Haber baja la deuda con la entidad. Una vez usada en un pago, ya no queda pendiente de cobro.">Emitida por Fontana</span>{% endif %}</td>
                 <td>
                     <select name="comp_tipo_{{ c.pk }}" class="sel-tipo">
-                        <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual %}selected{% endif %}>Debe</option>
-                        <option value="haber" {% if c.tipo_actual == "haber" %}selected{% endif %}>Haber</option>
+                        <option value="debe" {% if c.tipo_actual == "debe" or not c.tipo_actual and not c.emitida_por_fontana %}selected{% endif %}>Debe</option>
+                        <option value="haber" {% if c.tipo_actual == "haber" or not c.tipo_actual and c.emitida_por_fontana %}selected{% endif %}>Haber</option>
                     </select>
                 </td>
             </tr>

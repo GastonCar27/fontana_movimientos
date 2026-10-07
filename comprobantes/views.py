@@ -490,7 +490,7 @@ def comprobante_form(request, pk=None):
 
 
 def filtrar_por_numero(queryset, texto, prefijo=''):
-    """Filtro por número de comprobante (pedido de Gastón, 07/10/2026).
+    """Filtro por número de comprobante (pedido de Gastón, 06/10/2026).
     Acepta "1654506" (sólo el número) o "12-9" / "00012-00000009" (punto de
     venta - número). Encuentra también los tiques cargados como rango
     (numero ... numero_hasta). 'prefijo' sirve para filtrar desde otra
@@ -520,7 +520,7 @@ def comprobante_listado(request):
     )
 
     q_entidad = request.GET.get('entidad', '').strip()
-    # Agregado 2026-10-07 (pedido de Gastón): número de comprobante.
+    # Agregado 2026-10-06 (pedido de Gastón): número de comprobante.
     q_numero = request.GET.get('numero', '').strip()
     q_id = request.GET.get('id', '').strip()
     q_fecha = request.GET.get('fecha', '').strip()  # fecha exacta (links viejos)
@@ -620,7 +620,9 @@ def comprobante_listado(request):
             # Fontana receptora = es_emisor 1 o vacío (criterio de liquidaciones).
             condicion |= (Q(es_emisor=1) | Q(es_emisor__isnull=True)) & Q(tiene_liq_pago=False)
         if q_sin_liq_cobro:
-            condicion |= Q(es_emisor=0) & Q(tiene_liq_cobro=False)
+            # Una factura nuestra ya usada en un PAGO (honorarios descontados
+            # de lo que le debemos a la entidad) tampoco está pendiente de cobro.
+            condicion |= Q(es_emisor=0) & Q(tiene_liq_cobro=False) & Q(tiene_liq_pago=False)
         comprobantes = comprobantes.filter(condicion)
 
     comprobantes = aplicar_orden_queryset(request, comprobantes, {
@@ -658,7 +660,8 @@ def comprobante_listado(request):
         c.liquidado_en_cobro = any(l.tipo == 'cobro' for l in c.liquidaciones_validas)
         c.puede_liquidar_pago = c.fontana_receptora and not c.liquidado_en_pago
         # Ventas (Fontana emisora): lo que importa es la liquidación de cobro.
-        c.puede_liquidar_cobro = not c.fontana_receptora and not c.liquidado_en_cobro
+        # Si ya se descontó en un PAGO (honorarios), tampoco queda pendiente de cobro.
+        c.puede_liquidar_cobro = not c.fontana_receptora and not c.liquidado_en_cobro and not c.liquidado_en_pago
         # Marca "NO RECIBIDO": no se liquida ni se le agregan renglones.
         try:
             c.marca_no_recibido = c.no_recibido

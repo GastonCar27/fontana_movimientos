@@ -108,6 +108,14 @@ class ComprobantesSinLiquidarFiltroForm(SinLiquidarFiltroForm):
         label='Excluir donde Fontana es la receptora',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+    # Pedido de Gastón (07/10/2026): por defecto NO se muestran las ventas
+    # de Fontana a Consumidor Final (no se liquidan contra nadie); tildando
+    # esto se vuelven a incluir.
+    incluir_consumidor_final = forms.BooleanField(
+        required=False,
+        label='Incluir ventas de Fontana a Consumidor Final',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
 
 class MovimientosCajaSinLiquidarFiltroForm(SinLiquidarFiltroForm):

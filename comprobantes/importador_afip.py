@@ -47,7 +47,7 @@ from entidades.models import Entidad
 
 from .models import Comprobante, ComprobanteTipo, ComprobanteTipoDeCambio
 
-# 'AFIP importador 2': versión corregida (07/10/2026) que busca el tipo por
+# 'AFIP importador 2': versión corregida (06/10/2026) que busca el tipo por
 # código AFIP. Los cargados por la versión anterior quedaron con
 # 'AFIP importador' y los repara el comando reparar_importacion_afip.
 AGREGADO_DESDE = 'AFIP importador 2'  # comprobante.agregado_desde (máx. 45)

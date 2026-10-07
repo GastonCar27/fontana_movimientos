@@ -3,6 +3,9 @@
 {% include "liquidaciones/menu.html" %}
 
 <h1>Comprobantes sin liquidar</h1>
+{% if not form.incluir_consumidor_final.value %}
+<p class="text-muted" style="margin-top:-5px;"><small>No se muestran los comprobantes de Fontana a Consumidor Final (se pueden incluir desde "Filtrar").</small></p>
+{% endif %}
 
 <div style="margin-bottom:15px;">
   <button type="button" class="btn btn-sm btn-outline-secondary" data-toggle="modal" data-target="#modalFiltro">Filtrar</button>
@@ -43,6 +46,13 @@
             <label class="form-check-label" for="{{ form.excluir_fontana_receptora.id_for_label }}">
               {{ form.excluir_fontana_receptora.label }}
             </label>
+          </div>
+          <div class="form-check">
+            {{ form.incluir_consumidor_final }}
+            <label class="form-check-label" for="{{ form.incluir_consumidor_final.id_for_label }}">
+              {{ form.incluir_consumidor_final.label }}
+            </label>
+            <small class="form-text text-muted">Si no se tilda, no se muestran los comprobantes emitidos por Fontana a Consumidor Final.</small>
           </div>
         </div>
         <div class="modal-footer">
