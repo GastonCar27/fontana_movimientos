@@ -1702,6 +1702,7 @@ def comprobante_renglon_form(request, pk=None):
             comprobante_para_texto.renglon_comprobante
             .select_related(
                 'producto', 'renglon_detalle_comprobante', 'renglon_detalle_comprobante__unidad_de_medida',
+                'renglon_detalle_comprobante__sector_tipo',
             )
             .order_by('id')
         )

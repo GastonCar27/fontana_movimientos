@@ -76,7 +76,7 @@
         <table>
             <thead>
                 <tr>
-                    <th>ID</th><th>Producto</th><th>Cantidad</th><th>U. Medida</th>
+                    <th>ID</th><th>Producto</th><th>Sector</th><th>Cantidad</th><th>U. Medida</th>
                     <th>Precio Unit.</th><th>Bonificación</th><th>Total</th>
                     <th>Cuenta Cont.</th><th>Asiento Cont.</th><th></th>
                 </tr>
@@ -86,6 +86,8 @@
                 <tr>
                     <td>{{ r.id }}</td>
                     <td>{{ r.producto }}</td>
+                    {# Sector del renglón (pedido de Gastón, 07/10/2026). #}
+                    <td>{{ r.renglon_detalle_comprobante.sector_tipo.nombre|default:"—" }}</td>
                     <td>{{ r.renglon_detalle_comprobante.cantidad|default:"—" }}</td>
                     <td>{{ r.renglon_detalle_comprobante.unidad_de_medida.nombre|default:"—" }}</td>
                     <td>{{ r.renglon_detalle_comprobante.precio_unitario|default:"—" }}</td>
