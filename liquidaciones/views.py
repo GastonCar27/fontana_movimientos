@@ -963,12 +963,6 @@ def liquidacion_reporte(request):
     liquidaciones = Liquidacion.objects.select_related('entidad').order_by('-fecha')
     entidad_texto = ''
 
-    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
-    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
-    # Fontana es la emisora y el receptor es Consumidor Final.
-    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
-    if not incluir_cf:
-        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -1431,12 +1425,6 @@ def _retenciones_sin_liquidar(request):
         .select_related('entidad', 'id_regimen', 'id_impuesto')
         .order_by('-fecha', '-id')
     )
-    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
-    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
-    # Fontana es la emisora y el receptor es Consumidor Final.
-    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
-    if not incluir_cf:
-        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
@@ -1529,12 +1517,6 @@ def _retenciones_inym_sin_liquidar(request):
         .prefetch_related('no_aplicaciones__certificado')
         .order_by('-fecha', '-id')
     )
-    # Por defecto (sin tildar "Incluir ventas de Fontana a Consumidor Final",
-    # pedido de Gastón 07/10/2026) se excluyen los comprobantes donde
-    # Fontana es la emisora y el receptor es Consumidor Final.
-    incluir_cf = form.is_valid() and form.cleaned_data.get('incluir_consumidor_final')
-    if not incluir_cf:
-        comprobantes = comprobantes.exclude(Q(es_emisor=0) & _q_receptor_consumidor_final())
     if form.is_valid():
         entidad = form.cleaned_data.get('entidad')
         fecha_desde = form.cleaned_data.get('fecha_desde')
