@@ -151,6 +151,20 @@
         {% endif %}
     </div>
 
+    <!-- Totales Debe/Haber/Diferencia ARRIBA de las tablas y fijos al hacer
+         scroll (pedido de Gastón, 07/10/2026: abajo de todo quedaban muy
+         lejos cuando la entidad tiene muchos ítems). -->
+    <div id="resumen-totales" style="position:sticky; top:0; z-index:20; background:#fff; margin-top:15px; padding:8px 12px; border:1px solid #dee2e6; border-radius:6px; box-shadow:0 2px 4px rgba(0,0,0,.08); font-weight:bold;">
+        Debe: <span id="total-debe">0,00</span> —
+        Haber: <span id="total-haber">0,00</span> —
+        Diferencia: <span id="total-diferencia">0,00</span>
+        <span id="resumen-englobe" style="display:none;">
+            — Provisorias englobadas: <span id="total-englobadas">0,00</span>
+            — <span style="font-size:1.1em;">Saldo consolidado: <span id="total-consolidado">0,00</span></span>
+        </span>
+        <span id="resumen-provisoria" class="badge bg-warning text-dark" style="display:none;">PROVISORIA: el saldo queda pendiente</span>
+    </div>
+
     <h2>Movimientos de caja</h2>
     <div class="filtro-fecha-caja" data-tabla="tabla-movimientos">
         <label class="small mb-0">Desde <input type="date" class="filtro-fecha-desde"></label>
@@ -370,16 +384,6 @@
     {% endif %}
     </div>
 
-    <div id="resumen-totales" style="margin-top:20px; font-weight:bold;">
-        Debe: <span id="total-debe">0,00</span> —
-        Haber: <span id="total-haber">0,00</span> —
-        Diferencia: <span id="total-diferencia">0,00</span>
-        <span id="resumen-englobe" style="display:none;">
-            — Provisorias englobadas: <span id="total-englobadas">0,00</span>
-            — <span style="font-size:1.1em;">Saldo consolidado: <span id="total-consolidado">0,00</span></span>
-        </span>
-        <span id="resumen-provisoria" class="badge bg-warning text-dark" style="display:none;">PROVISORIA: el saldo queda pendiente</span>
-    </div>
 
     <button type="submit" class="btn btn-primary btn-guardar-liquidacion" style="margin-top:15px;">Guardar liquidación</button>
 </form>
