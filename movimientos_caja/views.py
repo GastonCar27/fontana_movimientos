@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.db import IntegrityError, transaction
-from django.db.models import Case, Count, DecimalField, F, IntegerField, ProtectedError, Q, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, Exists, F, IntegerField, OuterRef, ProtectedError, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -773,6 +773,7 @@ def _movimientos_reporte_filtrados(request):
         diferido_desde = form.cleaned_data.get('diferido_desde')
         diferido_hasta = form.cleaned_data.get('diferido_hasta')
         sin_efectivizar = form.cleaned_data.get('sin_efectivizar')
+        sin_liquidacion = form.cleaned_data.get('sin_liquidacion')
 
         if caja:
             movimientos = movimientos.filter(caja=caja)
@@ -801,11 +802,18 @@ def _movimientos_reporte_filtrados(request):
             movimientos = movimientos.filter(movimientocajadiferido__diferido__lte=diferido_hasta)
         if sin_efectivizar:
             movimientos = movimientos.filter(efectivizacion__isnull=True)
+        if sin_liquidacion:
+            # Import local: liquidaciones.models ya importa movimientos_caja.models.
+            # Un vínculo a una liquidación que ya no existe cuenta como "sin
+            # liquidar" (el filtro por liquidacion__tipo obliga al JOIN).
+            from liquidaciones.models import LiquidacionMovimiento
+            movimientos = movimientos.exclude(Exists(LiquidacionMovimiento.objects.filter(
+                movimiento_caja=OuterRef('pk'), liquidacion__tipo__isnull=False)))
 
         filtros_activos = any([
             caja, tipo, concepto, receptor, emisor, fecha_desde, fecha_hasta,
             efectivizacion_desde, efectivizacion_hasta,
-            diferido_desde, diferido_hasta, sin_efectivizar,
+            diferido_desde, diferido_hasta, sin_efectivizar, sin_liquidacion,
         ])
 
     return form, movimientos, filtros_activos

@@ -236,6 +236,13 @@ class MovimientoCajaReporteForm(forms.Form):
         label='Sólo sin efectivización',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+    # 07/10/2026 (pedido de Gastón): movimientos que no están en ninguna
+    # liquidación (ni de pago ni de cobro).
+    sin_liquidacion = forms.BooleanField(
+        required=False,
+        label='Sólo sin liquidación',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
 
     def clean(self):
         cleaned_data = super().clean()

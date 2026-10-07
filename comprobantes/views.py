@@ -509,6 +509,18 @@ def filtrar_por_numero(queryset, texto, prefijo=''):
     return queryset
 
 
+def _sin_liquidacion(comprobantes):
+    """Comprobantes que no están en ninguna liquidación (pago ni cobro).
+    Pedido de Gastón, 07/10/2026 (filtro "Solo sin liquidación" en Modificar
+    y Reportes). Mismo criterio que "sin liquidación de pago/cobro": un
+    vínculo a una liquidación que ya no existe cuenta como "sin liquidar"
+    (el filtro por liquidacion__tipo obliga al JOIN), y los NO RECIBIDOS
+    quedan afuera (nunca están pendientes de liquidar)."""
+    from liquidaciones.models import LiquidacionComprobante
+    return comprobantes.filter(no_recibido__isnull=True).exclude(Exists(
+        LiquidacionComprobante.objects.filter(comprobante=OuterRef('pk'), liquidacion__tipo__isnull=False)))
+
+
 def comprobante_listado(request):
     """Listado/búsqueda de comprobantes; es la puerta de entrada de 'Modificar'."""
     comprobantes = (
@@ -540,6 +552,9 @@ def comprobante_listado(request):
     # (ventas: Fontana emisora). Si se tildan los dos, trae ambos.
     q_sin_liq_pago = request.GET.get('sin_liq_pago', '').strip()
     q_sin_liq_cobro = request.GET.get('sin_liq_cobro', '').strip()
+    # 07/10/2026 (pedido de Gastón): sin NINGUNA liquidación (ni de pago ni
+    # de cobro), sin importar quién lo emitió.
+    q_sin_liquidacion = request.GET.get('sin_liquidacion', '').strip()
     # Agregado 2026-10-01: filtro por la marca "NO RECIBIDO"
     # (ComprobanteNoRecibido). Vacío = todos.
     q_recepcion = request.GET.get('recepcion', '').strip()
@@ -624,6 +639,8 @@ def comprobante_listado(request):
             # de lo que le debemos a la entidad) tampoco está pendiente de cobro.
             condicion |= Q(es_emisor=0) & Q(tiene_liq_cobro=False) & Q(tiene_liq_pago=False)
         comprobantes = comprobantes.filter(condicion)
+    if q_sin_liquidacion:
+        comprobantes = _sin_liquidacion(comprobantes)
 
     comprobantes = aplicar_orden_queryset(request, comprobantes, {
         'id': 'id',
@@ -683,6 +700,7 @@ def comprobante_listado(request):
         'q_no_coincide': q_no_coincide,
         'q_sin_liq_pago': q_sin_liq_pago,
         'q_sin_liq_cobro': q_sin_liq_cobro,
+        'q_sin_liquidacion': q_sin_liquidacion,
         'q_recepcion': q_recepcion,
         'url_actual': request.get_full_path(),
     })
@@ -1202,6 +1220,8 @@ def comprobante_reporte(request):
             # que todavía no tienen ningún renglón cargado (ver docstring
             # de ComprobanteReporteForm.sin_renglones).
             comprobantes = comprobantes.filter(renglon_comprobante__isnull=True)
+        if form.cleaned_data.get('sin_liquidacion'):
+            comprobantes = _sin_liquidacion(comprobantes)
 
     totales = comprobantes.aggregate(
         total=Coalesce(Sum('total'), Value(Decimal('0')), output_field=DecimalField(max_digits=20, decimal_places=2)),

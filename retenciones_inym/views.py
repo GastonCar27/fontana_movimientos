@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Exists, Max, OuterRef, Q, Sum
 from django.db.models.functions import ExtractMonth, ExtractYear
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -154,6 +154,8 @@ def _retencion_inym_listado_filtrado(request):
     q_tipo_tarifa = request.GET.get('tipo_tarifa', '').strip()
     q_id = request.GET.get('id', '').strip()
     q_numero = request.GET.get('numero', '').strip()
+    # 07/10/2026 (pedido de Gastón): sólo las que no están en ninguna liquidación.
+    q_sin_liquidacion = request.GET.get('sin_liquidacion', '').strip()
 
     qs = RetencionInym.objects.select_related(
         'id_tipo_tarifa',
@@ -179,6 +181,12 @@ def _retencion_inym_listado_filtrado(request):
         qs = qs.filter(id=q_id)
     if q_numero.isdigit():
         qs = qs.filter(id_certificado_inym=q_numero)
+    if q_sin_liquidacion:
+        # Import local (liquidaciones.models importa este models). Un vínculo
+        # a una liquidación que ya no existe cuenta como "sin liquidar".
+        from liquidaciones.models import LiquidacionRetencionInym
+        qs = qs.exclude(Exists(LiquidacionRetencionInym.objects.filter(
+            retencion_inym=OuterRef('pk'), liquidacion__tipo__isnull=False)))
 
     qs = qs.order_by('-fecha', '-id')
     qs = aplicar_orden_queryset(request, qs, {
@@ -189,6 +197,7 @@ def _retencion_inym_listado_filtrado(request):
     return qs, {
         'fecha_desde': q_fecha_desde, 'fecha_hasta': q_fecha_hasta, 'retenido': q_retenido,
         'agregado_desde': q_agregado_desde, 'tipo_tarifa': q_tipo_tarifa, 'id': q_id, 'numero': q_numero,
+        'sin_liquidacion': q_sin_liquidacion,
     }
 
 
@@ -202,6 +211,7 @@ def retencion_inym_listado(request):
         'q_retenido': filtros['retenido'],
         'q_agregado_desde': filtros['agregado_desde'], 'q_tipo_tarifa': filtros['tipo_tarifa'],
         'q_id': filtros['id'], 'q_numero': filtros['numero'],
+        'q_sin_liquidacion': filtros['sin_liquidacion'],
         'opciones_agregado_desde': _opciones_agregado_desde(),
         'opciones_tipo_tarifa': InymRetencionTipo.objects.all().order_by('nombre'),
         'AGREGADO_DESDE_VACIO': AGREGADO_DESDE_VACIO,

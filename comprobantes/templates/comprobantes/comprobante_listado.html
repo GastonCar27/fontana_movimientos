@@ -50,6 +50,10 @@
             <input type="checkbox" class="form-check-input" id="id_sin_liq_cobro" name="sin_liq_cobro" value="1" {% if q_sin_liq_cobro %}checked{% endif %}>
             <label class="form-check-label" for="id_sin_liq_cobro" title="Ventas (Fontana emisora) que todavía no están en ninguna liquidación de cobro">Solo sin liquidación de cobro</label>
         </div>
+        <div class="col-auto form-check mb-1">
+            <input type="checkbox" class="form-check-input" id="id_sin_liquidacion" name="sin_liquidacion" value="1" {% if q_sin_liquidacion %}checked{% endif %}>
+            <label class="form-check-label" for="id_sin_liquidacion" title="Comprobantes que no están en ninguna liquidación, ni de pago ni de cobro">Solo sin ninguna liquidación</label>
+        </div>
         <div class="col-auto">
             <label for="id_recepcion" class="mb-1 small text-muted">Recepción</label>
             <select id="id_recepcion" name="recepcion" class="form-select form-select-sm">

@@ -224,6 +224,13 @@ class ComprobanteReporteForm(forms.Form):
         label='Solo sin renglones cargados',
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
     )
+    # Agregado 2026-10-07 (pedido de Gastón): comprobantes que no están en
+    # ninguna liquidación (ni de pago ni de cobro).
+    sin_liquidacion = forms.BooleanField(
+        required=False,
+        label='Solo sin liquidación',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
     # Agregado 2026-10-01: los comprobantes marcados "NO RECIBIDO"
     # (ComprobanteNoRecibido) quedan afuera salvo que se tilde esto.
     incluir_no_recibidos = forms.BooleanField(
