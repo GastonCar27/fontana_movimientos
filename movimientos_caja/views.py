@@ -1937,68 +1937,92 @@ def _resolver_caja_o_error(nombre, errores, opcional=False):
     return None
 
 
+def _cajas_banco_defecto(nombre, errores):
+    """Todas las cajas cuyo nombre empieza con `nombre` (ej. 'Macro' ->
+    'Macro - Campo Grande' y 'Macro Oberá'), ordenadas por id. Desde el
+    07/10/2026 (pedido de Gastón, al aparecer la caja 'Macro Oberá') cada
+    una se calcula y se muestra POR SEPARADO; antes, con más de una caja
+    para el mismo prefijo, el cálculo por defecto no podía elegir y
+    mostraba un error."""
+    cajas = sorted(_cajas_por_prefijo(nombre), key=lambda c: c.id)
+    if not cajas:
+        errores.append(f'No se encontró ninguna caja cuyo nombre empiece con "{nombre}".')
+    return cajas
+
+
 def _calcular_estado_caja_defecto(fecha):
+    """Cálculo "por defecto": una columna/recuadro por cada caja Macro y por
+    cada caja Nación (todas las que empiecen con ese nombre), y un saldo
+    Global que suma todas las que se pudieron calcular.
+
+    'Pagos Futuros' se proyecta sólo sobre la PRIMERA caja Macro (la de id
+    más bajo, 'Macro - Campo Grande'), que es la que los recibía antes de
+    que existiera 'Macro Oberá'."""
     errores = []
-    caja_macro = _resolver_caja_o_error(NOMBRE_CAJA_MACRO, errores)
-    caja_nacion = _resolver_caja_o_error(NOMBRE_CAJA_NACION, errores)
+    cajas_macro = _cajas_banco_defecto(NOMBRE_CAJA_MACRO, errores)
+    cajas_nacion = _cajas_banco_defecto(NOMBRE_CAJA_NACION, errores)
     caja_pagos_futuros = _resolver_caja_o_error(NOMBRE_CAJA_PAGOS_FUTUROS, errores, opcional=True)
 
-    macro = _saldo_base_defecto(caja_macro, fecha) if caja_macro else None
-    nacion = _saldo_base_defecto(caja_nacion, fecha) if caja_nacion else None
+    columnas = []
+    for indice, caja in enumerate(cajas_macro + cajas_nacion):
+        datos = _saldo_base_defecto(caja, fecha)
+        recibe_pagos_futuros = bool(cajas_macro) and caja.id == cajas_macro[0].id and caja_pagos_futuros is not None
+        _agregar_proyeccion_diferido(
+            datos, caja, fecha, caja_pagos_futuros=caja_pagos_futuros if recibe_pagos_futuros else None,
+        )
+        columnas.append({
+            'clave': f'caja{caja.id}',
+            'titulo': caja.nombre or str(caja),
+            'datos': datos,
+            'calculada': datos['libro'] is not None,
+            'recibe_pagos_futuros': recibe_pagos_futuros,
+        })
+        if datos['libro'] is None:
+            errores.append(f'La caja "{caja.nombre}" no tiene ningún libro cargado: no se puede calcular '
+                           f'(no entra en el saldo global).')
 
-    _agregar_proyeccion_diferido(macro, caja_macro, fecha, caja_pagos_futuros=caja_pagos_futuros)
-    _agregar_proyeccion_diferido(nacion, caja_nacion, fecha)
+    calculadas = [c for c in columnas if c['calculada']]
 
     def _agrupar_por_fecha(datos_caja):
-        """Agrupa `filas` en listas por fecha (no un único renglón por
-        fecha): ahora que _saldo_base_defecto y _agregar_proyeccion_
-        diferido pueden generar más de un renglón para la misma fecha
-        (ej. 'Movimientos del libro' y 'Cheques en cartera' los dos con
-        la fecha elegida), hace falta poder devolver varios."""
         agrupado = {}
-        if datos_caja:
-            for fila in datos_caja['filas']:
-                agrupado.setdefault(fila['fecha'], []).append(fila)
+        for fila in datos_caja['filas']:
+            agrupado.setdefault(fila['fecha'], []).append(fila)
         return agrupado
 
-    macro_filas_por_fecha = _agrupar_por_fecha(macro)
-    nacion_filas_por_fecha = _agrupar_por_fecha(nacion)
-
-    fechas = {fecha} | set(macro_filas_por_fecha.keys()) | set(nacion_filas_por_fecha.keys())
+    por_fecha = {c['clave']: _agrupar_por_fecha(c['datos']) for c in calculadas}
+    fechas = {fecha}
+    for agrupado in por_fecha.values():
+        fechas |= set(agrupado.keys())
 
     filas_global = []
-    ultimo_macro = None
-    ultimo_nacion = None
+    ultimos = {c['clave']: None for c in calculadas}
     for f in sorted(fechas):
-        filas_macro_dia = macro_filas_por_fecha.get(f, [])
-        filas_nacion_dia = nacion_filas_por_fecha.get(f, [])
-        # Al menos un renglón por fecha, aunque ninguna de las dos cajas
-        # tenga datos ese día (pasa sólo con la fecha elegida, si ni
-        # Macro ni Nación se pudieron calcular).
-        cantidad_renglones = max(len(filas_macro_dia), len(filas_nacion_dia), 1)
+        cantidad_renglones = max([len(por_fecha[c['clave']].get(f, [])) for c in calculadas] + [1])
         for indice in range(cantidad_renglones):
-            fila_macro = filas_macro_dia[indice] if indice < len(filas_macro_dia) else None
-            fila_nacion = filas_nacion_dia[indice] if indice < len(filas_nacion_dia) else None
-            if fila_macro is not None:
-                ultimo_macro = fila_macro['saldo']
-            if fila_nacion is not None:
-                ultimo_nacion = fila_nacion['saldo']
-            total = (
-                ultimo_macro + ultimo_nacion
-                if ultimo_macro is not None and ultimo_nacion is not None else None
-            )
-            filas_global.append({
-                'fecha': f,
-                'macro_concepto': fila_macro['concepto'] if fila_macro else None,
-                'macro_monto': fila_macro['monto'] if fila_macro else None,
-                'nacion_concepto': fila_nacion['concepto'] if fila_nacion else None,
-                'nacion_monto': fila_nacion['monto'] if fila_nacion else None,
-                'saldo_macro': ultimo_macro,
-                'saldo_nacion': ultimo_nacion,
-                'saldo_global': total,
-            })
+            celdas = []
+            for c in columnas:
+                fila_caja = None
+                if c['calculada']:
+                    filas_dia = por_fecha[c['clave']].get(f, [])
+                    fila_caja = filas_dia[indice] if indice < len(filas_dia) else None
+                    if fila_caja is not None:
+                        ultimos[c['clave']] = fila_caja['saldo']
+                celdas.append({
+                    'concepto': fila_caja['concepto'] if fila_caja else None,
+                    'monto': fila_caja['monto'] if fila_caja else None,
+                    'saldo': ultimos.get(c['clave']),
+                })
+            saldos = list(ultimos.values())
+            total = sum(saldos, Decimal('0')) if saldos and all(s is not None for s in saldos) else None
+            filas_global.append({'fecha': f, 'celdas': celdas, 'saldo_global': total})
 
-    return {'fecha': fecha, 'macro': macro, 'nacion': nacion, 'filas_global': filas_global, 'errores': errores}
+    return {
+        'fecha': fecha,
+        'columnas': columnas,
+        'titulo_global': 'Global (' + ' + '.join(c['titulo'] for c in calculadas) + ')' if calculadas else 'Global',
+        'filas_global': filas_global,
+        'errores': errores,
+    }
 
 
 def _fecha_estado_defecto(request):
@@ -2009,26 +2033,29 @@ def _fecha_estado_defecto(request):
 
 
 def _tabla_estado_caja_defecto(datos):
-    columnas = [
-        'Fecha', 'Macro - Concepto', 'Macro - Movimiento', 'Macro - Saldo',
-        'Nación - Concepto', 'Nación - Movimiento', 'Nación - Saldo', 'Global - Saldo',
-    ]
-    filas = [
-        [
-            f['fecha'], f['macro_concepto'],
-            _numero_o_none(f['macro_monto']), _numero_o_none(f['saldo_macro']),
-            f['nacion_concepto'],
-            _numero_o_none(f['nacion_monto']), _numero_o_none(f['saldo_nacion']),
-            _numero_o_none(f['saldo_global']),
-        ]
-        for f in datos['filas_global']
-    ]
+    columnas = ['Fecha']
+    anchos = [0.9]
+    numericas = set()
+    for c in datos['columnas']:
+        columnas += [f"{c['titulo']} - Concepto", f"{c['titulo']} - Movimiento", f"{c['titulo']} - Saldo"]
+        numericas |= {len(columnas) - 2, len(columnas) - 1}
+        anchos += [1.3, 1.1, 1.1]
+    columnas.append('Global - Saldo')
+    numericas.add(len(columnas) - 1)
+    anchos.append(1.1)
+    filas = []
+    for f in datos['filas_global']:
+        fila = [f['fecha']]
+        for celda in f['celdas']:
+            fila += [celda['concepto'], _numero_o_none(celda['monto']), _numero_o_none(celda['saldo'])]
+        fila.append(_numero_o_none(f['saldo_global']))
+        filas.append(fila)
     return {
         'columnas': columnas,
         'filas': filas,
-        'columnas_numericas': {2, 3, 5, 6, 7},
+        'columnas_numericas': numericas,
         'columnas_fecha': {0},
-        'anchos': [0.9, 1.4, 1.1, 1.1, 1.4, 1.1, 1.1, 1.1],
+        'anchos': anchos,
     }
 
 
