@@ -635,9 +635,10 @@ def retencion_alta(request):
                     'con la misma entidad, régimen e impuesto -- no se puede repetir. Si es un caso '
                     'distinto, revisá el Número.'
                 )
-            elif not lineas_validas:
-                messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
+                # Se permite guardar SIN renglones (pedido de Gastón,
+                # 08/10/2026): sólo el encabezado con su Total; los
+                # comprobantes se pueden vincular después desde Modificar.
                 try:
                     with transaction.atomic():
                         retencion, cantidad, advertencias = _guardar_grupo(header_form, formset)
@@ -658,13 +659,20 @@ def retencion_alta(request):
                     anio = header_form.cleaned_data['año']
                     numero = header_form.cleaned_data['numero']
                     accion = request.POST.get('accion')
-                    messages.success(
-                        request,
-                        f'La retención {anio}-{numero:04d} se guardó correctamente '
-                        f'({cantidad} renglón{"es" if cantidad != 1 else ""} vinculado'
-                        f'{"s" if cantidad != 1 else ""}).'
-                    )
-                    if total_retencion is not None and suma < total_retencion:
+                    if cantidad:
+                        messages.success(
+                            request,
+                            f'La retención {anio}-{numero:04d} se guardó correctamente '
+                            f'({cantidad} renglón{"es" if cantidad != 1 else ""} vinculado'
+                            f'{"s" if cantidad != 1 else ""}).'
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f'La retención {anio}-{numero:04d} se guardó correctamente, sin renglones '
+                            '(podés vincular los comprobantes después desde Modificar).'
+                        )
+                    if cantidad and total_retencion is not None and suma < total_retencion:
                         messages.warning(
                             request,
                             f'La suma de los renglones (${suma}) todavía no llega al Total cargado '
@@ -924,9 +932,10 @@ def retencion_modificar(request, id):
                     'con la misma entidad, régimen e impuesto -- no se puede repetir. Si es un caso '
                     'distinto, revisá el Número.'
                 )
-            elif not lineas_validas:
-                messages.error(request, 'Cargá al menos un renglón con los datos de la operación.')
             else:
+                # Se permite guardar SIN renglones (pedido de Gastón,
+                # 08/10/2026): sólo el encabezado con su Total; los
+                # comprobantes se pueden vincular después desde Modificar.
                 try:
                     with transaction.atomic():
                         # Sólo se toca esta fila puntual (por id) -- nunca otras
@@ -1146,6 +1155,12 @@ def retencion_listado(request):
     # Exportar a Excel / PDF (08/10/2026): TODO lo filtrado (sin el tope de
     # 500 de la pantalla), en el mismo orden, con el total al pie.
     total_general = sum((f['total'] for f in lista), Decimal('0'))
+    # Totales por separado (08/10/2026): practicadas (es_emisor=1, Fontana
+    # retuvo) y sufridas (es_emisor=0, le retuvieron a Fontana).
+    practicadas = [f for f in lista if f['es_emisor'] != 0]
+    sufridas = [f for f in lista if f['es_emisor'] == 0]
+    total_practicadas = sum((f['total'] for f in practicadas), Decimal('0'))
+    total_sufridas = sum((f['total'] for f in sufridas), Decimal('0'))
     formato = formato_exportacion(request)
     if formato:
         def _liq_texto(f):
@@ -1176,8 +1191,11 @@ def retencion_listado(request):
                         f['entidad_nombre'], f['fecha'], float(f['total']), _liq_texto(f),
                     ]
                     for f in lista
+                ] + [
+                    ['', '', '', '', f'Total practicadas ({len(practicadas)})', '', float(total_practicadas), ''],
+                    ['', '', '', '', f'Total sufridas ({len(sufridas)})', '', float(total_sufridas), ''],
                 ],
-                'fila_total': ['', '', '', '', f'Total ({len(lista)} retenciones)', '', float(total_general), ''],
+                'fila_total': ['', '', '', '', f'Total general ({len(lista)})', '', float(total_general), ''],
                 'columnas_numericas': {6},
                 'anchos': [0.6, 0.6, 0.8, 0.9, 3.0, 0.9, 1.2, 1.6],
             },
@@ -1198,6 +1216,10 @@ def retencion_listado(request):
         'q_fecha_desde': q_fecha_desde,
         'q_fecha_hasta': q_fecha_hasta,
         'total_general': total_general,
+        'total_practicadas': total_practicadas,
+        'total_sufridas': total_sufridas,
+        'cantidad_practicadas': len(practicadas),
+        'cantidad_sufridas': len(sufridas),
         'cantidad_total': cantidad_total,
         'monto_invalido': bool(q_monto) and monto_buscado is None,
     })

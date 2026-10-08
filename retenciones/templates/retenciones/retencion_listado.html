@@ -117,8 +117,18 @@
             </tbody>
             {% if grupos %}
             <tfoot>
+                <tr class="table-light">
+                    <td colspan="6" class="text-end">Total practicadas ({{ cantidad_practicadas }})</td>
+                    <td class="text-end">{{ total_practicadas|separador_miles }}</td>
+                    <td colspan="2"></td>
+                </tr>
+                <tr class="table-light">
+                    <td colspan="6" class="text-end">Total sufridas ({{ cantidad_sufridas }})</td>
+                    <td class="text-end">{{ total_sufridas|separador_miles }}</td>
+                    <td colspan="2"></td>
+                </tr>
                 <tr class="table-light fw-bold">
-                    <td colspan="6" class="text-end">Total ({{ cantidad_total }} retencion{{ cantidad_total|pluralize:"es" }}{% if cantidad_total > 500 %}; en pantalla se muestran las primeras 500, el Excel/PDF trae todas{% endif %})</td>
+                    <td colspan="6" class="text-end">Total general ({{ cantidad_total }} retencion{{ cantidad_total|pluralize:"es" }}{% if cantidad_total > 500 %}; en pantalla se muestran las primeras 500, el Excel/PDF trae todas{% endif %})</td>
                     <td class="text-end">{{ total_general|separador_miles }}</td>
                     <td colspan="2"></td>
                 </tr>
