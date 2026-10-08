@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from types import SimpleNamespace
 
@@ -14,7 +15,7 @@ from entidades.models import Entidad
 from services.buscadores import texto_entidad_buscador
 from services.ordenamiento import aplicar_orden_lista, aplicar_orden_queryset
 from services.permisos import requiere_grupo
-from services.reportes import excel_response, pdf_response
+from services.reportes import excel_response, exportar_reporte, formato_exportacion, pdf_response
 
 from .forms import (
     RankingEntidadesForm,
@@ -1047,8 +1048,24 @@ def retencion_listado(request):
     q_monto = request.GET.get('monto', '').strip()
     # Liquidación asociada (02/10/2026): '' = todas, 'con', 'sin', 'pago', 'cobro'.
     q_liquidacion = request.GET.get('liquidacion', '').strip()
+    # Fecha desde / hasta (08/10/2026), sobre la fecha de la retención.
+    q_fecha_desde = request.GET.get('fecha_desde', '').strip()
+    q_fecha_hasta = request.GET.get('fecha_hasta', '').strip()
+
+    def _fecha(valor):
+        try:
+            return datetime.date.fromisoformat(valor) if valor else None
+        except ValueError:
+            return None
+
+    fecha_desde = _fecha(q_fecha_desde)
+    fecha_hasta = _fecha(q_fecha_hasta)
 
     qs = Retencion.objects.select_related('entidad').prefetch_related('liquidaciones__liquidacion')
+    if fecha_desde:
+        qs = qs.filter(fecha__gte=fecha_desde)
+    if fecha_hasta:
+        qs = qs.filter(fecha__lte=fecha_hasta)
     if q_id:
         qs = qs.filter(id=int(q_id)) if q_id.isdigit() else qs.none()
     if q_anio.isdigit():
@@ -1125,6 +1142,48 @@ def retencion_listado(request):
         # Sin orden pedido por columna: más recientes primero (año y número
         # descendente), mismo criterio que antes de poder ordenar por columna.
         lista = sorted(filas, key=lambda f: (f['año'] or 0, f['numero'] or 0, f['id']), reverse=True)
+
+    # Exportar a Excel / PDF (08/10/2026): TODO lo filtrado (sin el tope de
+    # 500 de la pantalla), en el mismo orden, con el total al pie.
+    total_general = sum((f['total'] for f in lista), Decimal('0'))
+    formato = formato_exportacion(request)
+    if formato:
+        def _liq_texto(f):
+            return ', '.join(
+                f"{'Cobro' if liq.tipo == 'cobro' else 'Pago'} N° {liq.pk}" for liq in f['liquidaciones']
+            ) or 'Sin liquidación'
+
+        titulo = 'Retenciones'
+        if entidad_exacta:
+            titulo += f' -- {q_entidad}'
+        elif q_entidad:
+            titulo += f' -- entidad: {q_entidad}'
+        if fecha_desde or fecha_hasta:
+            titulo += ' -- ' + ' '.join(filter(None, [
+                f"desde {fecha_desde.strftime('%d/%m/%Y')}" if fecha_desde else '',
+                f"hasta {fecha_hasta.strftime('%d/%m/%Y')}" if fecha_hasta else '',
+            ]))
+        return exportar_reporte(
+            formato,
+            'retenciones',
+            titulo,
+            {
+                'columnas': ['ID', 'Año', 'Número', 'Dirección', 'Entidad', 'Fecha', 'Total', 'Liquidación'],
+                'filas': [
+                    [
+                        f['id'], f['año'] or '', f['numero'] or '',
+                        'Sufrida' if f['es_emisor'] == 0 else 'Practicada',
+                        f['entidad_nombre'], f['fecha'], float(f['total']), _liq_texto(f),
+                    ]
+                    for f in lista
+                ],
+                'fila_total': ['', '', '', '', f'Total ({len(lista)} retenciones)', '', float(total_general), ''],
+                'columnas_numericas': {6},
+                'anchos': [0.6, 0.6, 0.8, 0.9, 3.0, 0.9, 1.2, 1.6],
+            },
+        )
+
+    cantidad_total = len(lista)
     lista = lista[:500]
 
     return render(request, 'retenciones/retencion_listado.html', {
@@ -1136,6 +1195,10 @@ def retencion_listado(request):
         'q_id': q_id,
         'q_liquidacion': q_liquidacion,
         'q_monto': q_monto,
+        'q_fecha_desde': q_fecha_desde,
+        'q_fecha_hasta': q_fecha_hasta,
+        'total_general': total_general,
+        'cantidad_total': cantidad_total,
         'monto_invalido': bool(q_monto) and monto_buscado is None,
     })
 
