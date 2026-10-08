@@ -335,6 +335,21 @@ class FormularioComprobante(tk.Toplevel):
             if datos.get(campo) is not None:
                 datos[campo] = int(datos[campo])
 
+        # 08/10/2026 (pedido de Gastón): mismos obligatorios que en la web
+        # (comprobantes.forms.ComprobanteForm): tipo, fecha, número y total.
+        faltan = []
+        if datos.get('id_tipo_comp') is None:
+            faltan.append('Tipo de comprobante')
+        if not datos.get('fecha'):
+            faltan.append('Fecha')
+        if not datos.get('numero') or datos['numero'] <= 0:
+            faltan.append('N° (mayor que 0)')
+        if datos.get('total') is None:
+            faltan.append('Total')
+        if faltan:
+            messagebox.showwarning('Faltan datos', 'Son obligatorios: ' + ', '.join(faltan) + '.')
+            return
+
         try:
             if self.comprobante_id:
                 repository.actualizar(self.comprobante_id, datos)

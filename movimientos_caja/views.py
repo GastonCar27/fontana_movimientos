@@ -469,6 +469,13 @@ def movimiento_caja_libro_reporte(request):
     diferido_desde = _fecha_get('diferido_desde')
     diferido_hasta = _fecha_get('diferido_hasta')
     sin_efectivizar = request.GET.get('sin_efectivizar') == '1'
+    # Agrupar sin efectivizar por hojas (pedido de Gastón, 08/10/2026): en
+    # vez del detalle, un renglón por hoja con la cantidad y el total de los
+    # movimientos sin efectivizar de esa hoja. Implica el filtro "sin
+    # efectivizar" (y respeta los filtros de fechas).
+    agrupar_hojas = request.GET.get('agrupar_hojas') == '1'
+    if agrupar_hojas:
+        sin_efectivizar = True
     hay_filtros = bool(emision_desde or emision_hasta or diferido_desde or diferido_hasta or sin_efectivizar)
 
     caja = Caja.objects.filter(pk=int(q_caja)).first() if q_caja.isdigit() else None
@@ -562,7 +569,35 @@ def movimiento_caja_libro_reporte(request):
             filas = [f for f in filas if _pasa(f)]
             total_monto = sum((f['monto'] or Decimal('0') for f in filas), Decimal('0'))
 
+    # Resumen por hoja (sólo con "agrupar sin efectivizar por hojas"). Las
+    # filas ya vienen en orden de hoja; las sin hoja (S/A) quedan al final.
+    hojas = []
+    if agrupar_hojas and libro:
+        por_hoja = {}
+        for f in filas:
+            g = por_hoja.get(f['hoja'])
+            if g is None:
+                g = {'hoja': f['hoja'], 'cantidad': 0, 'total': Decimal('0')}
+                por_hoja[f['hoja']] = g
+                hojas.append(g)
+            g['cantidad'] += 1
+            g['total'] += f['monto'] or Decimal('0')
+
     formato = formato_exportacion(request)
+    if formato and libro and agrupar_hojas:
+        return exportar_reporte(
+            formato,
+            f'libro_{libro.id}_sin_efectivizar_por_hoja',
+            f'Sin efectivizar por hoja -- {caja.nombre} / {libro.nombre}',
+            {
+                'columnas': ['Hoja', 'Cantidad', 'Total sin efectivizar'],
+                'filas': [[g['hoja'] if g['hoja'] is not None else 'S/A', g['cantidad'], float(g['total'])]
+                          for g in hojas],
+                'fila_total': ['Total', len(filas), float(total_monto)],
+                'columnas_numericas': {2},
+                'anchos': [1.0, 1.0, 1.6],
+            },
+        )
     if formato and libro:
         def _num(v):
             return float(v) if v is not None else None
@@ -614,6 +649,8 @@ def movimiento_caja_libro_reporte(request):
         'diferido_desde': request.GET.get('diferido_desde', ''),
         'diferido_hasta': request.GET.get('diferido_hasta', ''),
         'sin_efectivizar': sin_efectivizar,
+        'agrupar_hojas': agrupar_hojas,
+        'hojas': hojas,
         'hay_filtros': hay_filtros,
     })
 

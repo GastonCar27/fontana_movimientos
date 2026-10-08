@@ -142,6 +142,21 @@ class ComprobanteForm(forms.ModelForm):
         campo.label = '¿Quién emitió el comprobante?'
         campo.choices = self.ES_EMISOR_CHOICES
         self.mostrar_confirmar_duplicado = False
+        # 08/10/2026 (pedido de Gastón): obligatorios en el alta y al editar.
+        # Antes se podía guardar un comprobante sin fecha (y sin tipo, número
+        # o total). La entidad ya era obligatoria (la FK no admite vacío).
+        for nombre in self.CAMPOS_OBLIGATORIOS:
+            self.fields[nombre].required = True
+            self.fields[nombre].error_messages['required'] = 'Este dato es obligatorio.'
+            self.fields[nombre].label = f'{self.fields[nombre].label} *'
+
+    CAMPOS_OBLIGATORIOS = ('tipo_comprobante', 'fecha', 'numero', 'total')
+
+    def clean_numero(self):
+        numero = self.cleaned_data.get('numero')
+        if numero is not None and numero <= 0:
+            raise forms.ValidationError('El número tiene que ser mayor que 0.')
+        return numero
 
     def clean(self):
         """Control de duplicados (06/10/2026, a raíz de los de Electricidad

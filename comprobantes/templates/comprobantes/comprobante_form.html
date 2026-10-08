@@ -20,7 +20,7 @@
     {% endif %}
 
     <p>
-        <label>Entidad (proveedor o cliente):</label><br>
+        <label>Entidad (proveedor o cliente) *</label><br>
         <div class="entidad-buscador-wrapper">
             <input type="text" id="entidad-buscador" autocomplete="off"
                    placeholder="Buscar por nombre, CUIT o ID..."
@@ -32,6 +32,8 @@
             <span style="color:red;">{{ form.entidad_emisor.errors }}</span>
         {% endif %}
     </p>
+
+    <p class="text-muted small">Los campos con * son obligatorios.</p>
 
     {% for field in form %}
         {% if field.name != 'entidad_emisor' and field.name != 'confirmar_posible_duplicado' %}
